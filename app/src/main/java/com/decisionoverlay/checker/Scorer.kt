@@ -3,11 +3,10 @@ package com.decisionoverlay.checker
 /**
  * Manual multi-timeframe point system. It never sends orders.
  *
- * 1h is the strict trend filter and primary bias. It must clear ±50 with a real EMA stack.
- * 15m is a generalized momentum check. It must clear ±30, and a 50/50 RSI plus flat
- * candle net is treated as "do not trade" even if the EMA and MACD lean the same way.
- * 5m is the strict execution check. Stack and candle confirmation are mandatory, plus
- * either an in-zone RSI or an expanding MACD, and the total must clear ±75.
+ * 1h is the primary trend filter; 15m confirms momentum. These two must agree.
+ * 5m is a fast confirmation: it may be neutral without blocking a signal, but a
+ * clear 5m move against the higher-timeframe direction blocks the signal. This
+ * avoids requiring three unusually strict filters to line up on every update.
  */
 object Scorer {
     const val MIN_CANDLES = 40
@@ -54,28 +53,28 @@ object Scorer {
         val execDir = executionDirection(five)
 
         if (hourDir == 0) {
-            blocked += "1h score ${signed(hour.score)} is near neutral or the EMA stack is not strict (need ±50 and a stacked EMA)."
+            blocked += "1h trend is neutral or lacks EMA confirmation (need score ±30 plus a stacked EMA)."
         }
         if (midDir == 0) {
-            blocked += "15m score ${signed(fifteen.score)} is weak, flat, or 50/50 (need ±30, and RSI plus candle-net cannot both be neutral)."
+            blocked += "15m momentum is neutral (need score ±25 and at least one RSI/candle-net confirmation)."
         } else if (hourDir != 0 && midDir != hourDir) {
-            blocked += "15m momentum disagrees with the 1h bias."
+            blocked += "15m momentum disagrees with the 1h trend."
         }
-        if (execDir == 0) {
-            blocked += "5m score ${signed(five.score)} is not an exact confirmation (need ±75, EMA stack, candle confirmation, and RSI zone or expanding MACD)."
-        } else if (hourDir != 0 && execDir != hourDir) {
-            blocked += "5m execution disagrees with the 1h bias."
+        if (execDir != 0 && hourDir != 0 && execDir != hourDir) {
+            blocked += "5m momentum is moving against the 1h trend."
         }
 
+        // Higher-timeframe trend + momentum agreement is the core signal.
+        // 5m may be neutral; it only vetoes when it gives a clear opposite signal.
         val verdict = when {
             blocked.isNotEmpty() -> Verdict.DNT
-            hourDir == 1 && midDir == 1 && execDir == 1 -> Verdict.UP
-            hourDir == -1 && midDir == -1 && execDir == -1 -> Verdict.DOWN
+            hourDir == 1 && midDir == 1 -> Verdict.UP
+            hourDir == -1 && midDir == -1 -> Verdict.DOWN
             else -> Verdict.DNT
         }
         val reason = when (verdict) {
-            Verdict.UP -> "UP. 1h trend, 15m momentum, and strict 5m confirmation all agree long."
-            Verdict.DOWN -> "DOWN. 1h trend, 15m momentum, and strict 5m confirmation all agree short."
+            Verdict.UP -> if (execDir == 1) "UP. 1h trend and 15m momentum agree; 5m confirms." else "UP. 1h trend and 15m momentum agree; 5m is neutral."
+            Verdict.DOWN -> if (execDir == -1) "DOWN. 1h trend and 15m momentum agree; 5m confirms." else "DOWN. 1h trend and 15m momentum agree; 5m is neutral."
             Verdict.DNT -> blocked.joinToString(" ").ifBlank { "No clean alignment. Do not trade." }
         }
         return Decision(verdict, reason, five, fifteen, hour, blocked.toList())
@@ -84,8 +83,8 @@ object Scorer {
     private fun trendDirection(score: TimeframeScore): Int {
         val stack = points(score, "EMA stack")
         return when {
-            score.score >= 50 && stack > 0 -> 1
-            score.score <= -50 && stack < 0 -> -1
+            score.score >= 30 && stack > 0 -> 1
+            score.score <= -30 && stack < 0 -> -1
             else -> 0
         }
     }
@@ -95,8 +94,8 @@ object Scorer {
         val net = points(score, "Candle net")
         if (rsi == 0 && net == 0) return 0
         return when {
-            score.score >= 30 -> 1
-            score.score <= -30 -> -1
+            score.score >= 25 -> 1
+            score.score <= -25 -> -1
             else -> 0
         }
     }
@@ -106,8 +105,10 @@ object Scorer {
         val candles = points(score, "Candles")
         val rsi = points(score, "RSI zone")
         val macd = points(score, "MACD expand")
-        val longOk = stack > 0 && candles > 0 && (rsi > 0 || macd > 0) && score.score >= 75
-        val shortOk = stack < 0 && candles < 0 && (rsi < 0 || macd < 0) && score.score <= -75
+        // A 5m confirmation is less restrictive: require an EMA stack and at least
+        // one supporting momentum component. Candle confirmation adds confidence.
+        val longOk = stack > 0 && (candles > 0 || rsi > 0 || macd > 0) && score.score >= 50
+        val shortOk = stack < 0 && (candles < 0 || rsi < 0 || macd < 0) && score.score <= -50
         return when {
             longOk -> 1
             shortOk -> -1
