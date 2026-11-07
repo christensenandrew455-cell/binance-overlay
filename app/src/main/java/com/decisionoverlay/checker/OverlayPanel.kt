@@ -27,8 +27,8 @@ class OverlayPanel(private val context:Context,private val windowManager:WindowM
   orientation=LinearLayout.VERTICAL;background=GradientDrawable().apply{cornerRadius=dp(13).toFloat();setColor(Color.argb(238,12,17,27));setStroke(dp(1),Color.argb(150,91,125,182))};setPadding(dp(10),dp(6),dp(8),dp(7))
   addView(LinearLayout(context).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;addView(symbol,LinearLayout.LayoutParams(0,-2,1f));addView(close)})
   addView(LinearLayout(context).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;addView(verdict,LinearLayout.LayoutParams(0,-2,1f));addView(price)})
-  setOnTouchListener{_,e->drag(e)}
  }
+ symbol.setOnTouchListener{_,e->drag(e)}
  val root:View=card;private var attached=false
  fun attach(){if(!attached){windowManager.addView(root,params);attached=true}}
  fun detach(){if(attached){try{windowManager.removeView(root)}catch(_:Exception){};attached=false}}
