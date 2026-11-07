@@ -5,9 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Let the latest commit finish building instead of cancelling an in-progress
+# run whenever another push arrives. This avoids confusing priority-cancellation
+# messages while the APK is being published.
 concurrency:
   group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
