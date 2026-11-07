@@ -26,5 +26,6 @@ class ScorerTest {
  }
  private fun scoreAll(c:List<Candle>)=Scorer.decide(Scorer.score5m(c,connected()),Scorer.score15m(c,connected()),Scorer.score1h(c,connected()))
  private fun connected()=FeedStatus(ConnectionState.CONNECTED,"test",1L,null)
- private fun trend(dir:Int,highVolume:Boolean):List<Candle>{var p=100.0;return (0 until 90).map{i->val o=p;p+=dir*.5;Candle(i*60000L,o,maxOf(o,p),minOf(o,p),p,if(highVolume&&i==89)50.0 else 10.0,(i+1)*60000L-1,true)}}
+ // Accelerating closes ensure MACD has directional momentum instead of a fully converged flat histogram.
+ private fun trend(dir:Int,highVolume:Boolean):List<Candle>{var p=100.0;return (0 until 90).map{i->val o=p;p+=dir*(0.1+i*0.01);Candle(i*60000L,o,maxOf(o,p),minOf(o,p),p,if(highVolume&&i==89)50.0 else 10.0,(i+1)*60000L-1,true)}}
 }
