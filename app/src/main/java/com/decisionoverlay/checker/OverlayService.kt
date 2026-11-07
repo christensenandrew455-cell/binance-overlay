@@ -66,14 +66,6 @@ class OverlayService : Service() {
         panel = OverlayPanel(
             context = this,
             windowManager = windowManager,
-            onSymbol = { symbol ->
-                getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putString(KEY_SYMBOL, symbol.trim().uppercase())
-                    .apply()
-                engine.updateSymbol(symbol)
-            },
-            onRefresh = { engine.refreshNow() },
             onClose = {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
