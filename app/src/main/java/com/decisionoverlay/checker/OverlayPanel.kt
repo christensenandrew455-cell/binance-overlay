@@ -84,7 +84,7 @@ class OverlayPanel(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         imeOptions = EditorInfo.IME_ACTION_DONE
-        singleLine = true
+        setSingleLine(true)
         background = rounded(COLOR_INPUT, 9)
         setPadding(dp(10), dp(7), dp(10), dp(7))
         setOnTouchListener { _, event ->
