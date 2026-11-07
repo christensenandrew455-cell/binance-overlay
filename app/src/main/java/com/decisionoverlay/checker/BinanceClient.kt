@@ -91,11 +91,9 @@ class BinanceClient(private val http: OkHttpClient) {
     companion object {
         /** Public read-only market-data hosts, tried in order with fallback on network/HTTP errors. */
         val REST_HOSTS = listOf(
-            "https://data-api.binance.vision",
-            "https://api.binance.com",
-            "https://api1.binance.com",
-            "https://api2.binance.com",
-            "https://api3.binance.com",
+            "https://api.binance.us",
+            "https://api1.binance.us",
+            "https://api2.binance.us",
         )
     }
 }
