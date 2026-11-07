@@ -1,6 +1,5 @@
 package com.decisionoverlay.checker
 
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -10,10 +9,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -25,9 +20,8 @@ class MarketEngine(
     private val onUpdate: (EngineSnapshot) -> Unit,
 ) {
     private val http = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
         .build()
     private val client = BinanceClient(http)
     private val mutex = Mutex()
@@ -48,12 +42,13 @@ class MarketEngine(
     var symbol: String = "BTCUSDT"
         private set
 
-    private var socketJob: Job? = null
-    private var pollJob: Job? = null
-    private var watchdogJob: Job? = null
-    private var activeSocket: WebSocket? = null
-    private var last5mEventAt = 0L
+    private var fiveMinuteJob: Job? = null
+    private var slowJob: Job? = null
     private var lastVerdict: Verdict? = null
+
+    fun setApiKey(key: String) {
+        client.apiKey = key.trim()
+    }
 
     fun start(rawSymbol: String) {
         if (!started.compareAndSet(false, true)) {
@@ -63,12 +58,10 @@ class MarketEngine(
         symbol = normalize(rawSymbol) ?: "BTCUSDT"
         scope.launch(Dispatchers.IO) {
             mutex.withLock {
-                logLocked("Engine start for $symbol")
+                logLocked("Binance REST start for $symbol (${if (client.apiKey.isBlank()) "no API key" else "API key header on"})")
                 refreshAllLocked()
             }
-            launchSockets()
-            launchSlowPoll()
-            launchFiveMinuteWatchdog()
+            launchPolls()
         }
     }
 
@@ -84,7 +77,6 @@ class MarketEngine(
             }
             if (next == symbol) return@launch
             symbol = next
-            activeSocket?.close(1000, "symbol")
             mutex.withLock {
                 candles.values.forEach { it.clear() }
                 feeds.values.forEach { feed ->
@@ -93,7 +85,6 @@ class MarketEngine(
                     feed.updatedAt = null
                     feed.lastError = null
                 }
-                last5mEventAt = 0L
                 lastVerdict = null
                 logLocked("Symbol changed to $next")
                 refreshAllLocked()
@@ -111,131 +102,28 @@ class MarketEngine(
     }
 
     fun stop() {
-        socketJob?.cancel()
-        pollJob?.cancel()
-        watchdogJob?.cancel()
-        activeSocket?.cancel()
+        fiveMinuteJob?.cancel()
+        slowJob?.cancel()
         http.dispatcher.executorService.shutdown()
         http.connectionPool.evictAll()
     }
 
-    private fun launchSlowPoll() {
-        pollJob = scope.launch(Dispatchers.IO) {
+    private fun launchPolls() {
+        fiveMinuteJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(FIVE_MINUTE_POLL_MS)
+                mutex.withLock { fetchLocked("5m", "REST") }
+            }
+        }
+        slowJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(SLOW_POLL_MS)
                 mutex.withLock {
-                    logLocked("15-minute poll for 15m and 1h")
-                    fetchLocked("15m", "REST 15m poll")
-                    fetchLocked("1h", "REST 15m poll")
+                    logLocked("15-minute Binance REST poll for 15m and 1h")
+                    fetchLocked("15m", "REST")
+                    fetchLocked("1h", "REST")
                 }
             }
-        }
-    }
-
-    private fun launchFiveMinuteWatchdog() {
-        watchdogJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                delay(WATCHDOG_MS)
-                val stale = mutex.withLock { System.currentTimeMillis() - last5mEventAt > STALE_5M_MS }
-                if (!stale) continue
-                mutex.withLock {
-                    logLocked("5m websocket stale — REST fallback")
-                    fetchLocked("5m", "REST fallback")
-                }
-            }
-        }
-    }
-
-    private fun launchSockets() {
-        socketJob = scope.launch(Dispatchers.IO) {
-            var backoff = 2_000L
-            var hostIndex = 0
-            while (isActive) {
-                val current = symbol.lowercase(Locale.US)
-                val root = BinanceClient.WS_ROOTS[hostIndex % BinanceClient.WS_ROOTS.size]
-                val url = root + current + "@kline_5m"
-                val closed = CompletableDeferred<Unit>()
-                mutex.withLock { logLocked("WS connecting $url") }
-                val request = Request.Builder().url(url).build()
-                val socket = http.newWebSocket(request, object : WebSocketListener() {
-                    override fun onOpen(webSocket: WebSocket, response: Response) {
-                        scope.launch(Dispatchers.IO) {
-                            mutex.withLock {
-                                logLocked("WS connected $url")
-                                feeds.getValue("5m").detail = "WebSocket live"
-                                publishLocked()
-                            }
-                        }
-                    }
-
-                    override fun onMessage(webSocket: WebSocket, text: String) {
-                        scope.launch(Dispatchers.IO) {
-                            mutex.withLock { ingestLocked(text, url) }
-                        }
-                    }
-
-                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        scope.launch(Dispatchers.IO) {
-                            mutex.withLock {
-                                val code = response?.code?.let { " HTTP $it" }.orEmpty()
-                                logLocked("WS failure ${t.javaClass.simpleName}: ${t.message ?: "unknown"}$code")
-                                val stale = System.currentTimeMillis() - last5mEventAt > STALE_5M_MS
-                                if (stale) {
-                                    feeds.getValue("5m").apply {
-                                        state = ConnectionState.NOT_WORKING
-                                        detail = "WebSocket down"
-                                        lastError = t.message
-                                    }
-                                    publishLocked()
-                                }
-                                if (!closed.isCompleted) closed.complete(Unit)
-                            }
-                        }
-                    }
-
-                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                        scope.launch(Dispatchers.IO) {
-                            mutex.withLock {
-                                logLocked("WS closed $code ${reason.ifBlank { "" }}".trim())
-                                if (!closed.isCompleted) closed.complete(Unit)
-                            }
-                        }
-                    }
-                })
-                activeSocket = socket
-                try {
-                    closed.await()
-                } finally {
-                    socket.cancel()
-                }
-                if (!isActive) break
-                hostIndex++
-                mutex.withLock { logLocked("WS reconnect in ${backoff / 1000}s") }
-                delay(backoff)
-                val recent = mutex.withLock { System.currentTimeMillis() - last5mEventAt < 10_000 }
-                backoff = if (recent) 2_000L else (backoff * 2).coerceAtMost(15_000L)
-            }
-        }
-    }
-
-    private fun ingestLocked(text: String, url: String) {
-        try {
-            val candle = client.parseKlineEvent(text, symbol) ?: return
-            val list = candles.getValue("5m")
-            val index = list.indexOfFirst { it.openTime == candle.openTime }
-            if (index >= 0) list[index] = candle else list.add(candle)
-            list.sortBy { it.openTime }
-            while (list.size > 200) list.removeAt(0)
-            last5mEventAt = System.currentTimeMillis()
-            feeds.getValue("5m").apply {
-                state = ConnectionState.CONNECTED
-                detail = "WebSocket live tick"
-                updatedAt = last5mEventAt
-                lastError = null
-            }
-            publishLocked()
-        } catch (error: Exception) {
-            logLocked("WS parse error on $url: ${error.message}")
         }
     }
 
@@ -254,7 +142,6 @@ class MarketEngine(
                 addAll(result.candles)
             }
             val now = System.currentTimeMillis()
-            if (interval == "5m") last5mEventAt = now
             val route = if (result.host == BinanceClient.REST_HOSTS.first()) "primary" else "fallback"
             feeds.getValue(interval).apply {
                 state = ConnectionState.CONNECTED
@@ -276,7 +163,7 @@ class MarketEngine(
 
     private fun publishLocked() {
         val now = System.currentTimeMillis()
-        age("5m", STALE_5M_MS, now)
+        age("5m", FIVE_MINUTE_POLL_MS * 3, now)
         age("15m", SLOW_POLL_MS + 60_000, now)
         age("1h", SLOW_POLL_MS + 60_000, now)
         val five = Scorer.score5m(candles.getValue("5m"), feeds.getValue("5m").snapshot())
@@ -323,8 +210,7 @@ class MarketEngine(
 
     companion object {
         const val SLOW_POLL_MS = 15 * 60 * 1000L
-        private const val WATCHDOG_MS = 15_000L
-        private const val STALE_5M_MS = 30_000L
+        private const val FIVE_MINUTE_POLL_MS = 15_000L
         private val SYMBOL = Regex("^[A-Z0-9]{5,20}$")
         private val LOG_CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
     }

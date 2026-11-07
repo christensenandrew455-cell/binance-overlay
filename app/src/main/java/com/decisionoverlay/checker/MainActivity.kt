@@ -21,7 +21,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val symbol = findViewById<EditText>(R.id.symbolInput)
+        val apiKey = findViewById<EditText>(R.id.apiKeyInput)
         symbol.setText(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT"))
+        apiKey.setText(prefs.getString(OverlayService.KEY_API_KEY, ""))
         findViewById<Button>(R.id.permissionButton).setOnClickListener { openOverlaySettings() }
         findViewById<Button>(R.id.startButton).setOnClickListener { startOverlay() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
@@ -45,8 +47,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun startOverlay() {
         val symbol = findViewById<EditText>(R.id.symbolInput).text?.toString()?.trim()?.uppercase().orEmpty()
+        val apiKey = findViewById<EditText>(R.id.apiKeyInput).text?.toString()?.trim().orEmpty()
         if (!symbol.matches(Regex("^[A-Z0-9]{5,20}$"))) {
             setStatus("Use a Binance symbol such as BTCUSDT, ETHUSDT, or SOLUSDT.")
+            return
+        }
+        if (apiKey.isEmpty()) {
+            setStatus("Paste your Binance API key. The overlay only calls the Binance REST API with that key.")
             return
         }
         if (!Settings.canDrawOverlays(this)) {
@@ -54,10 +61,15 @@ class MainActivity : AppCompatActivity() {
             openOverlaySettings()
             return
         }
-        prefs.edit().putString(OverlayService.KEY_SYMBOL, symbol).apply()
-        val intent = Intent(this, OverlayService::class.java).putExtra(OverlayService.EXTRA_SYMBOL, symbol)
+        prefs.edit()
+            .putString(OverlayService.KEY_SYMBOL, symbol)
+            .putString(OverlayService.KEY_API_KEY, apiKey)
+            .apply()
+        val intent = Intent(this, OverlayService::class.java)
+            .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
+            .putExtra(OverlayService.EXTRA_API_KEY, apiKey)
         ContextCompat.startForegroundService(this, intent)
-        setStatus("Overlay is running for $symbol. You can leave this screen. Drag the card, tap the header to shrink it.")
+        setStatus("Overlay is calling the Binance REST API for $symbol. No websocket. Drag the card, tap the header to shrink it.")
     }
 
     private fun openOverlaySettings() {

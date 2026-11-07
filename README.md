@@ -16,31 +16,26 @@ On launch the app asks for **Draw over other apps** (`SYSTEM_ALERT_WINDOW`). Aft
 - One-line scores for 1h / 15m / 5m
 - Collapsible **5-minute**, **15-minute**, and **1-hour** sections
 - Each section shows raw values (price, EMA9, EMA21, RSI, MACD, histogram, candle bias, volume versus its 20-candle average), the point breakdown, and **Connected** or **Not Working**
-- Collapsible **Error log** with timestamps for HTTP failures, bad payloads, websocket drops, rejected symbols, and host fallback
+- Collapsible **Error log** with timestamps for HTTP failures, bad payloads, rejected symbols, and host fallback
 - Drag the header. Tap the header to shrink the card to the verdict. `–` does the same. `×` stops the overlay.
 
 ## Data
 
 | Feed | When it updates |
 | --- | --- |
-| 5-minute | Binance kline websocket (`btcusdt@kline_5m`). If no tick arrives for 30 seconds, REST fallback. |
-| 15-minute | REST immediately, then every 15 minutes |
-| 1-hour | REST immediately, then every 15 minutes |
+| 5-minute | Binance REST `GET /api/v3/klines` every 15 seconds |
+| 15-minute | Same REST call immediately, then every 15 minutes |
+| 1-hour | Same REST call immediately, then every 15 minutes |
 
-REST hosts, in order. The finance connection variable is `BINANCE_API_BASE_URL`. If that environment variable is an `https://` host at build time, it is tried first. Otherwise the app starts on the public Binance market-data host that still answers when `api.binance.com` returns HTTP 451:
+There is no websocket and no webhook. Every request is the Binance REST API. Paste your Binance API key in the app. It is stored only on the phone and sent as the `X-MBX-APIKEY` header. The key is not in this repository.
 
-1. `$BINANCE_API_BASE_URL` when set, for example `https://data-api.binance.vision`
-2. `https://data-api.binance.vision`
-3. `https://api.binance.com`
-4. `https://api1.binance.com`
-5. `https://api2.binance.com`
-6. `https://api3.binance.com`
+The market-data call does not need the secret and it does not place orders. If `BINANCE_API_BASE_URL` is an `https://` host at build time, that host is tried first. Otherwise:
 
-Websocket hosts, in order:
-
-1. `wss://data-stream.binance.vision/ws/`
-2. `wss://stream.binance.com:9443/ws/`
-3. `wss://stream.binance.com/ws/`
+1. `https://data-api.binance.vision`
+2. `https://api.binance.com`
+3. `https://api1.binance.com`
+4. `https://api2.binance.com`
+5. `https://api3.binance.com`
 
 A failed host is written into the error log even when the fallback succeeds. A timeframe that is stale or failing is **Not Working**, and the verdict is forced to **DNT**.
 
@@ -96,7 +91,7 @@ app/src/main/java/com/decisionoverlay/checker/
   MainActivity.kt      permission screen and start/stop
   OverlayService.kt    foreground service, notification
   OverlayPanel.kt      floating card
-  MarketEngine.kt      websocket, 15-minute poll, log
+  MarketEngine.kt      Binance REST polling and log
   BinanceClient.kt     public REST + kline message parser
   Indicators.kt        EMA, Wilder RSI, MACD
   Scorer.kt            point system and UP / DOWN / DNT

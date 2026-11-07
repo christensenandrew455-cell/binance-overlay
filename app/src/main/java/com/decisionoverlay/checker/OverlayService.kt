@@ -34,15 +34,21 @@ class OverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startInForeground("Starting")
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
-            ?: getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_SYMBOL, "BTCUSDT")
+            ?: prefs.getString(KEY_SYMBOL, "BTCUSDT")
             ?: "BTCUSDT"
+        val apiKey = intent?.getStringExtra(EXTRA_API_KEY)
+            ?: prefs.getString(KEY_API_KEY, "")
+            ?: ""
         ensurePanel()
+        engine.setApiKey(apiKey)
         if (!engineStarted) {
             engineStarted = true
             engine.start(symbol)
         } else if (intent?.hasExtra(EXTRA_SYMBOL) == true) {
             engine.updateSymbol(symbol)
+            engine.refreshNow()
         }
         return START_STICKY
     }
@@ -119,8 +125,10 @@ class OverlayService : Service() {
 
     companion object {
         const val EXTRA_SYMBOL = "symbol"
+        const val EXTRA_API_KEY = "api_key"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
+        const val KEY_API_KEY = "api_key"
         private const val CHANNEL_ID = "decision_overlay"
         private const val NOTIFICATION_ID = 42
     }
