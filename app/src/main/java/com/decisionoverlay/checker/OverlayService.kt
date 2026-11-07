@@ -33,16 +33,13 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startInForeground("Starting")
+        startInForeground("Starting public Binance data feed")
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT")
             ?: "BTCUSDT"
-        val apiKey = intent?.getStringExtra(EXTRA_API_KEY)
-            ?: prefs.getString(KEY_API_KEY, "")
-            ?: ""
+
         ensurePanel()
-        engine.setApiKey(apiKey)
         if (!engineStarted) {
             engineStarted = true
             engine.start(symbol)
@@ -70,7 +67,10 @@ class OverlayService : Service() {
             context = this,
             windowManager = windowManager,
             onSymbol = { symbol ->
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_SYMBOL, symbol.trim().uppercase()).apply()
+                getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_SYMBOL, symbol.trim().uppercase())
+                    .apply()
                 engine.updateSymbol(symbol)
             },
             onRefresh = { engine.refreshNow() },
@@ -84,9 +84,8 @@ class OverlayService : Service() {
 
     private fun render(snapshot: EngineSnapshot) {
         panel?.render(snapshot)
-        val text = "${snapshot.symbol}  ${snapshot.decision.verdict.name}"
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(text))
+        val text = snapshot.symbol + "  " + snapshot.decision.verdict.name
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     private fun startInForeground(text: String) {
@@ -107,7 +106,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Decision overlay")
+            .setContentTitle("Binance decision checker")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
@@ -118,17 +117,15 @@ class OverlayService : Service() {
 
     private fun createChannel() {
         val manager = getSystemService(NotificationManager::class.java)
-        val channel = NotificationChannel(CHANNEL_ID, "Decision overlay", NotificationManager.IMPORTANCE_LOW)
-        channel.description = "Keeps the floating decision checker on screen."
+        val channel = NotificationChannel(CHANNEL_ID, "Floating decision checker", NotificationManager.IMPORTANCE_LOW)
+        channel.description = "Keeps the UP / DOWN / DNT floating checker running."
         manager.createNotificationChannel(channel)
     }
 
     companion object {
         const val EXTRA_SYMBOL = "symbol"
-        const val EXTRA_API_KEY = "api_key"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
-        const val KEY_API_KEY = "api_key"
         private const val CHANNEL_ID = "decision_overlay"
         private const val NOTIFICATION_ID = 42
     }
