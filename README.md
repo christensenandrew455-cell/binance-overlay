@@ -2,9 +2,9 @@
 
 A native Android floating overlay that reads **Binance.US spot-market candles** and displays one overall manual verdict:
 
-- **UP** — the 1-hour trend, 15-minute momentum, and strict 5-minute confirmation agree upward.
-- **DOWN** — all three agree downward.
-- **DNT** — do not trade: neutral, weak, conflicting, insufficient, stale, or disconnected data.
+- **UP** — the short-horizon 5-minute trigger is bullish, optionally strengthened by 15-minute structure and the 1-hour filter.
+- **DOWN** — the short-horizon 5-minute trigger is bearish, optionally strengthened by 15-minute structure and the 1-hour filter.
+- **DNT** — do not trade: no fresh 5-minute trigger, neutral score, insufficient, stale, or disconnected data.
 
 The app never places orders, connects to a wallet, or needs access to a Binance account. It is a manual decision aid, not financial advice.
 
@@ -66,44 +66,15 @@ Official documentation: https://docs.binance.us/
 
 This version uses REST polling, not a WebSocket. The 5-minute chart is refreshed more often to make the execution check responsive. Each request loads up to 150 candles.
 
-## Scoring rules
+## Timeframe horizons
 
-Scores range from -100 to +100. Positive is bullish; negative is bearish. Volume is displayed as context and does not add points.
+- **5-minute (±6):** the trade driver. It checks price against EMA8 and requires a fresh MACD crossover within the latest three completed 5-minute candles. This is a short execution window, not a multi-hour trend forecast.
+- **15-minute (±3):** confirms the 5-minute direction using recent higher highs/higher lows or lower highs/lower lows.
+- **1-hour (±1):** a weak filter only. A clear opposing hourly trend subtracts one point; a supportive trend adds one; a flat/ranging hour adds zero.
 
-### 1-hour — primary trend filter
-
-| Component | Bullish | Bearish |
-| --- | ---: | ---: |
-| EMA stack | +30 | -30 |
-| Recent close structure | +25 | -25 |
-| MACD regime | +25 | -25 |
-| RSI regime | +20 | -20 |
-
-The 1-hour chart calls UP only at +50 or higher with a bullish EMA stack, or DOWN at -50 or lower with a bearish EMA stack.
-
-### 15-minute — momentum check
-
-| Component | Bullish | Bearish |
-| --- | ---: | ---: |
-| EMA direction | +25 | -25 |
-| RSI momentum | +25 | -25 |
-| MACD sign | +25 | -25 |
-| Six-candle net | +25 | -25 |
-
-Momentum must reach at least +30 or -30. When both RSI momentum and candle net are neutral, the 15-minute chart remains DNT even if other components lean one way.
-
-### 5-minute — strict execution check
-
-| Component | Bullish | Bearish |
-| --- | ---: | ---: |
-| EMA stack | +30 | -30 |
-| Last three candles | +25 | -25 |
-| RSI zone | +20 | -20 |
-| Expanding MACD histogram | +25 | -25 |
-
-Execution requires the EMA stack and candle confirmation to agree, plus either an RSI-zone or expanding-MACD confirmation. The total must reach at least +75 or -75.
-
-### Overall verdict
+The feeds refresh at each candle close. The 5-minute signal is recalculated on each completed 5-minute candle, so its crossover freshness naturally expires after three candles.
+ 
+## Overall verdict
 
 UP or DOWN is shown only when all three timeframe checks agree in the same direction and every feed is connected and current. Anything else is DNT. This is a rule-based indicator, not a guarantee of future price movement or profitable trades.
 
