@@ -10,68 +10,89 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences(OverlayService.PREFS, MODE_PRIVATE) }
-    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private var pendingSymbol: String? = null
+
+    private val notifications = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        pendingSymbol?.let(::launchOverlay)
+        pendingSymbol = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        val symbol = findViewById<EditText>(R.id.symbolInput)
-        val apiKey = findViewById<EditText>(R.id.apiKeyInput)
-        symbol.setText(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT"))
-        val savedKey = prefs.getString(OverlayService.KEY_API_KEY, "").orEmpty()
-        apiKey.setText(savedKey.ifBlank { BuildConfig.BINANCE_API_KEY })
+
+        findViewById<EditText>(R.id.symbolInput).setText(
+            prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT"),
+        )
         findViewById<Button>(R.id.permissionButton).setOnClickListener { openOverlaySettings() }
         findViewById<Button>(R.id.startButton).setOnClickListener { startOverlay() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
             stopService(Intent(this, OverlayService::class.java))
-            setStatus("Overlay stopped.")
+            setStatus("Floating checker stopped.")
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+
+        window.decorView.post {
+            if (!Settings.canDrawOverlays(this)) {
+                AlertDialog.Builder(this)
+                    .setTitle("Allow the floating checker")
+                    .setMessage("Android needs permission to show the UP / DOWN / DNT panel over other apps. No trades are placed.")
+                    .setPositiveButton("Open permission settings") { _, _ -> openOverlaySettings() }
+                    .setNegativeButton("Not now", null)
+                    .show()
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
         val granted = Settings.canDrawOverlays(this)
-        findViewById<TextView>(R.id.permissionState).text = if (granted) {
-            "Draw over other apps: granted"
-        } else {
-            "Draw over other apps: not granted"
+        findViewById<TextView>(R.id.permissionState).apply {
+            text = if (granted) "FLOATING PERMISSION  •  GRANTED" else "FLOATING PERMISSION  •  NEEDED"
+            setTextColor(ContextCompat.getColor(this@MainActivity, if (granted) R.color.up else R.color.dnt))
         }
     }
 
     private fun startOverlay() {
-        val symbol = findViewById<EditText>(R.id.symbolInput).text?.toString()?.trim()?.uppercase().orEmpty()
-        val typedKey = findViewById<EditText>(R.id.apiKeyInput).text?.toString()?.trim().orEmpty()
-        val apiKey = typedKey.ifBlank { BuildConfig.BINANCE_API_KEY.trim() }
+        val symbol = findViewById<EditText>(R.id.symbolInput)
+            .text?.toString()?.trim()?.uppercase().orEmpty()
+
         if (!symbol.matches(Regex("^[A-Z0-9]{5,20}$"))) {
-            setStatus("Use a Binance symbol such as BTCUSDT, ETHUSDT, or SOLUSDT.")
+            setStatus("Enter a Binance spot symbol, for example BTCUSDT, ETHUSDT, or SOLUSDT.")
             return
         }
-        if (apiKey.isEmpty()) {
-            setStatus("BINANCE_API_KEY is not set. That environment variable is the Binance API key.")
-            return
-        }
+
         if (!Settings.canDrawOverlays(this)) {
-            setStatus("Grant Draw over other apps, then come back and press Show overlay.")
+            setStatus("Allow Draw over other apps, then return here and tap Start checker.")
             openOverlaySettings()
             return
         }
-        prefs.edit()
-            .putString(OverlayService.KEY_SYMBOL, symbol)
-            .putString(OverlayService.KEY_API_KEY, apiKey)
-            .apply()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSymbol = symbol
+            notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+
+        launchOverlay(symbol)
+    }
+
+    private fun launchOverlay(symbol: String) {
+        prefs.edit().putString(OverlayService.KEY_SYMBOL, symbol).apply()
         val intent = Intent(this, OverlayService::class.java)
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
-            .putExtra(OverlayService.EXTRA_API_KEY, apiKey)
         ContextCompat.startForegroundService(this, intent)
-        setStatus("Overlay is calling the Binance REST API for $symbol. No websocket. Drag the card, tap the header to shrink it.")
+        setStatus("Starting $symbol. Reading public Binance market data — no API key required.")
     }
 
     private fun openOverlaySettings() {
@@ -82,7 +103,7 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun setStatus(text: String) {
-        findViewById<TextView>(R.id.statusText).text = text
+    private fun setStatus(message: String) {
+        findViewById<TextView>(R.id.statusText).text = message
     }
 }
