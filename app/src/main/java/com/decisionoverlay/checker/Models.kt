@@ -76,25 +76,18 @@ data class TimeframeScore(
 
     fun metricsText(): String = buildString {
         val link = if (connection == ConnectionState.CONNECTED) "Connected" else "Not Working"
-        appendLine("CHART DIRECTION: " + Scorer.timeframeBias(this@TimeframeScore).name)
-        appendLine("POINTS: " + signed(score) + " / 100")
-        appendLine("Status: $link")
+        appendLine("POINTS: " + signed(score))
+        appendLine("Binance: $link")
         appendLine(connectionDetail)
         if (!lastError.isNullOrBlank()) appendLine("Last error: $lastError")
-        appendLine("Updated: ${formatTime(updatedAt)}")
-        appendLine("Candles: $candleCount")
+        appendLine("Last fetch: ${formatTime(updatedAt)}")
+        appendLine("Completed candles: $candleCount")
         appendLine("Price: ${fmtPrice(price)}")
-        appendLine("EMA9: ${fmtNum(ema9)}")
-        appendLine("EMA21: ${fmtNum(ema21)}")
-        appendLine("RSI(14): ${fmtNum(rsi)}")
-        appendLine("MACD: ${fmtNum(macdLine)}")
-        appendLine("Signal: ${fmtNum(macdSignal)}")
-        appendLine("Histogram: ${fmtNum(macdHist)}")
-        appendLine("Candle bias: $candleBias")
-        appendLine(
-            "Volume vs 20-avg: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—"),
-        )
-        appendLine("Score: ${signed(score)} / 100")
+        when (interval) {
+            "1h" -> { appendLine("EMA20: ${fmtNum(ema9)}"); appendLine("RSI(14): ${fmtNum(rsi)}") }
+            "5m" -> { appendLine("EMA8: ${fmtNum(ema9)}"); appendLine("EMA21: ${fmtNum(ema21)}") }
+            "15m" -> { appendLine("MACD: ${fmtNum(macdLine)}"); appendLine("Signal: ${fmtNum(macdSignal)}"); appendLine("Volume / 20 SMA: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—")) }
+        }
         if (components.isEmpty()) {
             append("No component scores yet.")
         } else {
@@ -112,6 +105,8 @@ data class Decision(
     val fifteen: TimeframeScore,
     val hour: TimeframeScore,
     val problems: List<String> = emptyList(),
+    val totalScore: Int = 0,
+    val dntThreshold: Int = Scorer.DEFAULT_DNT_THRESHOLD,
 )
 
 data class EngineSnapshot(

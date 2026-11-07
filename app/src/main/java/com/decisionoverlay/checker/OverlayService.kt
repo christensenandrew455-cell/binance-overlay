@@ -27,9 +27,8 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        engine = MarketEngine(scope) { snapshot ->
-            main.post { render(snapshot) }
-        }
+        val threshold = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_DNT_THRESHOLD, Scorer.DEFAULT_DNT_THRESHOLD)
+        engine = MarketEngine(scope, { snapshot -> main.post { render(snapshot) } }, threshold)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -108,7 +107,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Trading Signal")
+            .setContentTitle("Trading")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
@@ -128,6 +127,7 @@ class OverlayService : Service() {
         const val EXTRA_SYMBOL = "symbol"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
+        const val KEY_DNT_THRESHOLD = "dnt_threshold"
         private const val CHANNEL_ID = "decision_overlay"
         private const val NOTIFICATION_ID = 42
     }

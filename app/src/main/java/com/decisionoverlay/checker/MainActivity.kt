@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.SeekBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -40,11 +41,28 @@ class MainActivity:AppCompatActivity(){
   findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));setStatus("Floating badge stopped. Chart checks in this app are unchanged.")}
   findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
   setupCollapsibleCharts()
-  engine=MarketEngine(screenScope){s->runOnUiThread{render(s)}}
+  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_DNT_THRESHOLD,Scorer.DEFAULT_DNT_THRESHOLD))
+  setupThresholdControl()
   // Deliberately do not fetch on app launch. The user starts the checker manually.
  }
  override fun onConfigurationChanged(newConfig:Configuration){super.onConfigurationChanged(newConfig)}
  override fun onDestroy(){engine.stop();screenScope.cancel();super.onDestroy()}
+ private fun setupThresholdControl(){
+  val seek=findViewById<SeekBar>(R.id.thresholdSeek)
+  val label=findViewById<TextView>(R.id.thresholdLabel)
+  val initial=prefs.getInt(OverlayService.KEY_DNT_THRESHOLD,Scorer.DEFAULT_DNT_THRESHOLD).coerceIn(2,6)
+  seek.progress=initial-2
+  label.text="DNT THRESHOLD: ±$initial"
+  seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+   override fun onProgressChanged(bar:SeekBar?,progress:Int,fromUser:Boolean){
+    val threshold=progress+2
+    label.text="DNT THRESHOLD: ±$threshold"
+    if(fromUser){prefs.edit().putInt(OverlayService.KEY_DNT_THRESHOLD,threshold).apply();engine.setDntThreshold(threshold)}
+   }
+   override fun onStartTrackingTouch(bar:SeekBar?){}
+   override fun onStopTrackingTouch(bar:SeekBar?){}
+  })
+ }
  private fun setupCollapsibleCharts(){
   listOf(R.id.chart5Header to R.id.chart5Body,R.id.chart15Header to R.id.chart15Body,R.id.chart1hHeader to R.id.chart1hBody).forEach{(headerId,bodyId)->
    val body=findViewById<View>(bodyId);body.visibility=View.GONE
@@ -76,9 +94,9 @@ class MainActivity:AppCompatActivity(){
   bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   bindChart(R.id.chart1hBody,R.id.chart1hHeader,"1 HOUR CHART",s.decision.hour)
-  findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No blockers. All three chart checks agree." else s.decision.problems.joinToString("\n\n"){"• "+it}
+  findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
-  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name
+  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   DNT ±"+s.decision.dntThreshold
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
   updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   updateHeader(R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)

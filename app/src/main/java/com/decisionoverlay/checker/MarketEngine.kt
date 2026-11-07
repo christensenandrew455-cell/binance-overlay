@@ -10,13 +10,14 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(EngineSnapshot)->Unit) {
+class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(EngineSnapshot)->Unit, initialDntThreshold:Int=Scorer.DEFAULT_DNT_THRESHOLD) {
  private val http=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(20,TimeUnit.SECONDS).build()
  private val client=BinanceClient(http); private val mutex=Mutex(); private val started=AtomicBoolean(false)
  private val logs=ArrayDeque<String>()
  private val candles=linkedMapOf("5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>(),"1h" to mutableListOf<Candle>())
  private val feeds=linkedMapOf("5m" to MutableFeed(),"15m" to MutableFeed(),"1h" to MutableFeed())
  @Volatile var symbol="BTCUSDT"; private set
+ @Volatile private var dntThreshold=initialDntThreshold.coerceIn(Scorer.MIN_DNT_THRESHOLD,Scorer.MAX_DNT_THRESHOLD)
  private val jobs=mutableListOf<Job>(); private var lastVerdict:Verdict?=null
  fun start(raw:String) {
   if(!started.compareAndSet(false,true)){updateSymbol(raw);return}
@@ -37,6 +38,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
    lastVerdict=null;logLocked("Symbol changed to $next");refreshAllLocked()
   }
  } }
+ fun setDntThreshold(value:Int){val next=value.coerceIn(Scorer.MIN_DNT_THRESHOLD,Scorer.MAX_DNT_THRESHOLD);if(next==dntThreshold)return;dntThreshold=next;scope.launch(Dispatchers.IO){mutex.withLock{logLocked("DNT threshold changed to ±$next");publishLocked()}}}
  fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
  fun stop(){jobs.forEach{it.cancel()};jobs.clear();http.dispatcher.executorService.shutdown();http.connectionPool.evictAll()}
  private fun poll(interval:String,period:Long){jobs+=scope.launch(Dispatchers.IO){
@@ -64,8 +66,8 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
   val five=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot())
   val fifteen=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
   val hour=Scorer.score1h(candles.getValue("1h"),feeds.getValue("1h").snapshot())
-  val decision=Scorer.decide(five,fifteen,hour)
-  if(decision.verdict!=lastVerdict){logLocked("Overall verdict ${decision.verdict}: "+decision.reason.take(180));lastVerdict=decision.verdict}
+  val decision=Scorer.decide(five,fifteen,hour,dntThreshold)
+  if(decision.verdict!=lastVerdict){logLocked("Overall verdict ${decision.verdict}, score ${signed(decision.totalScore)} / ±$dntThreshold: "+decision.reason.take(180));lastVerdict=decision.verdict}
   onUpdate(EngineSnapshot(symbol,decision,logs.joinToString("\n")))
  }
  private fun age(i:String,max:Long,now:Long){val f=feeds.getValue(i);val u=f.updatedAt?:return;if(f.state==ConnectionState.CONNECTED&&now-u>max){f.state=ConnectionState.NOT_WORKING;f.detail="Stale data";f.lastError="No fresh $i candle inside ${max/1000}s"}}
