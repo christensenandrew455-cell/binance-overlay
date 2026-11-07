@@ -50,14 +50,12 @@ class OverlayService : Service() {
         return START_STICKY
     }
 
-    private fun hideOverlay() {
-        // Remove the window before stopping the foreground service. onDestroy then
-        // sees a null panel and cannot attempt to remove the same window twice.
+    private fun hidePanel() {
+        // X means hide only. Leave the service and candle scheduler running.
+        // The app's explicit Stop button can stop the service when desired.
         val oldPanel = panel
         panel = null
         try { oldPanel?.detach() } catch (_: Exception) { }
-        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) { }
-        stopSelf()
     }
 
     override fun onDestroy() {
@@ -79,7 +77,9 @@ class OverlayService : Service() {
         panel = OverlayPanel(
             context = this,
             windowManager = windowManager,
-            onClose = { hideOverlay() },
+            // The X only hides the floating window. Keep the foreground service
+            // and market engine alive so hiding the badge cannot tear down the app.
+            onClose = { hidePanel() },
         )
         panel?.attach()
     }
