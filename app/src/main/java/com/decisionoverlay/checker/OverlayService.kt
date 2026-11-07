@@ -108,7 +108,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Binance decision checker")
+            .setContentTitle("Trading Signal")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
