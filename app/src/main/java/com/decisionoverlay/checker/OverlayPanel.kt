@@ -25,33 +25,69 @@ class OverlayPanel(
     private val onRefresh: () -> Unit,
     private val onClose: () -> Unit,
 ) {
+    private val panelWidth = minOf(
+        dp(360),
+        (context.resources.displayMetrics.widthPixels * 0.92f).toInt(),
+    )
+
     private val params = WindowManager.LayoutParams(
-        WindowManager.LayoutParams.WRAP_CONTENT,
+        panelWidth,
         WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         android.graphics.PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
-        x = dp(16)
-        y = dp(80)
+        x = dp(12)
+        y = dp(72)
     }
 
-    private val headerTitle = label(13f, COLOR_MUTED, bold = true).apply { text = "BTCUSDT" }
-    private val verdictView = label(40f, COLOR_DNT, bold = true).apply { gravity = Gravity.CENTER }
-    private val alignmentView = label(12f, COLOR_MUTED).apply { gravity = Gravity.CENTER }
-    private val reasonView = label(12f, COLOR_TEXT).apply { setLineSpacing(dp(2).toFloat(), 1f) }
+    private val headerTitle = label(13f, COLOR_MUTED, bold = true).apply {
+        text = "BINANCE DECISION"
+    }
+    private val verdictView = label(36f, COLOR_DNT, bold = true).apply {
+        gravity = Gravity.CENTER_VERTICAL
+    }
+    private val priceView = label(11f, COLOR_MUTED, bold = true).apply {
+        gravity = Gravity.END or Gravity.CENTER_VERTICAL
+    }
+    private val alignmentView = label(11f, COLOR_TEXT, bold = true).apply {
+        gravity = Gravity.CENTER
+        setPadding(dp(8), dp(7), dp(8), dp(7))
+        background = rounded(COLOR_SECTION, 9)
+    }
+    private val reasonView = label(12f, COLOR_MUTED).apply {
+        setLineSpacing(dp(2).toFloat(), 1f)
+        maxLines = 2
+    }
+
+    private val verdictHero = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(COLOR_HERO_DNT, 14)
+        setPadding(dp(14), dp(10), dp(14), dp(11))
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(verdictView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(priceView)
+        }
+        addView(row, matchWrap())
+        addView(alignmentView, matchWrap(top = 6))
+        addView(reasonView, matchWrap(top = 7))
+    }
+
     private val symbolInput = EditText(context).apply {
         setText("BTCUSDT")
         setTextColor(COLOR_TEXT)
         setHintTextColor(COLOR_MUTED)
         hint = "BTCUSDT"
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         imeOptions = EditorInfo.IME_ACTION_DONE
-        background = rounded(COLOR_INPUT, 10)
-        setPadding(dp(10), dp(8), dp(10), dp(8))
-        setOnTouchListener { view, event ->
+        singleLine = true
+        background = rounded(COLOR_INPUT, 9)
+        setPadding(dp(10), dp(7), dp(10), dp(7))
+        setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) enableTyping()
             false
         }
@@ -64,37 +100,42 @@ class OverlayPanel(
             }
         }
     }
-    private val five = Section("5-minute")
-    private val fifteen = Section("15-minute")
-    private val hour = Section("1-hour")
-    private val logSection = Section("Error log")
+
+    private val five = Section("5 MINUTE CHART")
+    private val fifteen = Section("15 MINUTE CHART")
+    private val hour = Section("1 HOUR CHART")
+    private val problemsSection = Section("PROBLEMS")
+    private val logSection = Section("CONNECTION / ERROR LOG")
+
     private val scrollBody = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(12), dp(4), dp(12), dp(12))
-        addView(reasonView, matchWrap())
-        addView(spacer(8))
-        addView(symbolRow())
-        addView(spacer(8))
+        setPadding(dp(10), dp(10), dp(10), dp(12))
+        addView(symbolRow(), matchWrap(bottom = 10))
         addView(five.root)
         addView(fifteen.root)
         addView(hour.root)
+        addView(problemsSection.root)
         addView(logSection.root)
-        addView(button("Refresh now") { onRefresh() })
+        addView(actionRow(), matchWrap(top = 2))
     }
+
     private val scroll = object : ScrollView(context) {
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val cap = (resources.displayMetrics.heightPixels * 0.58f).toInt()
+            val cap = (resources.displayMetrics.heightPixels * 0.55f).toInt()
             super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST))
         }
-    }.apply { addView(scrollBody) }
+    }.apply {
+        isFillViewport = false
+        addView(scrollBody)
+        isVerticalScrollBarEnabled = false
+    }
 
     private val card = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         background = panelBackground()
-        minimumWidth = dp(280)
+        minimumWidth = panelWidth
         addView(header())
-        addView(verdictView, matchWrap(top = 2))
-        addView(alignmentView, matchWrap(bottom = 8))
+        addView(verdictHero, matchWrap(start = 10, end = 10, bottom = 4))
         addView(scroll)
     }
 
@@ -118,32 +159,58 @@ class OverlayPanel(
     }
 
     fun render(snapshot: EngineSnapshot) {
-        headerTitle.text = snapshot.symbol
+        headerTitle.text = "BINANCE  •  " + snapshot.symbol
         if (!symbolInput.hasFocus() && symbolInput.text.toString() != snapshot.symbol) {
             symbolInput.setText(snapshot.symbol)
         }
+
         val decision = snapshot.decision
         verdictView.text = decision.verdict.name
         verdictView.setTextColor(verdictColor(decision.verdict))
-        alignmentView.text = listOf(decision.hour, decision.fifteen, decision.five).joinToString("   ") {
-            "${it.interval.uppercase()} ${it.headerStatus().substringBefore("   ")}"
+        verdictHero.background = rounded(heroColor(decision.verdict), 14)
+        priceView.text = "LAST PRICE\n$" + fmtPrice(decision.five.price)
+
+        alignmentView.text = listOf(decision.hour, decision.fifteen, decision.five)
+            .joinToString("     ") { summary(it) }
+
+        reasonView.text = when (decision.verdict) {
+            Verdict.UP -> "All three timeframe checks agree UP."
+            Verdict.DOWN -> "All three timeframe checks agree DOWN."
+            Verdict.DNT -> "DNT — open Problems below to see exactly what is blocking a direction."
         }
-        reasonView.text = decision.reason
+
         five.bind(decision.five)
         fifteen.bind(decision.fifteen)
         hour.bind(decision.hour)
-        logSection.bindLog(snapshot.logText.ifBlank { "No log lines yet." })
+
+        val problems = decision.problems
+        val problemText = if (problems.isEmpty()) {
+            "No blocking problems. The 1h trend, 15m momentum, and 5m confirmation agree."
+        } else {
+            problems.joinToString("\n\n") { "• " + it }
+        }
+        problemsSection.bindText(
+            if (problems.isEmpty()) "CLEAR" else problems.size.toString() + " ISSUE(S)",
+            problemText,
+            if (problems.isEmpty()) COLOR_UP else COLOR_DNT,
+        )
+
+        logSection.bindLog(snapshot.logText.ifBlank { "No connection log entries yet." })
+    }
+
+    private fun summary(score: TimeframeScore): String {
+        return score.interval.uppercase() + " " +
+            Scorer.timeframeBias(score).name + " " + signed(score.score)
     }
 
     private fun header(): View {
-        val title = headerTitle
         val min = clickable("–") { setMinimized(!minimized) }
         val close = clickable("×") { onClose() }
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(8), dp(4))
-            addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            setPadding(dp(12), dp(7), dp(8), dp(7))
+            addView(headerTitle, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(min)
             addView(close)
             setOnTouchListener { _, event -> drag(event) }
@@ -151,13 +218,20 @@ class OverlayPanel(
     }
 
     private fun symbolRow(): View {
-        val apply = button("Set") { submitSymbol() }
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(symbolInput, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(space(8), LinearLayout.LayoutParams(dp(8), 1))
-            addView(apply)
+            addView(symbolInput, LinearLayout.LayoutParams(0, dp(42), 1f))
+            addView(space(7), LinearLayout.LayoutParams(dp(7), 1))
+            addView(button("SET") { submitSymbol() })
+        }
+    }
+
+    private fun actionRow(): View {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(button("REFRESH DATA") { onRefresh() })
         }
     }
 
@@ -203,8 +277,8 @@ class OverlayPanel(
                 val dx = (event.rawX - downRawX).toInt()
                 val dy = (event.rawY - downRawY).toInt()
                 if (abs(dx) + abs(dy) > dp(4)) moved = true
-                params.x = dragStartX + dx
-                params.y = dragStartY + dy
+                params.x = (dragStartX + dx).coerceAtLeast(0)
+                params.y = (dragStartY + dy).coerceAtLeast(0)
                 if (attached) windowManager.updateViewLayout(root, params)
                 return true
             }
@@ -220,68 +294,86 @@ class OverlayPanel(
         minimized = value
         scroll.visibility = if (value) View.GONE else View.VISIBLE
         alignmentView.visibility = if (value) View.GONE else View.VISIBLE
-        card.minimumWidth = if (value) dp(88) else dp(280)
-        verdictView.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (value) 22f else 40f)
+        reasonView.visibility = if (value) View.GONE else View.VISIBLE
+        card.minimumWidth = if (value) dp(116) else panelWidth
+        verdictView.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (value) 23f else 36f)
     }
 
     private inner class Section(title: String) {
-        private val chevron = label(12f, COLOR_ACCENT, bold = true).apply { text = "▶" }
-        private val titleView = label(14f, COLOR_TEXT, bold = true).apply { text = title }
-        private val statusView = label(11f, COLOR_MUTED).apply { gravity = Gravity.END }
-        private val body = label(12f, COLOR_TEXT).apply {
-            typeface = Typeface.MONOSPACE
+        private val chevron = label(11f, COLOR_ACCENT, bold = true).apply { text = "▸" }
+        private val titleView = label(12f, COLOR_TEXT, bold = true).apply { text = title }
+        private val statusView = label(10f, COLOR_MUTED, bold = true).apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        private val body = label(11f, COLOR_TEXT).apply {
             visibility = View.GONE
-            setLineSpacing(dp(1).toFloat(), 1.05f)
+            setLineSpacing(dp(2).toFloat(), 1.02f)
+            setPadding(dp(4), dp(8), dp(4), dp(3))
+            setTextIsSelectable(true)
         }
         private var open = false
+
         val root: View = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(COLOR_SECTION, 12)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(COLOR_SECTION, 11)
+            setPadding(dp(10), dp(9), dp(10), dp(8))
             val head = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 addView(chevron)
-                addView(space(6), LinearLayout.LayoutParams(dp(6), 1))
+                addView(space(7), LinearLayout.LayoutParams(dp(7), 1))
                 addView(titleView)
                 addView(statusView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 setOnClickListener { toggle() }
             }
             addView(head)
-            addView(body, matchWrap(top = 6))
-            layoutParams = matchWrap(bottom = 8)
+            addView(body, matchWrap(top = 4))
+            layoutParams = matchWrap(bottom = 7)
         }
 
         fun bind(score: TimeframeScore) {
-            statusView.text = score.headerStatus()
+            val bias = Scorer.timeframeBias(score)
+            statusView.text = if (score.connection == ConnectionState.CONNECTED) {
+                bias.name + "  " + signed(score.score)
+            } else {
+                "NOT WORKING"
+            }
             statusView.setTextColor(
-                when (score.connection) {
-                    ConnectionState.CONNECTED -> if (score.score > 0) COLOR_UP else if (score.score < 0) COLOR_DOWN else COLOR_DNT
-                    ConnectionState.NOT_WORKING -> COLOR_DOWN
-                },
+                if (score.connection != ConnectionState.CONNECTED) COLOR_DOWN else verdictColor(bias),
             )
             body.text = score.metricsText()
         }
 
-        fun bindLog(text: String) {
-            statusView.text = if (text.contains("FAIL") || text.contains("failure") || text.contains("Rejected")) "Check" else "Log"
-            statusView.setTextColor(COLOR_MUTED)
+        fun bindText(status: String, text: String, color: Int) {
+            statusView.text = status
+            statusView.setTextColor(color)
             body.text = text
+        }
+
+        fun bindLog(text: String) {
+            val hasProblems = text.contains("FAIL", ignoreCase = true) ||
+                text.contains("fallback", ignoreCase = true) ||
+                text.contains("Rejected", ignoreCase = true)
+            bindText(
+                if (hasProblems) "CHECK" else "OK",
+                text,
+                if (hasProblems) COLOR_DNT else COLOR_MUTED,
+            )
         }
 
         private fun toggle() {
             open = !open
-            chevron.text = if (open) "▼" else "▶"
+            chevron.text = if (open) "▾" else "▸"
             body.visibility = if (open) View.VISIBLE else View.GONE
         }
     }
 
     private fun button(text: String, onClick: () -> Unit): TextView =
-        label(13f, COLOR_BG, bold = true).apply {
+        label(11f, COLOR_BG, bold = true).apply {
             this.text = text
             gravity = Gravity.CENTER
-            background = rounded(COLOR_ACCENT, 10)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = rounded(COLOR_ACCENT, 9)
+            setPadding(dp(13), dp(9), dp(13), dp(9))
             setOnClickListener { onClick() }
         }
 
@@ -301,18 +393,21 @@ class OverlayPanel(
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
 
-    private fun spacer(value: Int) = View(context).apply {
-        layoutParams = LinearLayout.LayoutParams(1, dp(value))
-    }
-
     private fun space(value: Int) = View(context)
 
-    private fun matchWrap(top: Int = 0, bottom: Int = 0) = LinearLayout.LayoutParams(
+    private fun matchWrap(
+        top: Int = 0,
+        bottom: Int = 0,
+        start: Int = 0,
+        end: Int = 0,
+    ) = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
         topMargin = dp(top)
         bottomMargin = dp(bottom)
+        leftMargin = dp(start)
+        rightMargin = dp(end)
     }
 
     private fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply {
@@ -322,8 +417,14 @@ class OverlayPanel(
 
     private fun panelBackground() = GradientDrawable().apply {
         cornerRadius = dp(18).toFloat()
-        setColor(Color.argb(236, 14, 18, 28))
-        setStroke(dp(1), Color.argb(90, 122, 162, 255))
+        setColor(Color.argb(247, 12, 17, 27))
+        setStroke(dp(1), Color.argb(120, 91, 125, 182))
+    }
+
+    private fun heroColor(verdict: Verdict) = when (verdict) {
+        Verdict.UP -> COLOR_HERO_UP
+        Verdict.DOWN -> COLOR_HERO_DOWN
+        Verdict.DNT -> COLOR_HERO_DNT
     }
 
     private fun verdictColor(verdict: Verdict) = when (verdict) {
@@ -332,17 +433,21 @@ class OverlayPanel(
         Verdict.DNT -> COLOR_DNT
     }
 
-    private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+    private fun dp(value: Int): Int =
+        (value * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
     companion object {
         private val COLOR_TEXT = Color.parseColor("#F4F7FB")
         private val COLOR_MUTED = Color.parseColor("#9AA4B5")
         private val COLOR_UP = Color.parseColor("#3DDC97")
-        private val COLOR_DOWN = Color.parseColor("#FF5D73")
-        private val COLOR_DNT = Color.parseColor("#FFC14D")
-        private val COLOR_ACCENT = Color.parseColor("#7AA2FF")
-        private val COLOR_BG = Color.parseColor("#0E121C")
-        private val COLOR_INPUT = Color.parseColor("#242B3D")
-        private val COLOR_SECTION = Color.parseColor("#1A2130")
+        private val COLOR_DOWN = Color.parseColor("#FF647C")
+        private val COLOR_DNT = Color.parseColor("#FFC45C")
+        private val COLOR_ACCENT = Color.parseColor("#86A9FF")
+        private val COLOR_BG = Color.parseColor("#101726")
+        private val COLOR_INPUT = Color.parseColor("#252F42")
+        private val COLOR_SECTION = Color.parseColor("#1A2435")
+        private val COLOR_HERO_UP = Color.parseColor("#17352E")
+        private val COLOR_HERO_DOWN = Color.parseColor("#3A202B")
+        private val COLOR_HERO_DNT = Color.parseColor("#352D1C")
     }
 }
