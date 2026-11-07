@@ -12,6 +12,11 @@ class ScorerTest {
  private fun c(i:Int,o:Double,cl:Double,hi:Double=maxOf(o,cl),lo:Double=minOf(o,cl))=Candle(i*300000L,o,hi,lo,cl,10.0,(i+1)*300000L-1,true)
  private fun flat()=(0 until 90).map{c(it,100.0,100.0)}
  private fun trend(dir:Int)=(0 until 90).map{val p=100.0+dir*it*.5;c(it,p,p+dir*.5)}
- private fun structure(dir:Int):List<Candle>{val a=if(dir>0)listOf(100.0,100.5,101.0,102.0,102.5,103.0)else listOf(103.0,102.5,102.0,101.0,100.5,100.0);return a.mapIndexed{i,p->val cl=p+dir*.2;c(i,p,cl,maxOf(p,cl)+.3,minOf(p,cl)-.3)}}
+ private fun structure(dir:Int):List<Candle>{
+  val baseline=if(dir>0)100.0 else 104.0
+  val prefix=(0 until 39).map{idx->c(idx,baseline,baseline)}
+  val tail=if(dir>0)listOf(100.0,100.2,100.4,101.0,101.2,101.4)else listOf(104.0,103.8,103.6,103.0,102.8,102.6)
+  return prefix+tail.mapIndexed{idx,p->val n=39+idx;val o=if(dir>0)p-.1 else p+.1;val close=if(dir>0)p+.1 else p-.1;c(n,o,close,maxOf(o,close)+.1,minOf(o,close)-.1)}
+ }
  private fun recent(dir:Int):List<Candle>{var p=100.0;val out=mutableListOf<Candle>();for(i in 0 until 60){val n=p-dir*.3;out+=c(i,p,n);p=n};for(i in 60 until 85){val n=p-dir*.6;out+=c(i,p,n);p=n};for(i in 85 until 90){val n=p+dir*(1.0+(i-85)*1.0);out+=c(i,p,n);p=n};return out}
 }
