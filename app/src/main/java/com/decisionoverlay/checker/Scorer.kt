@@ -1,47 +1,82 @@
 package com.decisionoverlay.checker
+
+/** Weighted signal model: 1h ±4, 15m MACD ±2 + volume ±2, 5m EMA8/21 ±2. */
 object Scorer {
  const val MIN_CANDLES=40
- const val DEFAULT_DNT_THRESHOLD=3
+ const val DEFAULT_DNT_THRESHOLD=4
  const val MIN_DNT_THRESHOLD=2
  const val MAX_DNT_THRESHOLD=6
- private const val CROSS_HORIZON=3
- fun score5m(c:List<Candle>,f:FeedStatus)=score(c,f,"5-minute","5m",::fiveParts)
- fun score15m(c:List<Candle>,f:FeedStatus,direction:Int=0)=score(c,f,"15-minute","15m"){d,p->fifteenParts(d,direction)}
- fun score1h(c:List<Candle>,f:FeedStatus,direction:Int=0)=score(c,f,"1-hour","1h"){d,p->hourParts(d,p,direction)}
- fun timeframeBias(s:TimeframeScore):Verdict{if(s.connection!=ConnectionState.CONNECTED||s.candleCount<MIN_CANDLES)return Verdict.DNT;return when{s.score>0->Verdict.UP;s.score<0->Verdict.DOWN;else->Verdict.DNT}}
- fun decide(f:TimeframeScore,m:TimeframeScore,h:TimeframeScore,dntThreshold:Int=DEFAULT_DNT_THRESHOLD):Decision{
-  val t=dntThreshold.coerceIn(MIN_DNT_THRESHOLD,MAX_DNT_THRESHOLD);val problems=mutableListOf<String>();val all=listOf(f,m,h)
-  all.filter{it.candleCount<MIN_CANDLES}.forEach{problems.add(it.label+": need at least "+MIN_CANDLES+" completed candles; received "+it.candleCount+".")}
-  all.filter{it.connection!=ConnectionState.CONNECTED}.forEach{problems.add(it.label+": Binance feed is not connected ("+it.connectionDetail+").");if(!it.lastError.isNullOrBlank())problems.add(it.label+": "+it.lastError)}
-  val total=(f.score+m.score+h.score).coerceIn(-10,10)
-  val v=when{problems.isNotEmpty()->Verdict.DNT;total>=t->Verdict.UP;total<=-t->Verdict.DOWN;else->Verdict.DNT}
-  val reason=when(v){Verdict.UP->"UP: weighted score "+signed(total)+" reaches +"+t+".";Verdict.DOWN->"DOWN: weighted score "+signed(total)+" reaches -"+t+".";Verdict.DNT->if(problems.isNotEmpty())"DNT: market data is incomplete or unavailable." else "DNT: score "+signed(total)+" is inside ±"+t+"."}
-  return Decision(v,reason,f,m,h,problems,total,t)
+
+ fun score5m(candles:List<Candle>,feed:FeedStatus)=score(candles,feed,"5-minute","5m",::components5m)
+ fun score15m(candles:List<Candle>,feed:FeedStatus)=score(candles,feed,"15-minute","15m",::components15m)
+ fun score1h(candles:List<Candle>,feed:FeedStatus)=score(candles,feed,"1-hour","1h",::components1h)
+
+ fun timeframeBias(score:TimeframeScore):Verdict {
+  if(score.connection!=ConnectionState.CONNECTED||score.candleCount<MIN_CANDLES)return Verdict.DNT
+  return when { score.score>0->Verdict.UP;score.score<0->Verdict.DOWN;else->Verdict.DNT }
  }
- private fun score(c:List<Candle>,feed:FeedStatus,label:String,interval:String,fn:(List<Candle>,Double)->List<ComponentScore>):TimeframeScore{
-  val d=c.filter{it.closed}.sortedBy{it.openTime};val closes=d.map{it.close};val price=closes.lastOrNull()
-  val fast=when(interval){"1h"->if(price==null)null else Indicators.ema(closes,20);"5m"->if(price==null)null else Indicators.ema(closes,8);else->null}
-  val slow=if(interval=="5m"&&price!=null)Indicators.ema(closes,21)else null;val rsi=if(price==null)null else Indicators.rsi(closes);val macd=if(price==null)null else Indicators.macd(closes)
-  val parts=if(d.size<MIN_CANDLES||price==null)listOf(ComponentScore("Data",0,"Need "+MIN_CANDLES+" completed candles, have "+d.size+"."))else fn(d,price)
-  return TimeframeScore(label,interval,parts.sumOf{it.points},parts,price,fast,slow,rsi,macd?.line,macd?.signal,macd?.histogram,if(d.isNotEmpty()&&d.last().close>=d.last().open)"last candle up" else "last candle down",Indicators.volumeRatio(d),feed.state,feed.detail,feed.updatedAt,feed.lastError,d.size)
+
+ fun decide(five:TimeframeScore,fifteen:TimeframeScore,hour:TimeframeScore,dntThreshold:Int=DEFAULT_DNT_THRESHOLD):Decision {
+  val threshold=dntThreshold.coerceIn(MIN_DNT_THRESHOLD,MAX_DNT_THRESHOLD)
+  val problems=mutableListOf<String>()
+  val all=listOf(five,fifteen,hour)
+  all.filter{it.candleCount<MIN_CANDLES}.forEach{problems+="${it.label}: need at least $MIN_CANDLES completed candles; received ${it.candleCount}."}
+  all.filter{it.connection!=ConnectionState.CONNECTED}.forEach{
+   problems+="${it.label}: Binance feed is not connected (${it.connectionDetail})."
+   if(!it.lastError.isNullOrBlank())problems+="${it.label}: ${it.lastError}"
+  }
+  val total=(hour.score+fifteen.score+five.score).coerceIn(-10,10)
+  val verdict=when { problems.isNotEmpty()->Verdict.DNT;total>=threshold->Verdict.UP;total<=-threshold->Verdict.DOWN;else->Verdict.DNT }
+  val reason=when(verdict){
+   Verdict.UP->"UP: combined score ${signed(total)} reaches the +$threshold threshold."
+   Verdict.DOWN->"DOWN: combined score ${signed(total)} reaches the -$threshold threshold."
+   Verdict.DNT->if(problems.isNotEmpty())"DNT: market data is incomplete or unavailable." else "DNT: combined score ${signed(total)} is inside the ±$threshold neutral zone."
+  }
+  return Decision(verdict,reason,five,fifteen,hour,problems,total,threshold)
  }
- private fun fiveParts(d:List<Candle>,price:Double):List<ComponentScore>{
-  val ema=Indicators.ema(d.map{it.close},8);val macd=Indicators.macd(d.map{it.close});val recent=macd?.barsSinceCross?.let{it<=CROSS_HORIZON}==true
-  val pts=when{ema==null||macd==null||!recent->0;price>ema&&macd.crossDirection==1->6;price<ema&&macd.crossDirection==-1->-6;else->0}
-  val age=macd?.barsSinceCross?.let{it.toString()+" candles"}?:"none"
-  val detail=when(pts){6->"Price above EMA8 and bullish MACD crossover within last 3 completed 5m candles (+6).";-6->"Price below EMA8 and bearish MACD crossover within last 3 completed 5m candles (-6).";else->"No fresh aligned EMA8/MACD crossover trigger (0). Crossover age: "+age+"."}
-  return listOf(ComponentScore("5M immediate trigger",pts,detail))
+
+ private fun score(candles:List<Candle>,feed:FeedStatus,label:String,interval:String,componentsFor:(List<Candle>,Double)->List<ComponentScore>):TimeframeScore {
+  val data=candles.filter{it.closed}.sortedBy{it.openTime}
+  val closes=data.map{it.close};val price=closes.lastOrNull()
+  val fast=when(interval){ "1h"->if(price==null)null else Indicators.ema(closes,20); "5m"->if(price==null)null else Indicators.ema(closes,8);else->null }
+  val slow=if(interval=="5m"&&price!=null)Indicators.ema(closes,21)else null
+  val rsi=if(price==null)null else Indicators.rsi(closes)
+  val macd=if(price==null)null else Indicators.macd(closes)
+  val components=if(data.size<MIN_CANDLES||price==null)listOf(ComponentScore("Data",0,"Need $MIN_CANDLES completed candles, have ${data.size}."))else componentsFor(data,price)
+  return TimeframeScore(label,interval,components.sumOf{it.points},components,price,fast,slow,rsi,macd?.line,macd?.signal,macd?.histogram,candleBias(data),Indicators.volumeRatio(data),feed.state,feed.detail,feed.updatedAt,feed.lastError,data.size)
  }
- private fun fifteenParts(d:List<Candle>,direction:Int):List<ComponentScore>{
-  val s=structure(d);val pts=when{direction>0&&s>0->3;direction<0&&s<0->-3;else->0};val desc=when(s){1->"higher highs and higher lows";-1->"lower highs and lower lows";else->"mixed/ranging structure"}
-  val detail=when{pts>0->"15m "+desc+" confirms 5m UP (+3).";pts<0->"15m "+desc+" confirms 5m DOWN (-3).";else->"15m "+desc+" does not confirm 5m direction (0)."}
-  return listOf(ComponentScore("15M structure confirmation",pts,detail))
+
+ private fun components1h(data:List<Candle>,price:Double):List<ComponentScore>{
+  val ema20=Indicators.ema(data.map{it.close},20);val rsi=Indicators.rsi(data.map{it.close})
+  val distance=if(ema20==null||price==0.0)Double.POSITIVE_INFINITY else kotlin.math.abs(price-ema20)/price
+  val neutral=distance<=0.0005||(rsi!=null&&rsi in 45.0..55.0)
+  val points=when{neutral||ema20==null||rsi==null->0;price>ema20&&rsi>50.0->4;price<ema20&&rsi<50.0->-4;else->0}
+  val desc=when(points){4->"Bullish trend (+4).";-4->"Bearish trend (-4).";else->"Neutral/mixed trend (0)."}
+  return listOf(ComponentScore("1H trend (EMA20 + RSI)",points,"Price ${fmtNum(price)} vs EMA20 ${fmtNum(ema20)}; RSI ${fmtNum(rsi)}. $desc"))
  }
- private fun structure(d:List<Candle>):Int{if(d.size<6)return 0;val old=d.takeLast(6).take(3);val recent=d.takeLast(3);val hh=recent.maxOf{it.high}>old.maxOf{it.high};val hl=recent.minOf{it.low}>old.minOf{it.low};val lh=recent.maxOf{it.high}<old.maxOf{it.high};val ll=recent.minOf{it.low}<old.minOf{it.low};return when{hh&&hl->1;lh&&ll->-1;else->0}}
- private fun hourParts(d:List<Candle>,price:Double,direction:Int):List<ComponentScore>{
-  val ema=Indicators.ema(d.map{it.close},20);val rsi=Indicators.rsi(d.map{it.close});val dist=if(ema==null||price==0.0)Double.POSITIVE_INFINITY else kotlin.math.abs(price-ema)/price
-  val range=dist<=0.001||(rsi!=null&&rsi in 45.0..55.0);val trend=when{range||ema==null||rsi==null->0;price>ema&&rsi>55.0->1;price<ema&&rsi<45.0->-1;else->0}
-  val pts=when{direction==0||trend==0->0;direction==trend->1;else->-1};val desc=when(pts){1->"1h supports 5m direction (+1).";-1->"1h actively opposes 5m direction (-1).";else->"1h is ranging/mixed or has no clear filter (0)."}
-  return listOf(ComponentScore("1H weak directional filter",pts,"Price "+fmtNum(price)+" vs EMA20 "+fmtNum(ema)+"; RSI "+fmtNum(rsi)+". "+desc))
+
+ private fun components15m(data:List<Candle>,price:Double):List<ComponentScore>{
+  val macd=Indicators.macd(data.map{it.close})
+  val macdPoints=when{macd==null->0;macd.line>macd.signal->2;macd.line<macd.signal->-2;else->0}
+  val ratio=Indicators.volumeRatio(data)
+  val volumePoints=when{ratio==null||ratio<=1.0->0;macdPoints>0->2;macdPoints<0->-2;else->0}
+  val macdText=when(macdPoints){2->"bullish momentum (+2).";-2->"bearish momentum (-2).";else->"neutral/unavailable (0)."}
+  val volumeText=when(volumePoints){2->"confirms bullish MACD (+2).";-2->"confirms bearish MACD (-2).";else->"no directional volume confirmation (0)."}
+  return listOf(
+   ComponentScore("15M MACD vs signal",macdPoints,"MACD ${fmtNum(macd?.line)} vs signal ${fmtNum(macd?.signal)}; $macdText"),
+   ComponentScore("15M volume confirmation",volumePoints,"Latest volume is ${fmtNum(ratio)}x the previous 20-candle average; $volumeText")
+  )
+ }
+
+ private fun components5m(data:List<Candle>,price:Double):List<ComponentScore>{
+  val closes=data.map{it.close};val ema8=Indicators.ema(closes,8);val ema21=Indicators.ema(closes,21)
+  val points=when{ema8==null||ema21==null->0;ema8>ema21->2;ema8<ema21->-2;else->0}
+  val desc=when(points){2->"bullish short-term direction (+2).";-2->"bearish short-term direction (-2).";else->"neutral/unavailable (0)."}
+  return listOf(ComponentScore("5M EMA 8 / EMA 21",points,"EMA8 ${fmtNum(ema8)} vs EMA21 ${fmtNum(ema21)}; $desc"))
+ }
+
+ private fun candleBias(data:List<Candle>):String{
+  if(data.isEmpty())return "n/a"
+  return if(data.last().close>=data.last().open)"last candle up" else "last candle down"
  }
 }

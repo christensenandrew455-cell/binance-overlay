@@ -64,8 +64,9 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
   val now=System.currentTimeMillis()
   age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now);age("1h",HOUR*2,now)
   val five=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot())
-  val fifteen=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
-  val hour=Scorer.score1h(candles.getValue("1h"),feeds.getValue("1h").snapshot())
+  val direction=five.score.compareTo(0)
+  val fifteen=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot(),direction)
+  val hour=Scorer.score1h(candles.getValue("1h"),feeds.getValue("1h").snapshot(),direction)
   val decision=Scorer.decide(five,fifteen,hour,dntThreshold)
   if(decision.verdict!=lastVerdict){logLocked("Overall verdict ${decision.verdict}, score ${signed(decision.totalScore)} / ±$dntThreshold: "+decision.reason.take(180));lastVerdict=decision.verdict}
   onUpdate(EngineSnapshot(symbol,decision,logs.joinToString("\n")))

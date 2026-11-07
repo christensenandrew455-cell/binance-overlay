@@ -1,9 +1,79 @@
 package com.decisionoverlay.checker
+
 object Indicators {
- fun ema(v:List<Double>,p:Int):Double?=emaSeries(v,p).lastOrNull()
- fun emaSeries(v:List<Double>,p:Int):List<Double>{if(v.size<p||p<=0)return emptyList();val k=2.0/(p+1);var e=v.take(p).average();val o=ArrayList<Double>();o.add(e);for(i in p until v.size){e=v[i]*k+e*(1-k);o.add(e)};return o}
- fun rsi(c:List<Double>,p:Int=14):Double?{if(c.size<p+1)return null;var g=0.0;var l=0.0;for(i in 1..p){val d=c[i]-c[i-1];if(d>=0)g+=d else l-=d};var ag=g/p;var al=l/p;for(i in p+1 until c.size){val d=c[i]-c[i-1];ag=(ag*(p-1)+maxOf(d,0.0))/p;al=(al*(p-1)+maxOf(-d,0.0))/p};if(al==0.0)return 100.0;val rs=ag/al;return 100.0-100.0/(1.0+rs)}
- data class Macd(val line:Double,val signal:Double,val histogram:Double,val previousHistogram:Double?,val crossDirection:Int,val barsSinceCross:Int?)
- fun macd(c:List<Double>,fast:Int=12,slow:Int=26,sp:Int=9):Macd?{if(c.size<slow+sp)return null;val ef=emaSeries(c,fast);val es=emaSeries(c,slow);if(ef.isEmpty()||es.isEmpty())return null;val off=ef.size-es.size;val line=es.indices.map{ef[it+off]-es[it]};val sig=emaSeries(line,sp);if(sig.isEmpty())return null;val hist=sig.indices.map{line[it+sp-1]-sig[it]};var dir=0;var age:Int?=null;for(i in hist.lastIndex downTo 1){if(hist[i-1]<=0&&hist[i]>0){dir=1;age=hist.lastIndex-i;break};if(hist[i-1]>=0&&hist[i]<0){dir=-1;age=hist.lastIndex-i;break}};return Macd(line.last(),sig.last(),hist.last(),hist.getOrNull(hist.lastIndex-1),dir,age)}
- fun volumeRatio(c:List<Candle>):Double?{if(c.size<6)return null;val a=c.dropLast(1).takeLast(20).map{it.volume}.average();if(a<=0)return null;return c.last().volume/a}
+    fun ema(values: List<Double>, period: Int): Double? = emaSeries(values, period).lastOrNull()
+
+    fun emaSeries(values: List<Double>, period: Int): List<Double> {
+        if (values.size < period || period <= 0) return emptyList()
+        val k = 2.0 / (period + 1)
+        var ema = values.take(period).average()
+        val out = ArrayList<Double>(values.size - period + 1)
+        out.add(ema)
+        for (index in period until values.size) {
+            ema = values[index] * k + ema * (1 - k)
+            out.add(ema)
+        }
+        return out
+    }
+
+    /** Wilder RSI. Returns null until there are period + 1 closes. */
+    fun rsi(closes: List<Double>, period: Int = 14): Double? {
+        if (closes.size < period + 1) return null
+        var gain = 0.0
+        var loss = 0.0
+        for (index in 1..period) {
+            val delta = closes[index] - closes[index - 1]
+            if (delta >= 0) gain += delta else loss -= delta
+        }
+        var avgGain = gain / period
+        var avgLoss = loss / period
+        for (index in (period + 1) until closes.size) {
+            val delta = closes[index] - closes[index - 1]
+            val up = if (delta > 0) delta else 0.0
+            val down = if (delta < 0) -delta else 0.0
+            avgGain = (avgGain * (period - 1) + up) / period
+            avgLoss = (avgLoss * (period - 1) + down) / period
+        }
+        if (avgLoss == 0.0) return 100.0
+        val rs = avgGain / avgLoss
+        return 100.0 - (100.0 / (1.0 + rs))
+    }
+
+    data class Macd(
+        val line: Double,
+        val signal: Double,
+        val histogram: Double,
+        val previousHistogram: Double?,
+    )
+
+    fun macd(closes: List<Double>, fast: Int = 12, slow: Int = 26, signalPeriod: Int = 9): Macd? {
+        if (closes.size < slow + signalPeriod) return null
+        val emaFast = emaSeries(closes, fast)
+        val emaSlow = emaSeries(closes, slow)
+        if (emaFast.isEmpty() || emaSlow.isEmpty()) return null
+        val offset = emaFast.size - emaSlow.size
+        val macdLine = ArrayList<Double>(emaSlow.size)
+        for (index in emaSlow.indices) {
+            macdLine.add(emaFast[index + offset] - emaSlow[index])
+        }
+        val signalSeries = emaSeries(macdLine, signalPeriod)
+        if (signalSeries.isEmpty()) return null
+        val line = macdLine.last()
+        val signal = signalSeries.last()
+        val histogram = line - signal
+        val previous = if (signalSeries.size >= 2 && macdLine.size >= 2) {
+            macdLine[macdLine.size - 2] - signalSeries[signalSeries.size - 2]
+        } else {
+            null
+        }
+        return Macd(line, signal, histogram, previous)
+    }
+
+    fun volumeRatio(candles: List<Candle>): Double? {
+        if (candles.size < 6) return null
+        val baseline = candles.dropLast(1).takeLast(20).map { it.volume }
+        val average = baseline.average()
+        if (average <= 0.0) return null
+        return candles.last().volume / average
+    }
 }
