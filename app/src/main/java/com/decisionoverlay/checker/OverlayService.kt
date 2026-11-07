@@ -50,10 +50,23 @@ class OverlayService : Service() {
         return START_STICKY
     }
 
-    override fun onDestroy() {
-        panel?.detach()
+    private fun hideOverlay() {
+        // Remove the window before stopping the foreground service. onDestroy then
+        // sees a null panel and cannot attempt to remove the same window twice.
+        val oldPanel = panel
         panel = null
-        if (engineStarted) engine.stop()
+        try { oldPanel?.detach() } catch (_: Exception) { }
+        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) { }
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        val oldPanel = panel
+        panel = null
+        try { oldPanel?.detach() } catch (_: Exception) { }
+        if (engineStarted) {
+            try { engine.stop() } catch (_: Exception) { }
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -66,10 +79,7 @@ class OverlayService : Service() {
         panel = OverlayPanel(
             context = this,
             windowManager = windowManager,
-            onClose = {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            },
+            onClose = { hideOverlay() },
         )
         panel?.attach()
     }
