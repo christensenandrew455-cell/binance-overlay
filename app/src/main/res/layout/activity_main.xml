@@ -3,95 +3,108 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="22dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BINANCE  /  MARKET CHECKER"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:text="@string/app_name"
             android:textColor="@color/text"
-            android:textSize="28sp"
+            android:textSize="30sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             android:text="@string/subtitle"
             android:textColor="@color/muted"
-            android:textSize="15sp" />
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/permissionState"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="24dp"
+            android:padding="14dp"
+            android:background="#1A2435"
+            android:text="FLOATING PERMISSION  •  CHECKING"
             android:textColor="@color/dnt"
-            android:textSize="14sp" />
+            android:textSize="13sp"
+            android:textStyle="bold" />
 
         <Button
             android:id="@+id/permissionButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="9dp"
             android:text="@string/grant_overlay" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/symbol_label"
-            android:textColor="@color/text"
-            android:textSize="14sp" />
-
-        <EditText
-            android:id="@+id/symbolInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:hint="BTCUSDT"
-            android:importantForAutofill="no"
-            android:inputType="textCapCharacters"
-            android:textColor="@color/text"
-            android:textColorHint="@color/muted" />
+            android:layout_marginTop="24dp"
+            android:text="MARKET"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/api_key_label"
+            android:layout_marginTop="7dp"
+            android:text="@string/symbol_label"
             android:textColor="@color/text"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
         <EditText
-            android:id="@+id/apiKeyInput"
+            android:id="@+id/symbolInput"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:hint="@string/api_key_hint"
+            android:layout_height="54dp"
+            android:layout_marginTop="7dp"
+            android:background="#252F42"
+            android:hint="BTCUSDT"
             android:importantForAutofill="no"
-            android:inputType="textPassword"
+            android:inputType="textCapCharacters"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:singleLine="true"
             android:textColor="@color/text"
-            android:textColorHint="@color/muted" />
+            android:textColorHint="@color/muted"
+            android:textSize="16sp" />
 
         <Button
             android:id="@+id/startButton"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/show_overlay" />
+            android:layout_height="54dp"
+            android:layout_marginTop="14dp"
+            android:text="@string/show_overlay"
+            android:textStyle="bold" />
 
         <Button
             android:id="@+id/stopButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="7dp"
             android:text="@string/hide_overlay" />
 
         <TextView
@@ -99,15 +112,19 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:padding="13dp"
+            android:background="#1A2435"
             android:textColor="@color/text"
-            android:textSize="14sp" />
+            android:textSize="13sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="22dp"
             android:text="@string/rules"
             android:textColor="@color/muted"
-            android:textSize="13sp" />
+            android:textSize="12sp"
+            android:lineSpacingExtra="3dp" />
+
     </LinearLayout>
 </ScrollView>
