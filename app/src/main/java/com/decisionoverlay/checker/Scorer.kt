@@ -21,6 +21,24 @@ object Scorer {
     fun score1h(candles: List<Candle>, feed: FeedStatus): TimeframeScore =
         score(candles, feed, "1-hour", "1h", ::components1h)
 
+    /** Direction for one chart by itself, before the other two charts are considered. */
+    fun timeframeBias(score: TimeframeScore): Verdict {
+        if (score.connection != ConnectionState.CONNECTED || score.candleCount < MIN_CANDLES) {
+            return Verdict.DNT
+        }
+        val direction = when (score.interval) {
+            "5m" -> executionDirection(score)
+            "15m" -> momentumDirection(score)
+            "1h" -> trendDirection(score)
+            else -> 0
+        }
+        return when (direction) {
+            1 -> Verdict.UP
+            -1 -> Verdict.DOWN
+            else -> Verdict.DNT
+        }
+    }
+
     fun decide(five: TimeframeScore, fifteen: TimeframeScore, hour: TimeframeScore): Decision {
         val blocked = mutableListOf<String>()
         if (five.candleCount < MIN_CANDLES || fifteen.candleCount < MIN_CANDLES || hour.candleCount < MIN_CANDLES) {
@@ -60,7 +78,7 @@ object Scorer {
             Verdict.DOWN -> "DOWN. 1h trend, 15m momentum, and strict 5m confirmation all agree short."
             Verdict.DNT -> blocked.joinToString(" ").ifBlank { "No clean alignment. Do not trade." }
         }
-        return Decision(verdict, reason, five, fifteen, hour)
+        return Decision(verdict, reason, five, fifteen, hour, blocked.toList())
     }
 
     private fun trendDirection(score: TimeframeScore): Int {
