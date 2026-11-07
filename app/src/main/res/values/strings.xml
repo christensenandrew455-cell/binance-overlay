@@ -4,8 +4,8 @@
     <string name="subtitle">Manual buy/sell checker. Binance REST API only. It does not place orders.</string>
     <string name="grant_overlay">Grant draw-over-apps permission</string>
     <string name="symbol_label">Binance symbol</string>
-    <string name="api_key_label">Binance API key</string>
-    <string name="api_key_hint">Paste the API key from Binance</string>
+    <string name="api_key_label">BINANCE_API_KEY</string>
+    <string name="api_key_hint">Value of BINANCE_API_KEY</string>
     <string name="show_overlay">Show overlay</string>
     <string name="hide_overlay">Hide overlay</string>
     <string name="rules">UP only when the 1-hour trend, 15-minute momentum, and strict 5-minute confirmation all agree. Anything neutral, 50/50, conflicting, or disconnected is DNT (do not trade). Open each timeframe in the overlay for the raw score, connection status, and the error log.</string>

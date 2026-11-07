@@ -23,7 +23,8 @@ class MainActivity : AppCompatActivity() {
         val symbol = findViewById<EditText>(R.id.symbolInput)
         val apiKey = findViewById<EditText>(R.id.apiKeyInput)
         symbol.setText(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT"))
-        apiKey.setText(prefs.getString(OverlayService.KEY_API_KEY, ""))
+        val savedKey = prefs.getString(OverlayService.KEY_API_KEY, "").orEmpty()
+        apiKey.setText(savedKey.ifBlank { BuildConfig.BINANCE_API_KEY })
         findViewById<Button>(R.id.permissionButton).setOnClickListener { openOverlaySettings() }
         findViewById<Button>(R.id.startButton).setOnClickListener { startOverlay() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
@@ -47,13 +48,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun startOverlay() {
         val symbol = findViewById<EditText>(R.id.symbolInput).text?.toString()?.trim()?.uppercase().orEmpty()
-        val apiKey = findViewById<EditText>(R.id.apiKeyInput).text?.toString()?.trim().orEmpty()
+        val typedKey = findViewById<EditText>(R.id.apiKeyInput).text?.toString()?.trim().orEmpty()
+        val apiKey = typedKey.ifBlank { BuildConfig.BINANCE_API_KEY.trim() }
         if (!symbol.matches(Regex("^[A-Z0-9]{5,20}$"))) {
             setStatus("Use a Binance symbol such as BTCUSDT, ETHUSDT, or SOLUSDT.")
             return
         }
         if (apiKey.isEmpty()) {
-            setStatus("Paste your Binance API key. The overlay only calls the Binance REST API with that key.")
+            setStatus("BINANCE_API_KEY is not set. That environment variable is the Binance API key.")
             return
         }
         if (!Settings.canDrawOverlays(this)) {

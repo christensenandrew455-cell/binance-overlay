@@ -21,15 +21,21 @@ On launch the app asks for **Draw over other apps** (`SYSTEM_ALERT_WINDOW`). Aft
 
 ## Data
 
+The environment variable that connects to Binance is **`BINANCE_API_KEY`**. That value is your Binance API key. The app sends it as the `X-MBX-APIKEY` header on `GET /api/v3/klines`. There is no websocket.
+
+Optional: **`BINANCE_API_BASE_URL`** if you need a different `https://` host. When it is unset, the app uses `https://data-api.binance.vision` first, because `https://api.binance.com` often returns HTTP 451.
+
+Set either variable in the environment or in `local.properties` before building. `local.properties` is not committed. The key is also kept on the phone after you enter it once.
+
 | Feed | When it updates |
 | --- | --- |
 | 5-minute | Binance REST `GET /api/v3/klines` every 15 seconds |
 | 15-minute | Same REST call immediately, then every 15 minutes |
 | 1-hour | Same REST call immediately, then every 15 minutes |
 
-There is no websocket and no webhook. Every request is the Binance REST API. Paste your Binance API key in the app. It is stored only on the phone and sent as the `X-MBX-APIKEY` header. The key is not in this repository.
+There is no websocket and no webhook. Every request is the Binance REST API with `BINANCE_API_KEY`.
 
-The market-data call does not need the secret and it does not place orders. If `BINANCE_API_BASE_URL` is an `https://` host at build time, that host is tried first. Otherwise:
+If `BINANCE_API_BASE_URL` is an `https://` host at build time, that host is tried first. Otherwise:
 
 1. `https://data-api.binance.vision`
 2. `https://api.binance.com`
