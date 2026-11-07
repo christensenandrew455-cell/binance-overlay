@@ -64,7 +64,7 @@ class MainActivity:AppCompatActivity(){
   val symbol=readSymbol()?:return
   prefs.edit().putString(OverlayService.KEY_SYMBOL,symbol).apply()
   if(!checksStarted){checksStarted=true;engine.start(symbol);setStatus("Checking $symbol now. Next checks run at each candle close.");findViewById<Button>(R.id.startCheckButton).text="CHECKING • RUNNING"}
-  else{engine.updateSymbol(symbol);engine.refreshNow();setStatus("Refreshed $symbol. Automatic candle-close checks remain active.")}
+  else{if(symbol!=engine.symbol)engine.updateSymbol(symbol) else engine.refreshNow();setStatus("Refreshed $symbol. Automatic candle-close checks remain active.")}
  }
  private fun readSymbol():String?{
   val symbol=findViewById<EditText>(R.id.symbolInput).text?.toString()?.trim()?.uppercase().orEmpty()
