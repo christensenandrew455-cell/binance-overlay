@@ -28,7 +28,7 @@ class OverlayPanel(private val context:Context,private val windowManager:WindowM
   addView(LinearLayout(context).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;addView(symbol,LinearLayout.LayoutParams(0,-2,1f));addView(close)})
   addView(LinearLayout(context).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;addView(verdict,LinearLayout.LayoutParams(0,-2,1f));addView(price)})
  }
- symbol.setOnTouchListener{_,e->drag(e)}
+ init { symbol.setOnTouchListener { _, e -> drag(e) } }
  val root:View=card;private var attached=false
  fun attach(){if(!attached){windowManager.addView(root,params);attached=true}}
  fun detach(){if(attached){try{windowManager.removeView(root)}catch(_:Exception){};attached=false}}
