@@ -22,7 +22,7 @@ class OverlayPanel(private val context:Context,private val windowManager:WindowM
  private val symbol=label(10f,MUTED,true)
  private val verdict=label(27f,DNT,true)
  private val price=label(10f,TEXT,true)
- private val close=label(16f,MUTED,true).apply{text="×";gravity=Gravity.CENTER;setPadding(dp(7),0,dp(3),0);setOnClickListener{onClose()}}
+ private val close=label(20f,MUTED,true).apply{text="×";gravity=Gravity.CENTER;minWidth=dp(34);minHeight=dp(34);contentDescription="Hide floating decision";isClickable=true;isFocusable=true;setOnClickListener{onClose()}}
  private val card=LinearLayout(context).apply{
   orientation=LinearLayout.VERTICAL;background=GradientDrawable().apply{cornerRadius=dp(13).toFloat();setColor(Color.argb(238,12,17,27));setStroke(dp(1),Color.argb(150,91,125,182))};setPadding(dp(10),dp(6),dp(8),dp(7))
   addView(LinearLayout(context).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;addView(symbol,LinearLayout.LayoutParams(0,-2,1f));addView(close)})
