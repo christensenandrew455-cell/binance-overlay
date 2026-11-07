@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Binance Decision Checker</string>
+    <string name="app_name">Trading Signal</string>
     <string name="subtitle">A floating UP / DOWN / DNT signal checker for Binance.US spot markets. It reads public candles and never places trades.</string>
     <string name="grant_overlay">Allow floating overlay permission</string>
     <string name="symbol_label">Binance.US trading pair</string>
