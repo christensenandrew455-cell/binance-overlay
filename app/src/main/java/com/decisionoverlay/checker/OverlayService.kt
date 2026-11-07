@@ -23,6 +23,7 @@ class OverlayService : Service() {
     private lateinit var engine: MarketEngine
     private var panel: OverlayPanel? = null
     private var engineStarted = false
+    private var lastAlertedVerdict: Verdict? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -88,8 +89,33 @@ class OverlayService : Service() {
 
     private fun render(snapshot: EngineSnapshot) {
         panel?.render(snapshot)
-        val text = snapshot.symbol + "  " + snapshot.decision.verdict.name
+        val verdict = snapshot.decision.verdict
+        if ((verdict == Verdict.UP || verdict == Verdict.DOWN) && verdict != lastAlertedVerdict) {
+            notifySignal(snapshot)
+        }
+        if (verdict == Verdict.DNT) lastAlertedVerdict = null
+        val text = snapshot.symbol + "  " + verdict.name
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    private fun notifySignal(snapshot: EngineSnapshot) {
+        val verdict = snapshot.decision.verdict
+        val up = verdict == Verdict.UP
+        val title = if (up) "UPTREND — ${snapshot.symbol}" else "DOWNTREND — ${snapshot.symbol}"
+        val body = "Score ${signed(snapshot.decision.totalScore)}. Trading checker detected a ${if (up) "bullish" else "bearish"} signal."
+        val open = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val alert = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(false)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, alert)
+        lastAlertedVerdict = verdict
     }
 
     private fun startInForeground(text: String) {
@@ -124,6 +150,9 @@ class OverlayService : Service() {
         val channel = NotificationChannel(CHANNEL_ID, "Floating decision checker", NotificationManager.IMPORTANCE_LOW)
         channel.description = "Keeps the UP / DOWN / DNT floating checker running."
         manager.createNotificationChannel(channel)
+        val alertChannel = NotificationChannel(ALERT_CHANNEL_ID, "UP / DOWN trading alerts", NotificationManager.IMPORTANCE_HIGH)
+        alertChannel.description = "Audible alerts when the checker changes to UP or DOWN."
+        manager.createNotificationChannel(alertChannel)
     }
 
     private val thresholdListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -138,6 +167,8 @@ class OverlayService : Service() {
         const val KEY_SYMBOL = "symbol"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         private const val CHANNEL_ID = "decision_overlay"
+        private const val ALERT_CHANNEL_ID = "decision_signal_alerts"
         private const val NOTIFICATION_ID = 42
+        private const val ALERT_NOTIFICATION_ID = 43
     }
 }
