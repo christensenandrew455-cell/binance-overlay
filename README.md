@@ -26,18 +26,18 @@ On a phone, open the direct download link above, download `app-debug.apk`, allow
 
 ## Scoring rules
 
-The total score is the sum of all three timeframe scores, bounded from -10 to +10.
+The combined score ranges from -10 to +10. The 5-minute chart is the primary trade driver; the longer timeframes can confirm or filter it but cannot outweigh it.
 
-| Timeframe / component | Bullish | Bearish |
-| --- | ---: | ---: |
-| 1-hour: price above/below EMA20 and RSI above/below 50 | +4 | -4 |
-| 15-minute: MACD line above/below signal | +2 | -2 |
-| 15-minute: volume above its previous 20-candle average, confirming MACD direction | +2 | -2 |
-| 5-minute: EMA8 above/below EMA21 | +2 | -2 |
+| Timeframe | Bullish | Bearish | Role |
+| --- | ---: | ---: | --- |
+| 5-minute: price vs EMA8 plus a fresh MACD crossover | +6 | -6 | Primary trigger |
+| 15-minute: recent higher highs and higher lows, or lower highs and lower lows, aligned with 5m | +3 | -3 | Confirmation |
+| 1-hour: clear trend supports or actively opposes the 5m direction | +1 | -1 | Weak filter |
+| 1-hour: flat/ranging or mixed | 0 | 0 | Neutral |
 
-The 1-hour trend receives 0 points when price is within 0.05% of EMA20 or RSI is between 45 and 55, or when price and RSI do not agree. The 15-minute volume bonus is awarded only when volume exceeds the previous 20-candle average and MACD has a direction; volume alone does not create a direction.
+The 5-minute crossover must be current or up to three completed 5-minute candles old. A stale crossover, price on the wrong side of EMA8, or no crossover means the 5-minute trigger scores 0. The 15-minute and 1-hour components are evaluated relative to the 5-minute direction; when the 5-minute direction is neutral, they add 0.
 
-Default decision threshold is ±4:
+Default decision threshold is ±3:
 - Score ≥ threshold: **UP**
 - Score ≤ negative threshold: **DOWN**
 - Score between the thresholds: **DNT**
@@ -68,7 +68,7 @@ This version uses REST polling, not a WebSocket. The 5-minute chart is refreshed
 
 ## Timeframe horizons
 
-- **5-minute (±6):** the trade driver. It checks price against EMA8 and requires a fresh MACD crossover within the latest three completed 5-minute candles. This is a short execution window, not a multi-hour trend forecast.
+- **5-minute (±6):** the trade driver. It checks price against EMA8 and requires a fresh MACD crossover that is current or up to three completed candles old. This is a short execution window, not a multi-hour trend forecast.
 - **15-minute (±3):** confirms the 5-minute direction using recent higher highs/higher lows or lower highs/lower lows.
 - **1-hour (±1):** a weak filter only. A clear opposing hourly trend subtracts one point; a supportive trend adds one; a flat/ranging hour adds zero.
 
@@ -76,7 +76,7 @@ The feeds refresh at each candle close. The 5-minute signal is recalculated on e
  
 ## Overall verdict
 
-UP or DOWN is shown only when all three timeframe checks agree in the same direction and every feed is connected and current. Anything else is DNT. This is a rule-based indicator, not a guarantee of future price movement or profitable trades.
+UP or DOWN is driven primarily by the fresh 5-minute trigger; the 15-minute structure can add confirmation or leave it neutral, and the 1-hour chart can add or subtract only one point. Every feed must be connected and current. This is a rule-based indicator, not a guarantee of future price movement or profitable trades. This is a rule-based indicator, not a guarantee of future price movement or profitable trades.
 
 ## Build the APK yourself
 
