@@ -27,8 +27,10 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        val threshold = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_DNT_THRESHOLD, Scorer.DEFAULT_DNT_THRESHOLD)
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val threshold = prefs.getInt(KEY_DNT_THRESHOLD, Scorer.DEFAULT_DNT_THRESHOLD)
         engine = MarketEngine(scope, { snapshot -> main.post { render(snapshot) } }, threshold)
+        prefs.registerOnSharedPreferenceChangeListener(thresholdListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,6 +60,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(thresholdListener)
         val oldPanel = panel
         panel = null
         try { oldPanel?.detach() } catch (_: Exception) { }
@@ -121,6 +124,12 @@ class OverlayService : Service() {
         val channel = NotificationChannel(CHANNEL_ID, "Floating decision checker", NotificationManager.IMPORTANCE_LOW)
         channel.description = "Keeps the UP / DOWN / DNT floating checker running."
         manager.createNotificationChannel(channel)
+    }
+
+    private val thresholdListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        if (key == KEY_DNT_THRESHOLD) {
+            engine.setDntThreshold(prefs.getInt(KEY_DNT_THRESHOLD, Scorer.DEFAULT_DNT_THRESHOLD))
+        }
     }
 
     companion object {

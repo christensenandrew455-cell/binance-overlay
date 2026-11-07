@@ -16,15 +16,33 @@ Every push to `main` runs the tests, builds the Android APK, and publishes it as
 
 On a phone, open the direct download link above, download `app-debug.apk`, allow your browser or file manager to install unknown apps when Android asks, and install it.
 
-## What the floating panel shows
+## What the app shows
 
-- Large overall **UP / DOWN / DNT** verdict.
-- Quick 1h / 15m / 5m direction and point summaries.
-- Expandable **5 MINUTE CHART**, **15 MINUTE CHART**, and **1 HOUR CHART** sections.
-- Each timeframe shows its own independent chart direction, score, connection state, last update, candle count, price, EMA9, EMA21, RSI, MACD, candle bias, volume ratio, and component-by-component point explanation.
-- Expandable **PROBLEMS** section describing every reason the overall result is DNT.
-- Expandable **CONNECTION / ERROR LOG** with request failures and host fallback details.
-- Draggable floating panel, minimize control, pair selector, and manual refresh button.
+- Small floating UP / DOWN / DNT decision badge.
+- Main app with collapsible 5-minute, 15-minute, and 1-hour chart breakdowns.
+- Each timeframe shows its weighted points, Binance connection state, last fetch time, and the indicators used for that timeframe.
+- Combined score from -10 to +10 and an adjustable DNT threshold from ±2 to ±6.
+- Problems/blockers and connection/error logs.
+
+## Scoring rules
+
+The total score is the sum of all three timeframe scores, bounded from -10 to +10.
+
+| Timeframe / component | Bullish | Bearish |
+| --- | ---: | ---: |
+| 1-hour: price above/below EMA20 and RSI above/below 50 | +4 | -4 |
+| 15-minute: MACD line above/below signal | +2 | -2 |
+| 15-minute: volume above its previous 20-candle average, confirming MACD direction | +2 | -2 |
+| 5-minute: EMA8 above/below EMA21 | +2 | -2 |
+
+The 1-hour trend receives 0 points when price is within 0.05% of EMA20 or RSI is between 45 and 55, or when price and RSI do not agree. The 15-minute volume bonus is awarded only when volume exceeds the previous 20-candle average and MACD has a direction; volume alone does not create a direction.
+
+Default decision threshold is ±4:
+- Score ≥ threshold: **UP**
+- Score ≤ negative threshold: **DOWN**
+- Score between the thresholds: **DNT**
+
+The in-app slider adjusts the threshold from ±2 to ±6 and updates the floating service while it is running. Missing, insufficient, stale, or disconnected candle data always forces DNT regardless of the numeric score.
 
 ## Binance.US connection — no API key
 
@@ -42,9 +60,9 @@ Official documentation: https://docs.binance.us/
 
 | Feed | Refresh |
 | --- | --- |
-| 5-minute candles | Initial load, then every 15 seconds |
-| 15-minute candles | Initial load, then every 15 minutes |
-| 1-hour candles | Initial load, then every 15 minutes |
+| 5-minute candles | Initial load, then after each 5-minute candle closes |
+| 15-minute candles | Initial load, then after each 15-minute candle closes |
+| 1-hour candles | Initial load, then after each 1-hour candle closes |
 
 This version uses REST polling, not a WebSocket. The 5-minute chart is refreshed more often to make the execution check responsive. Each request loads up to 150 candles.
 
@@ -111,11 +129,11 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## Install and start
 
-1. Install and open **Binance Decision Checker**.
-2. On first launch, accept the prompt to open Android's **Display over other apps** settings and enable it for this app.
-3. Enter a Binance.US spot pair such as `BTCUSDT` and tap **Start floating checker**.
-4. Android may ask for notification permission. This allows the foreground-service notification to remain visible while the overlay is running.
-5. The floating panel appears over other apps. Drag its top bar to move it, tap the timeframe rows to expand them, and use **×** to stop it.
+1. Install and open **Trading**.
+2. Enter a Binance.US spot pair such as `BTCUSDT` and tap **START CHECKING**. This fetches the three candle sets immediately and starts checking each timeframe at its next candle close.
+3. Expand any timeframe row to inspect points, indicators, Binance connectivity, and the last fetch time.
+4. Adjust the **DNT THRESHOLD** slider from ±2 to ±6; the setting is saved and applies to the floating service too.
+5. Tap **SHOW FLOATING DECISION** to display the compact overlay. Its × button hides only the floating badge; it does not stop the service. Use the app's stop control to stop the floating service.
 
 If Android or your phone manufacturer stops the service in the background, allow the app to run without battery optimization.
 
