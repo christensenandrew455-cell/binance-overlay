@@ -85,13 +85,21 @@ class BinanceClient(private val http: OkHttpClient) {
     }
 
     companion object {
-        val REST_HOSTS: List<String> = listOf(
-            "https://api.binance.com",
-            "https://data-api.binance.vision",
-        )
+        /** Public Binance market-data hosts. `api.binance.com` often returns HTTP 451, so the vision host is first. Set BINANCE_API_BASE_URL to prepend another https host. */
+        val REST_HOSTS: List<String> = buildList {
+            val override = BuildConfig.BINANCE_API_BASE_URL.trim().trimEnd('/')
+            if (override.startsWith("https://")) add(override)
+            add("https://data-api.binance.vision")
+            add("https://api.binance.com")
+            add("https://api1.binance.com")
+            add("https://api2.binance.com")
+            add("https://api3.binance.com")
+        }.distinct()
+
         val WS_ROOTS: List<String> = listOf(
-            "wss://stream.binance.com:9443/ws/",
             "wss://data-stream.binance.vision/ws/",
+            "wss://stream.binance.com:9443/ws/",
+            "wss://stream.binance.com/ws/",
         )
     }
 }

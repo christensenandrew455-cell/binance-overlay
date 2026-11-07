@@ -27,15 +27,20 @@ On launch the app asks for **Draw over other apps** (`SYSTEM_ALERT_WINDOW`). Aft
 | 15-minute | REST immediately, then every 15 minutes |
 | 1-hour | REST immediately, then every 15 minutes |
 
-REST hosts, in order:
+REST hosts, in order. The finance connection variable is `BINANCE_API_BASE_URL`. If that environment variable is an `https://` host at build time, it is tried first. Otherwise the app starts on the public Binance market-data host that still answers when `api.binance.com` returns HTTP 451:
 
-1. `https://api.binance.com`
-2. `https://data-api.binance.vision` (used automatically when the first host returns 451 or otherwise fails)
+1. `$BINANCE_API_BASE_URL` when set, for example `https://data-api.binance.vision`
+2. `https://data-api.binance.vision`
+3. `https://api.binance.com`
+4. `https://api1.binance.com`
+5. `https://api2.binance.com`
+6. `https://api3.binance.com`
 
 Websocket hosts, in order:
 
-1. `wss://stream.binance.com:9443/ws/`
-2. `wss://data-stream.binance.vision/ws/`
+1. `wss://data-stream.binance.vision/ws/`
+2. `wss://stream.binance.com:9443/ws/`
+3. `wss://stream.binance.com/ws/`
 
 A failed host is written into the error log even when the fallback succeeds. A timeframe that is stale or failing is **Not Working**, and the verdict is forced to **DNT**.
 

@@ -11,9 +11,26 @@ android {
         applicationId = "com.decisionoverlay.checker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val binanceBase = (System.getenv("BINANCE_API_BASE_URL") ?: "")
+            .trim()
+            .trimEnd('/')
+        val safeBinanceBase = if (
+            binanceBase.startsWith("https://") &&
+            !binanceBase.contains('"') &&
+            !binanceBase.contains('\\')
+        ) {
+            binanceBase
+        } else {
+            ""
+        }
+        buildConfigField("String", "BINANCE_API_BASE_URL", "\"$safeBinanceBase\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
