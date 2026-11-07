@@ -76,7 +76,7 @@ class MainActivity:AppCompatActivity(){
   bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   bindChart(R.id.chart1hBody,R.id.chart1hHeader,"1 HOUR CHART",s.decision.hour)
-  findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No blockers. All three chart checks agree." else s.decision.problems.joinToString("\\n\\n"){"• "+it}
+  findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No blockers. All three chart checks agree." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
   val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
@@ -87,7 +87,7 @@ class MainActivity:AppCompatActivity(){
  private fun bindChart(bodyId:Int,headerId:Int,title:String,s:TimeframeScore){
   val bias=Scorer.timeframeBias(s)
   findViewById<TextView>(bodyId).apply{
-   text="$title  ${bias.name}  ${signed(s.score)}\\nStatus: ${s.connection} • ${s.candleCount} closed candles\\nUpdated: ${formatTime(s.updatedAt)}\\n\\n"+s.metricsText()
+   text="$title  ${bias.name}  ${signed(s.score)}\nStatus: ${s.connection} • ${s.candleCount} closed candles\nUpdated: ${formatTime(s.updatedAt)}\n\n"+s.metricsText()
    setTextColor(ContextCompat.getColor(this@MainActivity,when(bias){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.text}))
   }
  }
