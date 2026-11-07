@@ -76,6 +76,8 @@ data class TimeframeScore(
 
     fun metricsText(): String = buildString {
         val link = if (connection == ConnectionState.CONNECTED) "Connected" else "Not Working"
+        appendLine("CHART DIRECTION: " + Scorer.timeframeBias(this@TimeframeScore).name)
+        appendLine("POINTS: " + signed(score) + " / 100")
         appendLine("Status: $link")
         appendLine(connectionDetail)
         if (!lastError.isNullOrBlank()) appendLine("Last error: $lastError")
@@ -109,6 +111,7 @@ data class Decision(
     val five: TimeframeScore,
     val fifteen: TimeframeScore,
     val hour: TimeframeScore,
+    val problems: List<String> = emptyList(),
 )
 
 data class EngineSnapshot(
