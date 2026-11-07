@@ -46,10 +46,6 @@ class MarketEngine(
     private var slowJob: Job? = null
     private var lastVerdict: Verdict? = null
 
-    fun setApiKey(key: String) {
-        client.apiKey = key.trim()
-    }
-
     fun start(rawSymbol: String) {
         if (!started.compareAndSet(false, true)) {
             updateSymbol(rawSymbol)
@@ -58,7 +54,7 @@ class MarketEngine(
         symbol = normalize(rawSymbol) ?: "BTCUSDT"
         scope.launch(Dispatchers.IO) {
             mutex.withLock {
-                logLocked("Binance REST start for $symbol (${if (client.apiKey.isBlank()) "no API key" else "API key header on"})")
+                logLocked("Started public Binance REST feed for $symbol (no API key required)")
                 refreshAllLocked()
             }
             launchPolls()
@@ -70,7 +66,7 @@ class MarketEngine(
             val next = normalize(rawSymbol)
             if (next == null) {
                 mutex.withLock {
-                    logLocked("Rejected symbol '$rawSymbol'. Use 5-20 letters or digits, for example BTCUSDT.")
+                    logLocked("Rejected symbol '$rawSymbol'. Use a Binance spot symbol such as BTCUSDT.")
                     publishLocked()
                 }
                 return@launch
@@ -119,7 +115,7 @@ class MarketEngine(
             while (isActive) {
                 delay(SLOW_POLL_MS)
                 mutex.withLock {
-                    logLocked("15-minute Binance REST poll for 15m and 1h")
+                    logLocked("15-minute refresh: fetching 15m and 1h candles")
                     fetchLocked("15m", "REST")
                     fetchLocked("1h", "REST")
                 }
@@ -136,27 +132,30 @@ class MarketEngine(
     private fun fetchLocked(interval: String, via: String) {
         try {
             val result = client.fetchKlines(symbol, interval, 150)
-            result.notes.forEach { note -> logLocked("$interval host failed before fallback: $note") }
+            result.notes.forEach { note -> logLocked("$interval host fallback: $note") }
             candles.getValue(interval).apply {
                 clear()
                 addAll(result.candles)
             }
+
             val now = System.currentTimeMillis()
             val route = if (result.host == BinanceClient.REST_HOSTS.first()) "primary" else "fallback"
             feeds.getValue(interval).apply {
                 state = ConnectionState.CONNECTED
-                detail = "$via OK via $result.host ($route, ${result.candles.size} candles)"
+                detail = "$via OK via " + result.host + " (" + route + ", " +
+                    result.candles.size + " candles)"
                 updatedAt = now
                 lastError = null
             }
-            logLocked("$interval $via OK ${result.candles.size} candles @ ${result.host} ($route)")
+            logLocked("$interval REST OK: " + result.candles.size + " candles via " +
+                result.host + " (" + route + ")")
         } catch (error: Exception) {
             feeds.getValue(interval).apply {
                 state = ConnectionState.NOT_WORKING
                 detail = "Not Working"
                 lastError = error.message
             }
-            logLocked("$interval $via FAIL ${error.message}")
+            logLocked("$interval REST FAIL: " + error.message)
         }
         publishLocked()
     }
@@ -166,16 +165,18 @@ class MarketEngine(
         age("5m", FIVE_MINUTE_POLL_MS * 3, now)
         age("15m", SLOW_POLL_MS + 60_000, now)
         age("1h", SLOW_POLL_MS + 60_000, now)
+
         val five = Scorer.score5m(candles.getValue("5m"), feeds.getValue("5m").snapshot())
         val fifteen = Scorer.score15m(candles.getValue("15m"), feeds.getValue("15m").snapshot())
         val hour = Scorer.score1h(candles.getValue("1h"), feeds.getValue("1h").snapshot())
         val decision = Scorer.decide(five, fifteen, hour)
+
         if (decision.verdict != lastVerdict) {
-            logLocked("Verdict ${decision.verdict}: ${decision.reason.take(180)}")
+            logLocked("Overall verdict " + decision.verdict + ": " + decision.reason.take(180))
             lastVerdict = decision.verdict
         }
-        val text = logs.joinToString("\n")
-        onUpdate(EngineSnapshot(symbol, decision, text))
+
+        onUpdate(EngineSnapshot(symbol, decision, logs.joinToString("\n")))
     }
 
     private fun age(interval: String, maxAgeMs: Long, now: Long) {
@@ -183,8 +184,8 @@ class MarketEngine(
         val updated = feed.updatedAt ?: return
         if (feed.state == ConnectionState.CONNECTED && now - updated > maxAgeMs) {
             feed.state = ConnectionState.NOT_WORKING
-            feed.detail = "Stale (${(now - updated) / 1000}s since last good update)"
-            feed.lastError = "No fresh $interval data inside ${maxAgeMs / 1000}s"
+            feed.detail = "Stale (" + (now - updated) / 1000 + "s since last good update)"
+            feed.lastError = "No fresh $interval data inside " + maxAgeMs / 1000 + "s"
         }
     }
 
@@ -195,8 +196,8 @@ class MarketEngine(
     }
 
     private fun normalize(raw: String): String? {
-        val symbol = raw.trim().uppercase(Locale.US)
-        return if (SYMBOL.matches(symbol)) symbol else null
+        val value = raw.trim().uppercase(Locale.US)
+        return if (SYMBOL.matches(value)) value else null
     }
 
     private class MutableFeed {
@@ -212,6 +213,6 @@ class MarketEngine(
         const val SLOW_POLL_MS = 15 * 60 * 1000L
         private const val FIVE_MINUTE_POLL_MS = 15_000L
         private val SYMBOL = Regex("^[A-Z0-9]{5,20}$")
-        private val LOG_CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+        private val LOG_CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss")
     }
 }
