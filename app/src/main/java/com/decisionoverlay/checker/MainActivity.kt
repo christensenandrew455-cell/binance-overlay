@@ -27,9 +27,10 @@ class MainActivity:AppCompatActivity(){
  private lateinit var engine:MarketEngine
  private var checksStarted=false
  private var pendingSymbol:String?=null
+ private var pendingShowOverlay=false
  private val notifications=registerForActivityResult(ActivityResultContracts.RequestPermission()){granted->
   val symbol=pendingSymbol;pendingSymbol=null
-  if(granted&&symbol!=null)launchOverlay(symbol) else if(symbol!=null)setStatus("Notification permission is needed to keep the floating badge running.")
+  if(granted&&symbol!=null)launchService(symbol,pendingShowOverlay) else if(symbol!=null)setStatus("Notification permission is needed for background status and UP / DOWN alerts.")
  }
  override fun onCreate(savedInstanceState:Bundle?){
   super.onCreate(savedInstanceState)
@@ -38,7 +39,7 @@ class MainActivity:AppCompatActivity(){
   findViewById<EditText>(R.id.symbolInput).setText(prefs.getString(OverlayService.KEY_SYMBOL,"BTCUSDT"))
   findViewById<Button>(R.id.startCheckButton).setOnClickListener{startChecks()}
   findViewById<Button>(R.id.startButton).setOnClickListener{startOverlay()}
-  findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));setStatus("Floating badge stopped. Chart checks in this app are unchanged.")}
+  findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));if(checksStarted){engine.stop();checksStarted=false;findViewById<Button>(R.id.startCheckButton).text="START CHECKING"};setStatus("Trading checker stopped. Background checks and alerts are off.")}
   findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
   setupCollapsibleCharts()
   engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_DNT_THRESHOLD,Scorer.DEFAULT_DNT_THRESHOLD))
@@ -83,6 +84,7 @@ class MainActivity:AppCompatActivity(){
   prefs.edit().putString(OverlayService.KEY_SYMBOL,symbol).apply()
   if(!checksStarted){checksStarted=true;engine.start(symbol);setStatus("Checking $symbol now. Next checks run at each candle close.");findViewById<Button>(R.id.startCheckButton).text="CHECKING • RUNNING"}
   else{if(symbol!=engine.symbol)engine.updateSymbol(symbol) else engine.refreshNow();setStatus("Refreshed $symbol. Automatic candle-close checks remain active.")}
+  requestAndLaunchService(symbol,false)
  }
  private fun readSymbol():String?{
   val symbol=findViewById<EditText>(R.id.symbolInput).text?.toString()?.trim()?.uppercase().orEmpty()
@@ -117,8 +119,17 @@ class MainActivity:AppCompatActivity(){
   val symbol=readSymbol()?:return
   if(!Settings.canDrawOverlays(this)){setStatus("Android needs permission for the floating badge. Opening permission settings.");startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName")));return}
   if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.TIRAMISU&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){pendingSymbol=symbol;notifications.launch(Manifest.permission.POST_NOTIFICATIONS);return}
-  launchOverlay(symbol)
+  requestAndLaunchService(symbol,true)
  }
- private fun launchOverlay(symbol:String){prefs.edit().putString(OverlayService.KEY_SYMBOL,symbol).apply();ContextCompat.startForegroundService(this,Intent(this,OverlayService::class.java).putExtra(OverlayService.EXTRA_SYMBOL,symbol));setStatus("Small floating decision started for $symbol.")}
+ private fun requestAndLaunchService(symbol:String,showOverlay:Boolean){
+  if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.TIRAMISU&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){pendingSymbol=symbol;pendingShowOverlay=showOverlay;notifications.launch(Manifest.permission.POST_NOTIFICATIONS);return}
+  launchService(symbol,showOverlay)
+ }
+ private fun launchService(symbol:String,showOverlay:Boolean){
+  prefs.edit().putString(OverlayService.KEY_SYMBOL,symbol).apply()
+  val intent=Intent(this,OverlayService::class.java).putExtra(OverlayService.EXTRA_SYMBOL,symbol).putExtra(OverlayService.EXTRA_SHOW_PANEL,showOverlay)
+  ContextCompat.startForegroundService(this,intent)
+  setStatus(if(showOverlay)"Floating decision and background checker running for $symbol." else "Background checker running for $symbol. You can close the app; use STOP RUNNING to turn it off.")
+ }
  private fun setStatus(s:String){findViewById<TextView>(R.id.statusText).text=s}
 }
