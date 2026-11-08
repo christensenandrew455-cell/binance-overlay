@@ -11,7 +11,6 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
-import android.widget.SeekBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -42,28 +41,11 @@ class MainActivity:AppCompatActivity(){
   findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));if(checksStarted){engine.stop();checksStarted=false;findViewById<Button>(R.id.startCheckButton).text="START CHECKING"};setStatus("Trading checker stopped. Background checks and alerts are off.")}
   findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
   setupCollapsibleCharts()
-  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_DNT_THRESHOLD,Scorer.DEFAULT_DNT_THRESHOLD))
-  setupThresholdControl()
+  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},Scorer.DEFAULT_DNT_THRESHOLD)
   // Deliberately do not fetch on app launch. The user starts the checker manually.
  }
  override fun onConfigurationChanged(newConfig:Configuration){super.onConfigurationChanged(newConfig)}
  override fun onDestroy(){engine.stop();screenScope.cancel();super.onDestroy()}
- private fun setupThresholdControl(){
-  val seek=findViewById<SeekBar>(R.id.thresholdSeek)
-  val label=findViewById<TextView>(R.id.thresholdLabel)
-  val initial=prefs.getInt(OverlayService.KEY_DNT_THRESHOLD,Scorer.DEFAULT_DNT_THRESHOLD).coerceIn(2,6)
-  seek.progress=initial-2
-  label.text="DNT THRESHOLD: ±$initial"
-  seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
-   override fun onProgressChanged(bar:SeekBar?,progress:Int,fromUser:Boolean){
-    val threshold=progress+2
-    label.text="DNT THRESHOLD: ±$threshold"
-    if(fromUser){prefs.edit().putInt(OverlayService.KEY_DNT_THRESHOLD,threshold).apply();engine.setDntThreshold(threshold)}
-   }
-   override fun onStartTrackingTouch(bar:SeekBar?){}
-   override fun onStopTrackingTouch(bar:SeekBar?){}
-  })
- }
  private fun setupCollapsibleCharts(){
   listOf(R.id.chart1mHeader to R.id.chart1mBody,R.id.chart5Header to R.id.chart5Body,R.id.chart15Header to R.id.chart15Body).forEach{(headerId,bodyId)->
    val body=findViewById<View>(bodyId);body.visibility=View.GONE
