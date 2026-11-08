@@ -1,29 +1,85 @@
 package com.decisionoverlay.checker
+
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+
 class ScorerTest {
- @Test fun bullishSetupRequiresBelowTargetAndAlignedMomentum(){
-  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),feeds(),115.0,trend(1).last().close,3)
-  assertEquals(10,result.score);assertEquals(Verdict.UP,result.candidate)
- }
- @Test fun bearishSetupRequiresAboveTargetAndAlignedMomentum(){
-  val result=Scorer.evaluateTarget(trend(-1),structure(-1),trend(-1),feeds(),85.0,trend(-1).last().close,3)
-  assertEquals(-10,result.score);assertEquals(Verdict.DOWN,result.candidate)
- }
- @Test fun nearTargetAlwaysStaysDnt(){
-  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),feeds(),trend(1).last().close+0.01,trend(1).last().close,3)
-  assertEquals(Verdict.DNT,result.candidate)
- }
- @Test fun missingFeedForcesDnt(){
-  val bad=feeds().toMutableList();bad[1]=FeedStatus(ConnectionState.NOT_WORKING,"offline",null,"HTTP error")
-  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),bad,105.0,100.0,3)
-  assertEquals(Verdict.DNT,result.candidate);assertEquals(false,result.problems.isEmpty())
- }
- private fun feeds()=listOf("1m","5m","15m").map{FeedStatus(ConnectionState.CONNECTED,"test",1L,null)}
- private fun trend(dir:Int):List<Candle>{var p=100.0;return (0 until 45).map{i->val n=p+dir*.2;val x=Candle(i*60000L,p,maxOf(p,n)+.05,minOf(p,n)-.05,n,10.0,(i+1)*60000L-1,true);p=n;x}}
- private fun structure(dir:Int):List<Candle>{
-  val out=mutableListOf<Candle>();var p=100.0
-  for(i in 0 until 42){val step=if(i<39)0.02 else 0.5;val n=p+dir*step;out+=Candle(i*300000L,p,maxOf(p,n)+.1,minOf(p,n)-.1,n,10.0,(i+1)*300000L-1,true);p=n}
-  return out
- }
+    @Test fun bullishReversalBelowTargetScoresTenAndSignalsUp() {
+        val one = candles(45, 1, volumeBoost = true)
+        val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
+        val fifteen = candles(45, 1, interval = 900000L)
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 130.0, one.last().close)
+        assertEquals(10, result.score)
+        assertEquals(Verdict.UP, result.candidate)
+    }
+
+    @Test fun bearishReversalAboveTargetScoresMinusTenAndSignalsDown() {
+        val one = candles(45, -1, volumeBoost = true)
+        val five = candles(45, -1, volumeBoost = true, interval = 300000L, strongLastThree = true)
+        val fifteen = candles(45, -1, interval = 900000L)
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 80.0, one.last().close)
+        assertEquals(-10, result.score)
+        assertEquals(Verdict.DOWN, result.candidate)
+    }
+
+    @Test fun priceInsideTargetBufferStaysDnt() {
+        val one = candles(45, 1, volumeBoost = true)
+        val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
+        val fifteen = candles(45, 1, interval = 900000L)
+        val price = one.last().close
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 0.01, price)
+        assertEquals(Verdict.DNT, result.candidate)
+        assertTrue(result.score < 3)
+    }
+
+    @Test fun missingFeedForcesDnt() {
+        val one = candles(45, 1, volumeBoost = true)
+        val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
+        val fifteen = candles(45, 1, interval = 900000L)
+        val bad = feeds().toMutableList()
+        bad[1] = FeedStatus(ConnectionState.NOT_WORKING, "offline", null, "HTTP error")
+        val result = Scorer.evaluateTarget(one, five, fifteen, bad, 130.0, one.last().close)
+        assertEquals(Verdict.DNT, result.candidate)
+        assertEquals(false, result.problems.isEmpty())
+    }
+
+    @Test fun fiveMinuteConfirmationCannotScoreAgainstTargetSideBias() {
+        val one = candles(45, -1, volumeBoost = true)
+        val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
+        val fifteen = candles(45, 1, interval = 900000L)
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 130.0, one.last().close)
+        assertEquals(Verdict.DNT, result.candidate)
+    }
+
+    private fun feeds() = listOf("1m", "5m", "15m").map {
+        FeedStatus(ConnectionState.CONNECTED, "test", 1L, null)
+    }
+
+    private fun candles(
+        count: Int,
+        direction: Int,
+        volumeBoost: Boolean = false,
+        interval: Long = 60000L,
+        strongLastThree: Boolean = false,
+    ): List<Candle> {
+        var price = 100.0
+        return (0 until count).map { index ->
+            val step = if (strongLastThree && index >= count - 3) 0.5 else 0.2
+            val next = price + direction * step
+            val volume = if (volumeBoost && index >= count - 5) 20.0 else 10.0
+            val candle = Candle(
+                openTime = index * interval,
+                open = price,
+                high = maxOf(price, next) + 0.05,
+                low = minOf(price, next) - 0.05,
+                close = next,
+                volume = volume,
+                closeTime = (index + 1) * interval - 1,
+                closed = true,
+            )
+            price = next
+            candle
+        }
+    }
 }
