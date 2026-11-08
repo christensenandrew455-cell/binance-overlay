@@ -107,6 +107,11 @@ data class Decision(
     val problems: List<String> = emptyList(),
     val totalScore: Int = 0,
     val dntThreshold: Int = Scorer.DEFAULT_DNT_THRESHOLD,
+    val targetPrice: Double? = null,
+    val currentPrice: Double? = null,
+    val sessionRemainingMs: Long = 0L,
+    val entryRemainingMs: Long = 0L,
+    val targetBuffer: Double? = null,
 )
 
 data class EngineSnapshot(
