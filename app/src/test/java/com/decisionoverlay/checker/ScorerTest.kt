@@ -45,7 +45,7 @@ class ScorerTest {
     }
 
     @Test fun fiveMinuteConfirmationCannotScoreAgainstTargetSideBias() {
-        val one = candles(45, -1, volumeBoost = true)
+        val one = candles(45, -1, volumeBoost = true, reversal = true)
         val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, 1, interval = 900000L)
         val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 130.0, one.last().close)
