@@ -14,7 +14,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  private val candles=linkedMapOf("1m" to mutableListOf<Candle>(),"5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>())
  private val feeds=linkedMapOf("1m" to MutableFeed(),"5m" to MutableFeed(),"15m" to MutableFeed())
  @Volatile var symbol="BTCUSDT";private set
- @Volatile private var dntThreshold=initialDntThreshold.coerceIn(2,6)
+ private val dntThreshold=Scorer.DEFAULT_DNT_THRESHOLD
  private val jobs=mutableListOf<Job>();private var targetPrice:Double?=null;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
  fun start(raw:String){if(!started.compareAndSet(false,true)){updateSymbol(raw);return};symbol=normalize(raw)?:"BTCUSDT"
   scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Started target-aware Binance feed for $symbol");refreshAllLocked()};poll("1m",ONE);poll("5m",FIVE);poll("15m",FIFTEEN)}
@@ -23,7 +23,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  fun updateSymbol(raw:String){scope.launch(Dispatchers.IO){val next=normalize(raw);if(next==null){mutex.withLock{logLocked("Rejected symbol '$raw'");publishLocked()};return@launch};if(next==symbol)return@launch;symbol=next
   mutex.withLock{candles.values.forEach{it.clear()};feeds.values.forEach{it.state=ConnectionState.NOT_WORKING;it.detail="Reloading $next";it.updatedAt=null;it.lastError=null};targetPrice=null;targetSession=0;candidate=Verdict.DNT;entryUntil=0;lastVerdict=Verdict.DNT;logLocked("Symbol changed to $next");refreshAllLocked()}
  }}
- fun setDntThreshold(v:Int){val n=v.coerceIn(2,6);if(n==dntThreshold)return;dntThreshold=n;scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Entry threshold changed to ±$n");publishLocked()}}}
+ fun setDntThreshold(v:Int){ if(v!=Scorer.DEFAULT_DNT_THRESHOLD) scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Entry threshold is fixed at ±${Scorer.DEFAULT_DNT_THRESHOLD}");publishLocked()}} }
  fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
  fun stop(){jobs.forEach{it.cancel()};jobs.clear();http.dispatcher.executorService.shutdown();http.connectionPool.evictAll()}
  private fun poll(i:String,period:Long){jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(period-System.currentTimeMillis()%period+2000L);if(isActive)mutex.withLock{fetchLocked(i,"CANDLE CLOSE")}}}}
