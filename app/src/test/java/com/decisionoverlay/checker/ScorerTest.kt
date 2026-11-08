@@ -3,15 +3,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 class ScorerTest {
  @Test fun bullishSetupRequiresBelowTargetAndAlignedMomentum(){
-  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),feeds(),105.0,100.0,3)
+  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),feeds(),115.0,trend(1).last().close,3)
   assertEquals(10,result.score);assertEquals(Verdict.UP,result.candidate)
  }
  @Test fun bearishSetupRequiresAboveTargetAndAlignedMomentum(){
-  val result=Scorer.evaluateTarget(trend(-1),structure(-1),trend(-1),feeds(),95.0,100.0,3)
+  val result=Scorer.evaluateTarget(trend(-1),structure(-1),trend(-1),feeds(),85.0,trend(-1).last().close,3)
   assertEquals(-10,result.score);assertEquals(Verdict.DOWN,result.candidate)
  }
  @Test fun nearTargetAlwaysStaysDnt(){
-  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),feeds(),100.0,100.01,3)
+  val result=Scorer.evaluateTarget(trend(1),structure(1),trend(1),feeds(),trend(1).last().close+0.01,trend(1).last().close,3)
   assertEquals(Verdict.DNT,result.candidate)
  }
  @Test fun missingFeedForcesDnt(){
