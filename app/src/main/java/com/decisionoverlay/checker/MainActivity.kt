@@ -93,13 +93,15 @@ class MainActivity:AppCompatActivity(){
  }
  private fun render(s:EngineSnapshot){
   findViewById<TextView>(R.id.symbolHeading).text=s.symbol+" • LAST $"+fmtPrice(s.decision.five.price)
-  bindChart(R.id.chart1mBody,R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)\n  bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
+  bindChart(R.id.chart1mBody,R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
+  bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
   val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   DNT ±"+s.decision.dntThreshold
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
-  updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)\n  updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
+  updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
+  updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   updateHeader(R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
  }
  private fun bindChart(bodyId:Int,headerId:Int,title:String,s:TimeframeScore){
