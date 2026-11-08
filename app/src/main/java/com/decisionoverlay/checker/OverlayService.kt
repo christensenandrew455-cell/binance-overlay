@@ -95,19 +95,27 @@ class OverlayService : Service() {
     private fun render(snapshot: EngineSnapshot) {
         panel?.render(snapshot)
         val verdict = snapshot.decision.verdict
-        if ((verdict == Verdict.UP || verdict == Verdict.DOWN) && verdict != lastAlertedVerdict) {
+        // Alert on every verdict transition, including a switch into DNT.
+        // Tracking DNT as a real state prevents repeated alerts on every refresh.
+        if (verdict != lastAlertedVerdict) {
             notifySignal(snapshot)
         }
-        if (verdict == Verdict.DNT) lastAlertedVerdict = null
         val text = snapshot.symbol + "  " + verdict.name
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     private fun notifySignal(snapshot: EngineSnapshot) {
         val verdict = snapshot.decision.verdict
-        val up = verdict == Verdict.UP
-        val title = if (up) "UPTREND — ${snapshot.symbol}" else "DOWNTREND — ${snapshot.symbol}"
-        val body = "Score ${signed(snapshot.decision.totalScore)}. Trading checker detected a ${if (up) "bullish" else "bearish"} signal."
+        val title = when (verdict) {
+            Verdict.UP -> "UPTREND — ${snapshot.symbol}"
+            Verdict.DOWN -> "DOWNTREND — ${snapshot.symbol}"
+            Verdict.DNT -> "DNT — ${snapshot.symbol}"
+        }
+        val body = when (verdict) {
+            Verdict.UP -> "Score ${signed(snapshot.decision.totalScore)}. Trading checker detected an upward signal."
+            Verdict.DOWN -> "Score ${signed(snapshot.decision.totalScore)}. Trading checker detected a downward signal."
+            Verdict.DNT -> "Score ${signed(snapshot.decision.totalScore)} (threshold ±${snapshot.decision.dntThreshold}). No trade direction currently meets the threshold."
+        }
         val open = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val alert = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
@@ -156,8 +164,8 @@ class OverlayService : Service() {
         val channel = NotificationChannel(CHANNEL_ID, "Floating decision checker", NotificationManager.IMPORTANCE_LOW)
         channel.description = "Keeps the UP / DOWN / DNT floating checker running."
         manager.createNotificationChannel(channel)
-        val alertChannel = NotificationChannel(ALERT_CHANNEL_ID, "UP / DOWN trading alerts", NotificationManager.IMPORTANCE_HIGH)
-        alertChannel.description = "Audible alerts when the checker changes to UP or DOWN."
+        val alertChannel = NotificationChannel(ALERT_CHANNEL_ID, "UP / DOWN / DNT trading alerts", NotificationManager.IMPORTANCE_HIGH)
+        alertChannel.description = "Audible alerts whenever the checker changes between UP, DOWN, and DNT."
         manager.createNotificationChannel(alertChannel)
     }
 
