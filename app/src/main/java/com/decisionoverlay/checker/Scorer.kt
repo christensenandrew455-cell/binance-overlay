@@ -109,18 +109,20 @@ object Scorer {
         val redCount = cluster.count { it.close < it.open }
         val risingCloses = cluster.takeLast(3).zipWithNext().all { it.second.close > it.first.close }
         val fallingCloses = cluster.takeLast(3).zipWithNext().all { it.second.close < it.first.close }
-        val bullishBreak = last.close > prior.maxOf { it.high } && last.close > last.open
-        val bearishBreak = last.close < prior.minOf { it.low } && last.close < last.open
+        val earlySellPressure = cluster[1].close < cluster[0].close && cluster[2].close <= cluster[1].close
+        val earlyBuyPressure = cluster[1].close > cluster[0].close && cluster[2].close >= cluster[1].close
+        val bullishBreak = earlySellPressure && risingCloses && last.close > prior.maxOf { it.high } && last.close > last.open
+        val bearishBreak = earlyBuyPressure && fallingCloses && last.close < prior.minOf { it.low } && last.close < last.open
         val bullishAbsorption = cluster.dropLast(1).any {
             val body = abs(it.close - it.open).coerceAtLeast(0.0000001)
             val lowerWick = minOf(it.open, it.close) - it.low
             lowerWick >= body * 1.25
-        } && greenCount >= 3 && last.close > cluster.first().high
+        } && earlySellPressure && risingCloses && greenCount >= 3 && last.close > cluster.first().high
         val bearishAbsorption = cluster.dropLast(1).any {
             val body = abs(it.close - it.open).coerceAtLeast(0.0000001)
             val upperWick = it.high - maxOf(it.open, it.close)
             upperWick >= body * 1.25
-        } && redCount >= 3 && last.close < cluster.first().low
+        } && earlyBuyPressure && fallingCloses && redCount >= 3 && last.close < cluster.first().low
 
         val oneMinutePoints = when {
             volumeExpanded && risingCloses && greenCount >= 3 &&
