@@ -118,7 +118,6 @@ class MainActivity:AppCompatActivity(){
  private fun startOverlay(){
   val symbol=readSymbol()?:return
   if(!Settings.canDrawOverlays(this)){setStatus("Android needs permission for the floating badge. Opening permission settings.");startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:$packageName")));return}
-  if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.TIRAMISU&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){pendingSymbol=symbol;notifications.launch(Manifest.permission.POST_NOTIFICATIONS);return}
   requestAndLaunchService(symbol,true)
  }
  private fun requestAndLaunchService(symbol:String,showOverlay:Boolean){
