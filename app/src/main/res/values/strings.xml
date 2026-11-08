@@ -6,5 +6,5 @@
     <string name="symbol_label">Binance.US trading pair</string>
     <string name="show_overlay">Start floating checker</string>
     <string name="hide_overlay">Stop floating checker</string>
-    <string name="rules">The combined score ranges from -10 to +10: 1-minute early momentum ±2; 5-minute primary trigger ±6; 15-minute structure confirmation ±2. UP triggers at or above the selected positive DNT threshold, DOWN at or below the negative threshold, and DNT inside the neutral zone or whenever required market data is missing. The threshold is adjustable from ±2 to ±6. Public market data does not need an API key. This app is a manual decision aid, not financial advice or an automatic trader.</string>
+    <string name="rules">Target-aware 15-minute decision system: each quarter-hour session uses the Binance 15-minute candle open as its baseline target. The 1-minute momentum contributes up to ±5, the aligned 5-minute trend up to ±3, and 15-minute target proximity up to ±2. UP is only allowed below the target buffer; DOWN is only allowed above it. The buffer is the greater of 0.05% of the target or one quarter of recent 15-minute ATR. No new entries are allowed during the final 2 minutes of a session. Each qualifying signal opens a 60-second entry window. This is a manual decision aid, not financial advice or an automatic trader.</string>
 </resources>
