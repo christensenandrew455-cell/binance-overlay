@@ -16,9 +16,9 @@ data class TargetEvaluation(
 
 object Scorer {
     const val MIN_CANDLES = 40
-    const val DEFAULT_DNT_THRESHOLD = 3
-    const val MIN_DNT_THRESHOLD = 3
-    const val MAX_DNT_THRESHOLD = 3
+    const val DEFAULT_DNT_THRESHOLD = 2
+    const val MIN_DNT_THRESHOLD = 2
+    const val MAX_DNT_THRESHOLD = 2
 
     fun score1m(c: List<Candle>, f: FeedStatus) = score(c, f, "1-minute", "1m")
     fun score5m(c: List<Candle>, f: FeedStatus) = score(c, f, "5-minute", "5m")
@@ -85,14 +85,8 @@ object Scorer {
         val current = price!!
         val baseline = target!!
 
-        // Volatility-aware stand-off: minimum 0.05% of target or 25% of recent 15m ATR.
-        val recent15 = fifteenMinute.takeLast(15)
-        val trueRanges = recent15.drop(1).mapIndexed { index, candle ->
-            val previousClose = recent15[index].close
-            max(candle.high - candle.low, max(abs(candle.high - previousClose), abs(candle.low - previousClose)))
-        }
-        val atr15 = trueRanges.average().takeIf { it.isFinite() } ?: 0.0
-        val buffer = max(baseline * 0.0005, atr15 * 0.25)
+        // Fixed $200 stand-off from the active 15-minute target.
+        val buffer = 200.0
         val longBias = current < baseline - buffer
         val shortBias = current > baseline + buffer
         val inBuffer = !longBias && !shortBias
@@ -150,13 +144,18 @@ object Scorer {
             else -> 0
         }
 
-        // 15m target engine: +2 when outside the buffer and the last three 15m closes
-        // are moving toward the target; -2 when inside the buffer or moving away.
-        val closes15 = fifteenMinute.takeLast(3).map { it.close }
-        val movingUp = closes15.size == 3 && closes15[2] > closes15[1] && closes15[1] >= closes15[0]
-        val movingDown = closes15.size == 3 && closes15[2] < closes15[1] && closes15[1] <= closes15[0]
-        val movingTowardTarget = (longBias && movingUp) || (shortBias && movingDown)
-        val targetPoints = if (!inBuffer && movingTowardTarget) 2 else -2
+        // 15m macro confirmation: require a clear three-candle structure in
+        // the same direction as the target-side move. No alignment = 0 points.
+        val macro = fifteenMinute.takeLast(3)
+        val macroUp = macro.size == 3 &&
+            macro.zipWithNext().all { (a, b) -> b.high > a.high && b.low > a.low && b.close > a.close }
+        val macroDown = macro.size == 3 &&
+            macro.zipWithNext().all { (a, b) -> b.high < a.high && b.low < a.low && b.close < a.close }
+        val targetPoints = when {
+            longBias && macroUp -> 2
+            shortBias && macroDown -> -2
+            else -> 0
+        }
 
         val total = oneMinutePoints + fiveMinutePoints + targetPoints
         val verdict = when {
@@ -168,7 +167,7 @@ object Scorer {
         val explanation = when (verdict) {
             Verdict.UP -> "UP: bullish reversal below target. $reason"
             Verdict.DOWN -> "DOWN: bearish reversal above target. $reason"
-            Verdict.DNT -> "DNT: score, reversal confirmation, or target-side buffer does not qualify. $reason"
+            Verdict.DNT -> "DNT: score, reversal confirmation, or ±$200 target buffer does not qualify. $reason"
         }
         return TargetEvaluation(total.coerceIn(-10, 10), verdict, buffer, explanation, emptyList(), oneMinutePoints, fiveMinutePoints, targetPoints)
     }
