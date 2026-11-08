@@ -6,8 +6,15 @@ object Scorer {
  const val MIN_CANDLES=40;const val DEFAULT_DNT_THRESHOLD=3;const val MIN_DNT_THRESHOLD=2;const val MAX_DNT_THRESHOLD=6
  fun score1m(c:List<Candle>,f:FeedStatus)=score(c,f,"1-minute","1m")
  fun score5m(c:List<Candle>,f:FeedStatus)=score(c,f,"5-minute","5m")
- fun score15m(c:List<Candle>,f:FeedStatus)=score(c,f,"15-minute","15m")
+ fun score15m(c:List<Candle>,f:FeedStatus,fiveDirection:Int=0)=score(c,f,"15-minute","15m")
  fun timeframeBias(s:TimeframeScore):Verdict=if(s.connection!=ConnectionState.CONNECTED||s.candleCount<MIN_CANDLES)Verdict.DNT else when{s.score>0->Verdict.UP;s.score<0->Verdict.DOWN;else->Verdict.DNT}
+ fun decide(one:TimeframeScore,five:TimeframeScore,fifteen:TimeframeScore,dntThreshold:Int=DEFAULT_DNT_THRESHOLD):Decision {
+  val threshold=dntThreshold.coerceIn(MIN_DNT_THRESHOLD,MAX_DNT_THRESHOLD)
+  val problems=listOf(one,five,fifteen).filter{it.connection!=ConnectionState.CONNECTED||it.candleCount<MIN_CANDLES}.map{"${it.label}: data unavailable."}
+  val total=(one.score+five.score+fifteen.score).coerceIn(-10,10)
+  val verdict=if(problems.isNotEmpty())Verdict.DNT else when{total>=threshold->Verdict.UP;total<=-threshold->Verdict.DOWN;else->Verdict.DNT}
+  return Decision(verdict,"Compatibility decision",one,five,fifteen,problems,total,threshold)
+ }
  fun evaluateTarget(one:List<Candle>,five:List<Candle>,fifteen:List<Candle>,feeds:List<FeedStatus>,target:Double?,price:Double?,threshold:Int=DEFAULT_DNT_THRESHOLD):TargetEvaluation {
   val problems=mutableListOf<String>();val labels=listOf("1-minute","5-minute","15-minute");val sets=listOf(one,five,fifteen)
   sets.forEachIndexed{i,x->if(x.count{it.closed}<MIN_CANDLES)problems+="${labels[i]}: need $MIN_CANDLES completed candles; received ${x.count{it.closed}}."}
