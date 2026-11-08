@@ -6,5 +6,5 @@
     <string name="symbol_label">Binance.US trading pair</string>
     <string name="show_overlay">Start floating checker</string>
     <string name="hide_overlay">Stop floating checker</string>
-    <string name="rules">The combined score ranges from -10 to +10: 1-hour EMA20 and RSI trend ±4; 15-minute MACD ±2 plus confirming volume ±2; 5-minute EMA8 versus EMA21 ±2. UP triggers at or above the selected positive DNT threshold, DOWN at or below the negative threshold, and DNT inside the neutral zone or whenever required market data is missing. The threshold is adjustable from ±2 to ±6. Public market data does not need an API key. This app is a manual decision aid, not financial advice or an automatic trader.</string>
+    <string name="rules">The combined score ranges from -10 to +10: 1-minute early momentum ±2; 5-minute primary trigger ±6; 15-minute structure confirmation ±2. UP triggers at or above the selected positive DNT threshold, DOWN at or below the negative threshold, and DNT inside the neutral zone or whenever required market data is missing. The threshold is adjustable from ±2 to ±6. Public market data does not need an API key. This app is a manual decision aid, not financial advice or an automatic trader.</string>
 </resources>
