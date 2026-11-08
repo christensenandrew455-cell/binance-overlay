@@ -65,12 +65,12 @@ class MainActivity:AppCompatActivity(){
   })
  }
  private fun setupCollapsibleCharts(){
-  listOf(R.id.chart5Header to R.id.chart5Body,R.id.chart15Header to R.id.chart15Body,R.id.chart1hHeader to R.id.chart1hBody).forEach{(headerId,bodyId)->
+  listOf(R.id.chart1mHeader to R.id.chart1mBody,R.id.chart5Header to R.id.chart5Body,R.id.chart15Header to R.id.chart15Body).forEach{(headerId,bodyId)->
    val body=findViewById<View>(bodyId);body.visibility=View.GONE
    findViewById<TextView>(headerId).setOnClickListener{
     val open=body.visibility!=View.VISIBLE
     body.visibility=if(open)View.VISIBLE else View.GONE
-    (it as TextView).text=(if(open)"▾  " else "▸  ")+when(headerId){R.id.chart5Header->"5 MINUTE CHART";R.id.chart15Header->"15 MINUTE CHART";else->"1 HOUR CHART"}+chartSummary(bodyId)
+    (it as TextView).text=(if(open)"▾  " else "▸  ")+when(headerId){R.id.chart1mHeader->"1 MINUTE CHART";R.id.chart5Header->"5 MINUTE CHART";else->"15 MINUTE CHART"}+chartSummary(bodyId)
    }
   }
  }
@@ -93,14 +93,14 @@ class MainActivity:AppCompatActivity(){
  }
  private fun render(s:EngineSnapshot){
   findViewById<TextView>(R.id.symbolHeading).text=s.symbol+" • LAST $"+fmtPrice(s.decision.five.price)
-  bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
+  bindChart(R.id.chart1mBody,R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)\n  bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   bindChart(R.id.chart1hBody,R.id.chart1hHeader,"1 HOUR CHART",s.decision.hour)
   findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
   val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   DNT ±"+s.decision.dntThreshold
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
-  updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
+  updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)\n  updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   updateHeader(R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   updateHeader(R.id.chart1hHeader,"1 HOUR CHART",s.decision.hour)
  }
@@ -112,7 +112,7 @@ class MainActivity:AppCompatActivity(){
   }
  }
  private fun updateHeader(id:Int,title:String,s:TimeframeScore){
-  val bias=Scorer.timeframeBias(s);val expanded=findViewById<View>(when(id){R.id.chart5Header->R.id.chart5Body;R.id.chart15Header->R.id.chart15Body;else->R.id.chart1hBody}).visibility==View.VISIBLE
+  val bias=Scorer.timeframeBias(s);val expanded=findViewById<View>(when(id){R.id.chart1mHeader->R.id.chart1mBody;R.id.chart5Header->R.id.chart5Body;else->R.id.chart15Body}).visibility==View.VISIBLE
   findViewById<TextView>(id).text=(if(expanded)"▾  " else "▸  ")+title+"     "+bias.name+"  "+signed(s.score)
  }
  private fun startOverlay(){
