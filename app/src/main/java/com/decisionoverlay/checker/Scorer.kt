@@ -9,6 +9,9 @@ data class TargetEvaluation(
     val buffer: Double,
     val reason: String,
     val problems: List<String>,
+    val oneMinutePoints: Int = 0,
+    val fiveMinutePoints: Int = 0,
+    val targetPoints: Int = 0,
 )
 
 object Scorer {
@@ -120,9 +123,9 @@ object Scorer {
         } && redCount >= 3 && last.close < cluster.first().low
 
         val oneMinutePoints = when {
-            longBias && volumeExpanded && risingCloses && greenCount >= 3 &&
+            volumeExpanded && risingCloses && greenCount >= 3 &&
                 (bullishBreak || bullishAbsorption) -> 5
-            shortBias && volumeExpanded && fallingCloses && redCount >= 3 &&
+            volumeExpanded && fallingCloses && redCount >= 3 &&
                 (bearishBreak || bearishAbsorption) -> -5
             else -> 0
         }
@@ -165,7 +168,7 @@ object Scorer {
             Verdict.DOWN -> "DOWN: bearish reversal above target. $reason"
             Verdict.DNT -> "DNT: score, reversal confirmation, or target-side buffer does not qualify. $reason"
         }
-        return TargetEvaluation(total.coerceIn(-10, 10), verdict, buffer, explanation, emptyList())
+        return TargetEvaluation(total.coerceIn(-10, 10), verdict, buffer, explanation, emptyList(), oneMinutePoints, fiveMinutePoints, targetPoints)
     }
 
     private fun score(c: List<Candle>, f: FeedStatus, label: String, interval: String): TimeframeScore {
