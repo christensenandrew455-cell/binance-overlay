@@ -109,8 +109,8 @@ object Scorer {
         val redCount = cluster.count { it.close < it.open }
         val risingCloses = cluster.takeLast(3).zipWithNext().all { it.second.close > it.first.close }
         val fallingCloses = cluster.takeLast(3).zipWithNext().all { it.second.close < it.first.close }
-        val earlySellPressure = cluster[1].close < cluster[0].close && cluster[2].close <= cluster[1].close
-        val earlyBuyPressure = cluster[1].close > cluster[0].close && cluster[2].close >= cluster[1].close
+        val earlySellPressure = cluster[1].close < cluster[0].close
+        val earlyBuyPressure = cluster[1].close > cluster[0].close
         val bullishBreak = earlySellPressure && risingCloses && last.close > prior.maxOf { it.high } && last.close > last.open
         val bearishBreak = earlyBuyPressure && fallingCloses && last.close < prior.minOf { it.low } && last.close < last.open
         val bullishAbsorption = cluster.dropLast(1).any {
@@ -160,8 +160,8 @@ object Scorer {
 
         val total = oneMinutePoints + fiveMinutePoints + targetPoints
         val verdict = when {
-            total >= DEFAULT_DNT_THRESHOLD && longBias -> Verdict.UP
-            total <= -DEFAULT_DNT_THRESHOLD && shortBias -> Verdict.DOWN
+            total >= DEFAULT_DNT_THRESHOLD && longBias && oneMinutePoints > 0 -> Verdict.UP
+            total <= -DEFAULT_DNT_THRESHOLD && shortBias && oneMinutePoints < 0 -> Verdict.DOWN
             else -> Verdict.DNT
         }
         val reason = "1m ${signed(oneMinutePoints)}, 5m ${signed(fiveMinutePoints)}, 15m target ${signed(targetPoints)}; buffer ${fmtPrice(buffer)}."
