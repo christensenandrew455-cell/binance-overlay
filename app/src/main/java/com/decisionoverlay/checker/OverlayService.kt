@@ -183,7 +183,7 @@ class OverlayService : Service() {
         const val KEY_SYMBOL = "symbol"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         private const val CHANNEL_ID = "decision_overlay"
-        private const val ALERT_CHANNEL_ID = "decision_signal_alerts"
+        private const val ALERT_CHANNEL_ID = "decision_signal_alerts_v2"
         private const val NOTIFICATION_ID = 42
         private const val ALERT_NOTIFICATION_ID = 43
     }
