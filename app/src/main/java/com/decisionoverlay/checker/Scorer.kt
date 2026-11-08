@@ -179,6 +179,8 @@ object Scorer {
         val price = closes.lastOrNull()
         val ema = if (price == null) null else Indicators.ema(closes, 9)
         val rsi = if (price == null) null else Indicators.rsi(closes)
+        // Keep MACD metrics populated independently of the target-aware decision score.
+        val macd = Indicators.macd(closes)
         val points = when {
             price == null || ema == null -> 0
             price > ema -> 1
@@ -192,7 +194,8 @@ object Scorer {
         }
         val lastCandle = data.lastOrNull()
         return TimeframeScore(
-            label, interval, points, components, price, ema, null, rsi, null, null, null,
+            label, interval, points, components, price, ema, null, rsi,
+            macd?.line, macd?.signal, macd?.histogram,
             if (lastCandle == null || lastCandle.close >= lastCandle.open) "last candle up" else "last candle down",
             Indicators.volumeRatio(data), f.state, f.detail, f.updatedAt, f.lastError, data.size,
         )
