@@ -23,7 +23,16 @@ class ScorerTest {
         assertEquals(Verdict.DOWN, result.candidate)
     }
 
-    @Test fun thresholdIsTwoAndBufferIsFixedAtTwoHundred() {\n        assertEquals(2, Scorer.DEFAULT_DNT_THRESHOLD)\n        val one = candles(45, 1, volumeBoost = true, reversal = true)\n        val five = candles(45, 1, interval = 300000L)\n        val fifteen = candles(45, 1, interval = 900000L)\n        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), one.last().close + 201.0, one.last().close)\n        assertEquals(200.0, result.buffer, 0.0)\n    }\n\n    @Test fun priceInsideTargetBufferStaysDnt() {
+    @Test fun thresholdIsTwoAndBufferIsFixedAtTwoHundred() {
+        assertEquals(2, Scorer.DEFAULT_DNT_THRESHOLD)
+        val one = candles(45, 1, volumeBoost = true, reversal = true)
+        val five = candles(45, 1, interval = 300000L)
+        val fifteen = candles(45, 1, interval = 900000L)
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), one.last().close + 201.0, one.last().close)
+        assertEquals(200.0, result.buffer, 0.0)
+    }
+
+    @Test fun priceInsideTargetBufferStaysDnt() {
         val one = candles(45, 1, volumeBoost = true)
         val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, 1, interval = 900000L)
