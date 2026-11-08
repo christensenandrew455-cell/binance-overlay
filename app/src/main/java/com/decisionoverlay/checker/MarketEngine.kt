@@ -39,11 +39,11 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
   val one=oneRaw.copy(score=ev.oneMinutePoints,components=listOf(ComponentScore("5-candle reversal trigger",ev.oneMinutePoints,"Volume expansion, sequential closes, and local structure/absorption.")))
   val five=fiveRaw.copy(score=ev.fiveMinutePoints,components=listOf(ComponentScore("3-candle confirmation",ev.fiveMinutePoints,"Higher highs/lows or lower highs/lows with supporting volume, aligned to target bias.")))
   val fifteen=fifteenRaw.copy(score=ev.targetPoints,components=listOf(ComponentScore("Target buffer engine",ev.targetPoints,"Target distance and 15-minute direction toward target.")))
-  val locked=remaining<=120000L;var v=if(locked||ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
+  val locked=remaining<=180000L;var v=if(locked||ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
   if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v entry window opened for 60 seconds.")}
   if(v==Verdict.DNT){candidate=Verdict.DNT;entryUntil=0}
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
-  val reason=when{locked->"DNT: final 2-minute lock-in buffer; no new entries.";ev.problems.isNotEmpty()->"DNT: market data unavailable.";v==Verdict.DNT&&candidate!=Verdict.DNT->"DNT: 60-second entry window expired.";else->ev.reason}
+  val reason=when{locked->"DNT: final 3-minute lock-in buffer; no new entries.";ev.problems.isNotEmpty()->"DNT: market data unavailable.";v==Verdict.DNT&&candidate!=Verdict.DNT->"DNT: 60-second entry window expired.";else->ev.reason}
   if(v!=lastVerdict){logLocked("Decision changed to $v (score ${signed(ev.score)}).");lastVerdict=v}
   val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),ev.buffer.takeIf{it>0})
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
