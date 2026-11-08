@@ -35,13 +35,18 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         startInForeground("Starting public Binance data feed")
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT")
             ?: "BTCUSDT"
 
-        ensurePanel()
+        if (intent?.getBooleanExtra(EXTRA_SHOW_PANEL, false) == true) ensurePanel()
         if (!engineStarted) {
             engineStarted = true
             engine.start(symbol)
@@ -142,6 +147,7 @@ class OverlayService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(R.drawable.ic_stat, "STOP RUNNING", PendingIntent.getService(this, 2, Intent(this, OverlayService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             .build()
     }
 
@@ -163,6 +169,8 @@ class OverlayService : Service() {
 
     companion object {
         const val EXTRA_SYMBOL = "symbol"
+        const val EXTRA_SHOW_PANEL = "show_panel"
+        const val ACTION_STOP = "com.decisionoverlay.checker.STOP"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
