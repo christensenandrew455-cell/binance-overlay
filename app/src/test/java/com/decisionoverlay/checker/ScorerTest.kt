@@ -9,28 +9,28 @@ class ScorerTest {
         val one = candles(45, 1, volumeBoost = true, reversal = true)
         val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, 1, interval = 900000L)
-        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 130.0, one.last().close)
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 400.0, one.last().close)
         assertEquals(10, result.score)
         assertEquals(Verdict.UP, result.candidate)
     }
 
     @Test fun bearishReversalAboveTargetScoresMinusTenAndSignalsDown() {
-        val one = candles(45, -1, volumeBoost = true, reversal = true)
-        val five = candles(45, -1, volumeBoost = true, interval = 300000L, strongLastThree = true)
-        val fifteen = candles(45, -1, interval = 900000L)
-        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 80.0, one.last().close)
-        assertEquals(-6, result.score)
+        val one = candles(45, -1, volumeBoost = true, reversal = true, startPrice = 500.0)
+        val five = candles(45, -1, volumeBoost = true, interval = 300000L, strongLastThree = true, startPrice = 500.0)
+        val fifteen = candles(45, -1, interval = 900000L, startPrice = 500.0)
+        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 100.0, one.last().close)
+        assertEquals(-10, result.score)
         assertEquals(Verdict.DOWN, result.candidate)
     }
 
-    @Test fun priceInsideTargetBufferStaysDnt() {
+    @Test fun thresholdIsTwoAndBufferIsFixedAtTwoHundred() {\n        assertEquals(2, Scorer.DEFAULT_DNT_THRESHOLD)\n        val one = candles(45, 1, volumeBoost = true, reversal = true)\n        val five = candles(45, 1, interval = 300000L)\n        val fifteen = candles(45, 1, interval = 900000L)\n        val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), one.last().close + 201.0, one.last().close)\n        assertEquals(200.0, result.buffer, 0.0)\n    }\n\n    @Test fun priceInsideTargetBufferStaysDnt() {
         val one = candles(45, 1, volumeBoost = true)
         val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, 1, interval = 900000L)
         val price = one.last().close
         val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 0.01, price)
         assertEquals(Verdict.DNT, result.candidate)
-        assertEquals(-2, result.targetPoints)
+        assertEquals(0, result.targetPoints)
     }
 
     @Test fun missingFeedForcesDnt() {
@@ -63,8 +63,9 @@ class ScorerTest {
         interval: Long = 60000L,
         strongLastThree: Boolean = false,
         reversal: Boolean = false,
+        startPrice: Double = 100.0,
     ): List<Candle> {
-        var price = 100.0
+        var price = startPrice
         return (0 until count).map { index ->
             val inReversalLeg = reversal && index >= count - 3
             val candleDirection = if (reversal && !inReversalLeg) -direction else direction
