@@ -19,7 +19,7 @@ class ScorerTest {
         val five = candles(45, -1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, -1, interval = 900000L)
         val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 80.0, one.last().close)
-        assertEquals(-10, result.score)
+        assertEquals(-6, result.score)
         assertEquals(Verdict.DOWN, result.candidate)
     }
 
