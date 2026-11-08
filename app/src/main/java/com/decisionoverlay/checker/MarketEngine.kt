@@ -14,8 +14,8 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
  private val http=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(20,TimeUnit.SECONDS).build()
  private val client=BinanceClient(http); private val mutex=Mutex(); private val started=AtomicBoolean(false)
  private val logs=ArrayDeque<String>()
- private val candles=linkedMapOf("5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>(),"1h" to mutableListOf<Candle>())
- private val feeds=linkedMapOf("5m" to MutableFeed(),"15m" to MutableFeed(),"1h" to MutableFeed())
+ private val candles=linkedMapOf("1m" to mutableListOf<Candle>(),"5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>())
+ private val feeds=linkedMapOf("1m" to MutableFeed(),"5m" to MutableFeed(),"15m" to MutableFeed())
  @Volatile var symbol="BTCUSDT"; private set
  @Volatile private var dntThreshold=initialDntThreshold.coerceIn(Scorer.MIN_DNT_THRESHOLD,Scorer.MAX_DNT_THRESHOLD)
  private val jobs=mutableListOf<Job>(); private var lastVerdict:Verdict?=null
@@ -24,7 +24,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
   symbol=normalize(raw)?: "BTCUSDT"
   scope.launch(Dispatchers.IO) {
    mutex.withLock { logLocked("Started public Binance feed for $symbol"); refreshAllLocked() }
-   poll("5m",FIVE); poll("15m",FIFTEEN); poll("1h",HOUR)
+   poll("1m",ONE); poll("5m",FIVE); poll("15m",FIFTEEN)
   }
  }
  fun updateSymbol(raw:String) { scope.launch(Dispatchers.IO) {
@@ -48,7 +48,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
    if(isActive)mutex.withLock{logLocked("$interval candle closed — checking completed candle");fetchLocked(interval,"CANDLE CLOSE")}
   }
  }}
- private fun refreshAllLocked(){fetchLocked("5m","STARTUP");fetchLocked("15m","STARTUP");fetchLocked("1h","STARTUP")}
+ private fun refreshAllLocked(){fetchLocked("1m","STARTUP");fetchLocked("5m","STARTUP");fetchLocked("15m","STARTUP")}
  private fun fetchLocked(interval:String,via:String){
   try{
    val result=client.fetchKlines(symbol,interval,150)
@@ -62,12 +62,12 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
  }
  private fun publishLocked(){
   val now=System.currentTimeMillis()
-  age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now);age("1h",HOUR*2,now)
+  age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
+  val one=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot())
   val five=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot())
   val direction=five.score.compareTo(0)
   val fifteen=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot(),direction)
-  val hour=Scorer.score1h(candles.getValue("1h"),feeds.getValue("1h").snapshot(),direction)
-  val decision=Scorer.decide(five,fifteen,hour,dntThreshold)
+  val decision=Scorer.decide(one,five,fifteen,dntThreshold)
   if(decision.verdict!=lastVerdict){logLocked("Overall verdict ${decision.verdict}, score ${signed(decision.totalScore)} / ±$dntThreshold: "+decision.reason.take(180));lastVerdict=decision.verdict}
   onUpdate(EngineSnapshot(symbol,decision,logs.joinToString("\n")))
  }
@@ -75,5 +75,5 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate:(Engi
  private fun logLocked(s:String){logs.addLast("${CLOCK.format(LocalTime.now())}  $s");while(logs.size>60)logs.removeFirst()}
  private fun normalize(raw:String):String?=raw.trim().uppercase(Locale.US).takeIf{SYMBOL.matches(it)}
  private class MutableFeed{var state=ConnectionState.NOT_WORKING;var detail="Waiting for first fetch";var updatedAt:Long?=null;var lastError:String?=null;fun snapshot()=FeedStatus(state,detail,updatedAt,lastError)}
- companion object{private const val FIVE=300000L;private const val FIFTEEN=900000L;private const val HOUR=3600000L;private val SYMBOL=Regex("^[A-Z0-9]{5,20}$");private val CLOCK=DateTimeFormatter.ofPattern("HH:mm:ss")}
+ companion object{private const val ONE=60000L;private const val FIVE=300000L;private const val FIFTEEN=900000L;private val SYMBOL=Regex("^[A-Z0-9]{5,20}$");private val CLOCK=DateTimeFormatter.ofPattern("HH:mm:ss")}
 }
