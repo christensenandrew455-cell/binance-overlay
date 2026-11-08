@@ -85,7 +85,7 @@ data class TimeframeScore(
         appendLine("Price: ${fmtPrice(price)}")
         when (interval) {
             "1h" -> { appendLine("EMA20: ${fmtNum(ema9)}"); appendLine("RSI(14): ${fmtNum(rsi)}") }
-            "5m" -> { appendLine("EMA8: ${fmtNum(ema9)}"); appendLine("MACD: ${fmtNum(macdLine)}"); appendLine("Signal: ${fmtNum(macdSignal)}") }
+            "1m", "5m" -> { appendLine("EMA8: ${fmtNum(ema9)}"); appendLine("MACD: ${fmtNum(macdLine)}"); appendLine("Signal: ${fmtNum(macdSignal)}") }
             "15m" -> { appendLine("MACD: ${fmtNum(macdLine)}"); appendLine("Signal: ${fmtNum(macdSignal)}"); appendLine("Volume / 20 SMA: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—")) }
         }
         if (components.isEmpty()) {
@@ -101,9 +101,9 @@ data class TimeframeScore(
 data class Decision(
     val verdict: Verdict,
     val reason: String,
+    val one: TimeframeScore,
     val five: TimeframeScore,
     val fifteen: TimeframeScore,
-    val hour: TimeframeScore,
     val problems: List<String> = emptyList(),
     val totalScore: Int = 0,
     val dntThreshold: Int = Scorer.DEFAULT_DNT_THRESHOLD,
