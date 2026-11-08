@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ScorerTest {
     @Test fun bullishReversalBelowTargetScoresTenAndSignalsUp() {
-        val one = candles(45, 1, volumeBoost = true)
+        val one = candles(45, 1, volumeBoost = true, reversal = true)
         val five = candles(45, 1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, 1, interval = 900000L)
         val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 130.0, one.last().close)
@@ -15,7 +15,7 @@ class ScorerTest {
     }
 
     @Test fun bearishReversalAboveTargetScoresMinusTenAndSignalsDown() {
-        val one = candles(45, -1, volumeBoost = true)
+        val one = candles(45, -1, volumeBoost = true, reversal = true)
         val five = candles(45, -1, volumeBoost = true, interval = 300000L, strongLastThree = true)
         val fifteen = candles(45, -1, interval = 900000L)
         val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), 80.0, one.last().close)
@@ -30,7 +30,7 @@ class ScorerTest {
         val price = one.last().close
         val result = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 0.01, price)
         assertEquals(Verdict.DNT, result.candidate)
-        assertTrue(result.score < 3)
+        assertEquals(-2, result.targetPoints)
     }
 
     @Test fun missingFeedForcesDnt() {
@@ -62,11 +62,14 @@ class ScorerTest {
         volumeBoost: Boolean = false,
         interval: Long = 60000L,
         strongLastThree: Boolean = false,
+        reversal: Boolean = false,
     ): List<Candle> {
         var price = 100.0
         return (0 until count).map { index ->
-            val step = if (strongLastThree && index >= count - 3) 0.5 else 0.2
-            val next = price + direction * step
+            val inReversalLeg = reversal && index >= count - 3
+            val candleDirection = if (reversal && !inReversalLeg) -direction else direction
+            val step = if ((strongLastThree || inReversalLeg) && index >= count - 3) 0.5 else 0.2
+            val next = price + candleDirection * step
             val volume = if (volumeBoost && index >= count - 5) 20.0 else 10.0
             val candle = Candle(
                 openTime = index * interval,
