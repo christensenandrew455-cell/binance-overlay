@@ -263,26 +263,38 @@ object Scorer {
         val data = c.filter { it.closed }.sortedBy { it.openTime }
         val closes = data.map { it.close }
         val price = closes.lastOrNull()
-        val ema = if (price == null) null else Indicators.ema(closes, 9)
-        val rsi = if (price == null) null else Indicators.rsi(closes)
+        val ema7 = Indicators.ema(closes, 7)
+        val ema25 = Indicators.ema(closes, 25)
+        val ema99 = Indicators.ema(closes, 99)
+        val ema9 = Indicators.ema(closes, 9)
+        val rsi = Indicators.rsi(closes)
         val macd = Indicators.macd(closes)
+        val volumeRatio = Indicators.volumeRatio(data)
         val points = when {
-            price == null || ema == null -> 0
-            price > ema -> 1
-            price < ema -> -1
+            price == null || ema7 == null || ema25 == null || ema99 == null -> 0
+            price > ema7 && ema7 > ema25 && ema25 > ema99 -> 3
+            price < ema7 && ema7 < ema25 && ema25 < ema99 -> -3
+            price > ema7 -> 1
+            price < ema7 -> -1
             else -> 0
         }
         val components = if (data.size < MIN_CANDLES) {
             listOf(ComponentScore("Data", 0, "Need $MIN_CANDLES completed candles, have ${data.size}."))
         } else {
-            listOf(ComponentScore("EMA9 context", points, "Price ${fmtPrice(price)} vs EMA9 ${fmtPrice(ema)}."))
+            listOf(
+                ComponentScore("EMA 7/25/99", points, "Price ${fmtPrice(price)}; EMA7 ${fmtPrice(ema7)}, EMA25 ${fmtPrice(ema25)}, EMA99 ${fmtPrice(ema99)}."),
+                ComponentScore("RSI(14)", if (rsi != null && rsi > 50) 1 else if (rsi != null && rsi < 50) -1 else 0, "RSI ${fmtNum(rsi)}."),
+                ComponentScore("MACD", if (macd != null && macd.histogram > 0) 1 else if (macd != null && macd.histogram < 0) -1 else 0, "Histogram ${fmtNum(macd?.histogram)}."),
+                ComponentScore("Volume", if (volumeRatio != null && volumeRatio >= 1.15) 1 else 0, "Current / 20-candle average ${fmtNum(volumeRatio)}x.")
+            )
         }
         val lastCandle = data.lastOrNull()
         return TimeframeScore(
-            label, interval, points, components, price, ema, null, rsi,
+            label, interval, points, components, price, ema9, ema25, rsi,
             macd?.line, macd?.signal, macd?.histogram,
             if (lastCandle == null || lastCandle.close >= lastCandle.open) "last candle up" else "last candle down",
-            Indicators.volumeRatio(data), f.state, f.detail, f.updatedAt, f.lastError, data.size,
+            volumeRatio, f.state, f.detail, f.updatedAt, f.lastError, data.size,
+            ema7, ema25, ema99, if (interval == "1m") data.takeLast(100) else emptyList(),
         )
     }
 }
