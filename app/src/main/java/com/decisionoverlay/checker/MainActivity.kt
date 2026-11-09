@@ -84,7 +84,7 @@ class MainActivity:AppCompatActivity(){
  private fun startChecks(){
   val symbol=readSymbol()?:return
   prefs.edit().putString(OverlayService.KEY_SYMBOL,symbol).apply()
-  if(!checksStarted){checksStarted=true;engine.start(symbol);setStatus("Checking $symbol now. Next checks run at each candle close.");findViewById<Button>(R.id.startCheckButton).text="CHECKING • RUNNING"}
+  if(!checksStarted){checksStarted=true;engine.start(symbol);setStatus("Checking $symbol now. The 1-minute pullback setup is the primary signal.");findViewById<Button>(R.id.startCheckButton).text="CHECKING • RUNNING"}
   else{if(symbol!=engine.symbol)engine.updateSymbol(symbol) else engine.refreshNow();setStatus("Refreshed $symbol. Automatic candle-close checks remain active.")}
   requestAndLaunchService(symbol,false)
  }
@@ -94,7 +94,8 @@ class MainActivity:AppCompatActivity(){
   return symbol
  }
  private fun render(s:EngineSnapshot){
-  findViewById<TextView>(R.id.symbolHeading).text=s.symbol+" • LAST $"+fmtPrice(s.decision.five.price)
+  findViewById<TextView>(R.id.symbolHeading).text=s.symbol+" • LAST $"+fmtPrice(s.decision.one.price)
+  findViewById<CandleChartView>(R.id.chart1mPlot).setCandles(s.decision.one.candles)
   bindChart(R.id.chart1mBody,R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
   bindChart(R.id.chart5Body,R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
