@@ -17,8 +17,8 @@ data class TargetEvaluation(
 object Scorer {
     const val MIN_CANDLES = 40
     const val DEFAULT_DNT_THRESHOLD = 2
-    const val MIN_DNT_THRESHOLD = 2
-    const val MAX_DNT_THRESHOLD = 2
+    const val MIN_DNT_THRESHOLD = 1
+    const val MAX_DNT_THRESHOLD = 5
 
     fun score1m(c: List<Candle>, f: FeedStatus) = score(c, f, "1-minute", "1m")
     fun score5m(c: List<Candle>, f: FeedStatus) = score(c, f, "5-minute", "5m")
@@ -59,6 +59,7 @@ object Scorer {
         target: Double?,
         price: Double?,
         threshold: Int = DEFAULT_DNT_THRESHOLD,
+        strictnessLevel: Int = 2,
     ): TargetEvaluation {
         val problems = mutableListOf<String>()
         val labels = listOf("1-minute", "5-minute", "15-minute")
@@ -85,8 +86,10 @@ object Scorer {
         val current = price!!
         val baseline = target!!
 
-        // Fixed $200 stand-off from the active 15-minute target.
-        val buffer = 200.0
+        // The selected strictness profile scales threshold, target buffer, and lockout together.
+        val profile = StrictnessProfile.fromLevel(strictnessLevel)
+        val activeThreshold = profile.threshold
+        val buffer = profile.targetBuffer
         val longBias = current < baseline - buffer
         val shortBias = current > baseline + buffer
         val inBuffer = !longBias && !shortBias
@@ -159,15 +162,15 @@ object Scorer {
 
         val total = oneMinutePoints + fiveMinutePoints + targetPoints
         val verdict = when {
-            total >= DEFAULT_DNT_THRESHOLD && longBias && oneMinutePoints > 0 -> Verdict.UP
-            total <= -DEFAULT_DNT_THRESHOLD && shortBias && oneMinutePoints < 0 -> Verdict.DOWN
+            total >= activeThreshold && longBias && oneMinutePoints > 0 -> Verdict.UP
+            total <= -activeThreshold && shortBias && oneMinutePoints < 0 -> Verdict.DOWN
             else -> Verdict.DNT
         }
-        val reason = "1m ${signed(oneMinutePoints)}, 5m ${signed(fiveMinutePoints)}, 15m target ${signed(targetPoints)}; buffer ${fmtPrice(buffer)}."
+        val reason = "1m ${signed(oneMinutePoints)}, 5m ${signed(fiveMinutePoints)}, 15m target ${signed(targetPoints)}; buffer ${fmtPrice(buffer)}, threshold ±$activeThreshold."
         val explanation = when (verdict) {
             Verdict.UP -> "UP: bullish reversal below target. $reason"
             Verdict.DOWN -> "DOWN: bearish reversal above target. $reason"
-            Verdict.DNT -> "DNT: score, reversal confirmation, or ±$200 target buffer does not qualify. $reason"
+            Verdict.DNT -> "DNT: score, reversal confirmation, or ±${fmtPrice(buffer)} target buffer does not qualify. $reason"
         }
         return TargetEvaluation(total.coerceIn(-10, 10), verdict, buffer, explanation, emptyList(), oneMinutePoints, fiveMinutePoints, targetPoints)
     }
