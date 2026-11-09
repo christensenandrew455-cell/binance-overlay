@@ -23,7 +23,7 @@ class CandleChartView @JvmOverloads constructor(
 
     fun setCandles(values: List<Candle>) {
         candles.clear()
-        candles.addAll(values.takeLast(100))
+        candles.addAll(values.takeLast(150))
         invalidate()
     }
 
@@ -65,7 +65,7 @@ class CandleChartView @JvmOverloads constructor(
         canvas.drawText("100 × 1m candles", left, height - 3f, label)
     }
 
-    private fun drawEma(canvas: Canvas, values: List<Double>, period: Int, left: Float, slot: Float, y: (Double) -> Float, paint: Paint) {
+    private fun drawEma(canvas: Canvas, values: List<Double>, period: Int, visibleStart: Int, left: Float, slot: Float, y: (Double) -> Float, paint: Paint) {
         val series = Indicators.emaSeries(values, period)
         if (series.size < 2) return
         val path = Path()
