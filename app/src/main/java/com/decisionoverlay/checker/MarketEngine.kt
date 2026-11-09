@@ -40,7 +40,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
   val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},targetPrice,oneRaw.price,dntThreshold,strictnessLevel)
   val one=oneRaw.copy(score=ev.oneMinutePoints,components=listOf(ComponentScore("5-candle reversal trigger",ev.oneMinutePoints,"Volume expansion, sequential closes, and local structure/absorption.")))
   val five=fiveRaw.copy(score=ev.fiveMinutePoints,components=listOf(ComponentScore("3-candle confirmation",ev.fiveMinutePoints,"Higher highs/lows or lower highs/lows with supporting volume, aligned to target bias.")))
-  val fifteen=fifteenRaw.copy(score=ev.targetPoints,components=listOf(ComponentScore("Target buffer engine",ev.targetPoints,"Target distance and 15-minute direction toward target.")))
+  val fifteen=fifteenRaw.copy(score=ev.targetPoints,components=listOf(ComponentScore("15m structural context",ev.targetPoints,"Three-candle macro structure aligned with the binary target side.")))
   var v=if(ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
   if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v entry window opened for 60 seconds.")}
   if(v==Verdict.DNT){candidate=Verdict.DNT;entryUntil=0}
