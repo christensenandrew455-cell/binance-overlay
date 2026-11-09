@@ -303,7 +303,7 @@ object Scorer {
             macd?.line, macd?.signal, macd?.histogram,
             if (lastCandle == null || lastCandle.close >= lastCandle.open) "last candle up" else "last candle down",
             volumeRatio, f.state, f.detail, f.updatedAt, f.lastError, data.size,
-            ema7, ema25, ema99, if (interval == "1m") data.takeLast(100) else emptyList(),
+            ema7, ema25, ema99, if (interval == "1m") data else emptyList(),
         )
     }
 }
