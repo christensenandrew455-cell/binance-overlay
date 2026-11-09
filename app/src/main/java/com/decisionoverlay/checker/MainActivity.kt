@@ -40,9 +40,9 @@ class MainActivity:AppCompatActivity(){
   findViewById<Button>(R.id.startCheckButton).setOnClickListener{startChecks()}
   findViewById<Button>(R.id.startButton).setOnClickListener{startOverlay()}
   findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));if(checksStarted){engine.stop();checksStarted=false;findViewById<Button>(R.id.startCheckButton).text="START CHECKING"};setStatus("Trading checker stopped. Background checks and alerts are off.")}
-  findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
+  findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}\n  findViewById<EditText>(R.id.targetInput).setText(prefs.getString(OverlayService.KEY_TARGET_PRICE,"")?:"")\n  findViewById<Button>(R.id.setTargetButton).setOnClickListener{val raw=findViewById<EditText>(R.id.targetInput).text.toString().trim().replace(",","");val value=raw.toDoubleOrNull();if(value==null||!value.isFinite()||value<=0){setStatus("Enter the exact Kalshi target price, e.g. 78,250.00.")}else{prefs.edit().putString(OverlayService.KEY_TARGET_PRICE,value.toString()).apply();engine.setTargetPrice(value.toString());setStatus("Kalshi target set to $"+fmtPrice(value)+".")}}
   setupCollapsibleCharts()
-  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_STRICTNESS,1))
+  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_STRICTNESS,1),prefs.getString(OverlayService.KEY_TARGET_PRICE,null)?.toDoubleOrNull())
   setupStrictnessControl()
   // Deliberately do not fetch on app launch. The user starts the checker manually.
  }
