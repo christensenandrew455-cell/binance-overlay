@@ -59,7 +59,7 @@ object Scorer {
         target: Double?,
         price: Double?,
         threshold: Int = DEFAULT_DNT_THRESHOLD,
-        strictnessLevel: Int = 2,
+        strictnessLevel: Int = 1,
     ): TargetEvaluation {
         val problems = mutableListOf<String>()
         val labels = listOf("1-minute", "5-minute", "15-minute")
