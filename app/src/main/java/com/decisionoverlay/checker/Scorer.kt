@@ -255,7 +255,7 @@ object Scorer {
             Verdict.DOWN -> "SELL/SHORT THE RETRACEMENT: downtrend pullback has resumed downward."
             Verdict.DNT -> "DNT: wait for a clear EMA trend, pullback, and confirming trigger."
         }
-        val reason = "$setup Trend=$trend; EMA7/25/99=${fmtNum(ema7)}/${fmtNum(ema25)}/${fmtNum(ema99)}; RSI=${fmtNum(rsi)}; MACD hist=${fmtNum(macd?.histogram)}; volume=${fmtNum(volumeRatio)}x; points UP=$upPoints DOWN=$downPoints; required=$required."
+        val reason = "$setup Trend=$trend; EMA7/25/99=${fmtNum(ema7)}/${fmtNum(ema25)}/${fmtNum(ema99)}; RSI=${fmtNum(rsi)}; MACD hist=${fmtNum(macd?.histogram)}; volume=${fmtNum(volumeRatio)}x; points UP=$upPoints DOWN=$downPoints; momentum confirmations=$momentumConfirmations/3; required=$required."
         return TargetEvaluation(score, verdict, 0.0, reason, emptyList(), score, 0, 0)
     }
 
