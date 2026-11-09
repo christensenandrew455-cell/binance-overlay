@@ -89,8 +89,18 @@ data class TimeframeScore(
         appendLine("Price: ${fmtPrice(price)}")
         when (interval) {
             "1h" -> { appendLine("EMA20: ${fmtNum(ema9)}"); appendLine("RSI(14): ${fmtNum(rsi)}") }
-            "1m", "5m" -> {
-                appendLine("EMA8: ${fmtNum(ema9)}")
+            "1m" -> {
+                appendLine("EMA 7: ${fmtNum(ema7)}")
+                appendLine("EMA 25: ${fmtNum(ema25)}")
+                appendLine("EMA 99: ${fmtNum(ema99)}")
+                appendLine("RSI(14): ${fmtNum(rsi)}")
+                appendLine("MACD: ${fmtNum(macdLine)}")
+                appendLine("Signal: ${fmtNum(macdSignal)}")
+                appendLine("MACD histogram: ${fmtNum(macdHist)}")
+                appendLine("Volume / 20 SMA: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—"))
+            }
+            "5m" -> {
+                appendLine("EMA9: ${fmtNum(ema9)}")
                 appendLine("MACD: ${fmtNum(macdLine)}")
                 appendLine("Signal: ${fmtNum(macdSignal)}")
                 appendLine("Volume / 20 SMA: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—"))
