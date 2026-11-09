@@ -29,7 +29,8 @@ class CandleChartView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val data = candles.takeLast(100)
+        val history = candles.toList()
+        val data = history.takeLast(100)
         if (data.isEmpty()) {
             canvas.drawText("Waiting for 1-minute candles…", 14f, height / 2f, label)
             return
@@ -58,21 +59,34 @@ class CandleChartView @JvmOverloads constructor(
             val bodyBottom = max(y(candle.open), y(candle.close))
             canvas.drawRect(x - bodyWidth / 2, bodyTop, x + bodyWidth / 2, max(bodyTop + 1.5f, bodyBottom), paint)
         }
-        val closes = data.map { it.close }
-        drawEma(canvas, closes, 7, left, slot, ::y, ema7Paint)
-        drawEma(canvas, closes, 25, left, slot, ::y, ema25Paint)
-        drawEma(canvas, closes, 99, left, slot, ::y, ema99Paint)
+        val closes = history.map { it.close }
+        val visibleStart = history.size - data.size
+        drawEma(canvas, closes, 7, visibleStart, left, slot, ::y, ema7Paint)
+        drawEma(canvas, closes, 25, visibleStart, left, slot, ::y, ema25Paint)
+        drawEma(canvas, closes, 99, visibleStart, left, slot, ::y, ema99Paint)
         canvas.drawText("100 × 1m candles", left, height - 3f, label)
     }
 
-    private fun drawEma(canvas: Canvas, values: List<Double>, period: Int, visibleStart: Int, left: Float, slot: Float, y: (Double) -> Float, paint: Paint) {
+    private fun drawEma(
+        canvas: Canvas, values: List<Double>, period: Int, visibleStart: Int,
+        left: Float, slot: Float, y: (Double) -> Float, paint: Paint
+    ) {
         val series = Indicators.emaSeries(values, period)
         if (series.size < 2) return
         val path = Path()
+        var started = false
         series.forEachIndexed { index, value ->
-            val x = left + slot * (index + period - 1 + 0.5f)
-            if (index == 0) path.moveTo(x, y(value)) else path.lineTo(x, y(value))
+            val candleIndex = index + period - 1
+            if (candleIndex >= visibleStart) {
+                val x = left + slot * (candleIndex - visibleStart + 0.5f)
+                if (!started) {
+                    path.moveTo(x, y(value))
+                    started = true
+                } else {
+                    path.lineTo(x, y(value))
+                }
+            }
         }
-        canvas.drawPath(path, paint)
+        if (started) canvas.drawPath(path, paint)
     }
 }
