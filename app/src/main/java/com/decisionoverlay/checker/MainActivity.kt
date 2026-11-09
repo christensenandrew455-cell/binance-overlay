@@ -51,13 +51,13 @@ class MainActivity:AppCompatActivity(){
  private fun setupStrictnessControl(){
   val slider=findViewById<SeekBar>(R.id.strictnessSlider)
   val description=findViewById<TextView>(R.id.strictnessDescription)
-  val saved=prefs.getInt(OverlayService.KEY_STRICTNESS,2).coerceIn(0,4)
+  val saved=prefs.getInt(OverlayService.KEY_STRICTNESS,1).coerceIn(0,4)
   slider.max=4
   slider.progress=saved
   fun renderProfile(level:Int){
    val p=StrictnessProfile.fromLevel(level)
-   description.text=p.label+"  •  Score ±"+p.threshold+"  •  Target buffer ±$"+p.targetBuffer.toInt()+"  •  Lockout "+p.lockoutMinutes+" min"
-   findViewById<TextView>(R.id.thresholdLabel).text="ENTRY THRESHOLD: +"+p.threshold+" / -"+p.threshold
+   description.text=p.label+"  •  Score ±"+p.scoreThreshold+"  •  Confirmations "+p.requiredConfirmations+"  •  Volume "+p.volumeExpansionRatio+"x"
+   findViewById<TextView>(R.id.thresholdLabel).text="ENTRY SCORE: +"+p.scoreThreshold+" / -"+p.scoreThreshold
   }
   renderProfile(saved)
   slider.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
@@ -101,7 +101,7 @@ class MainActivity:AppCompatActivity(){
   findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
   val profile=StrictnessProfile.fromLevel(prefs.getInt(OverlayService.KEY_STRICTNESS,2))
-  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   ENTRY THRESHOLD ±"+profile.threshold
+  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   SCORE THRESHOLD ±"+profile.scoreThreshold
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
   updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
   updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
