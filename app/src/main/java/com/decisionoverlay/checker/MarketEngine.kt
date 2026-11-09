@@ -8,7 +8,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(EngineSnapshot)->Unit,initialStrictnessLevel:Int=1,initialTargetPrice:Double?=null){
+class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(EngineSnapshot)->Unit,initialStrictnessLevel:Int=1){
  private val http=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(20,TimeUnit.SECONDS).build()
  private val client=BinanceClient(http);private val mutex=Mutex();private val started=AtomicBoolean(false);private val logs=ArrayDeque<String>()
  private val candles=linkedMapOf("1m" to mutableListOf<Candle>(),"5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>())
@@ -17,7 +17,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  @Volatile private var strictnessLevel=initialStrictnessLevel.coerceIn(0,4)
  private val activeProfile get()=StrictnessProfile.fromLevel(strictnessLevel)
  private val dntThreshold get()=activeProfile.scoreThreshold
- private val jobs=mutableListOf<Job>();private var targetPrice:Double?=initialTargetPrice?.takeIf{it.isFinite()&&it>0};private var manualTargetPrice:Double?=targetPrice;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
+ private val jobs=mutableListOf<Job>();private var targetPrice:Double?=null;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
  fun start(raw:String){if(!started.compareAndSet(false,true)){updateSymbol(raw);return};symbol=normalize(raw)?:"BTCUSDT"
   scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Started target-aware Binance feed for $symbol");refreshAllLocked()};poll("1m",ONE);poll("5m",FIVE);poll("15m",FIFTEEN)}
   jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(1000);mutex.withLock{publishLocked()}}}
@@ -37,8 +37,8 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  }catch(e:Exception){feeds.getValue(i).apply{state=ConnectionState.NOT_WORKING;detail="Not Working";lastError=e.message};logLocked("$i REST FAIL: "+e.message)};publishLocked()}
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
   val oneRaw=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot());val fiveRaw=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot());val fifteenRaw=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
-  val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);if(start!=targetSession){if(manualTargetPrice==null)targetPrice=null;candidate=Verdict.DNT;entryUntil=0}
-  val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},targetPrice,oneRaw.price,dntThreshold,strictnessLevel)
+  val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);val activeTarget=targetPrice.takeIf{targetSession==start};if(targetSession!=start){candidate=Verdict.DNT;entryUntil=0}
+  val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},activeTarget,oneRaw.price,dntThreshold,strictnessLevel)
   val one=oneRaw.copy(score=ev.oneMinutePoints,components=listOf(ComponentScore("5-candle reversal trigger",ev.oneMinutePoints,"Volume expansion, sequential closes, and local structure/absorption.")))
   val five=fiveRaw.copy(score=ev.fiveMinutePoints,components=listOf(ComponentScore("3-candle confirmation",ev.fiveMinutePoints,"Higher highs/lows or lower highs/lows with supporting volume, aligned to target bias.")))
   val fifteen=fifteenRaw.copy(score=ev.targetPoints,components=listOf(ComponentScore("15m structural context",ev.targetPoints,"Three-candle macro structure aligned with the binary target side.")))
@@ -48,7 +48,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
   val reason=when{ev.problems.isNotEmpty()->"DNT: market data unavailable.";v==Verdict.DNT&&candidate!=Verdict.DNT->"DNT: 60-second entry window expired.";else->ev.reason}
   if(v!=lastVerdict){logLocked("Decision changed to $v (score ${signed(ev.score)}).");lastVerdict=v}
-  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),null)
+  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,activeTarget,one.price,remaining,(entryUntil-now).coerceAtLeast(0),null)
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
  }
  private fun age(i:String,max:Long,now:Long){val f=feeds.getValue(i);val u=f.updatedAt?:return;if(f.state==ConnectionState.CONNECTED&&now-u>max){f.state=ConnectionState.NOT_WORKING;f.detail="Stale data";f.lastError="No fresh $i candle inside ${max/1000}s"}}
