@@ -8,7 +8,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(EngineSnapshot)->Unit,initialStrictnessLevel:Int=1){
+class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(EngineSnapshot)->Unit,initialStrictnessLevel:Int=1,initialTargetPrice:Double?=null){
  private val http=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(20,TimeUnit.SECONDS).build()
  private val client=BinanceClient(http);private val mutex=Mutex();private val started=AtomicBoolean(false);private val logs=ArrayDeque<String>()
  private val candles=linkedMapOf("1m" to mutableListOf<Candle>(),"5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>())
@@ -17,7 +17,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  @Volatile private var strictnessLevel=initialStrictnessLevel.coerceIn(0,4)
  private val activeProfile get()=StrictnessProfile.fromLevel(strictnessLevel)
  private val dntThreshold get()=activeProfile.scoreThreshold
- private val jobs=mutableListOf<Job>();private var targetPrice:Double?=null;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
+ private val jobs=mutableListOf<Job>();private var targetPrice:Double?=initialTargetPrice?.takeIf{it.isFinite()&&it>0};private var manualTargetPrice:Double?=targetPrice;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
  fun start(raw:String){if(!started.compareAndSet(false,true)){updateSymbol(raw);return};symbol=normalize(raw)?:"BTCUSDT"
   scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Started target-aware Binance feed for $symbol");refreshAllLocked()};poll("1m",ONE);poll("5m",FIVE);poll("15m",FIFTEEN)}
   jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(1000);mutex.withLock{publishLocked()}}}
@@ -26,12 +26,12 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
   mutex.withLock{candles.values.forEach{it.clear()};feeds.values.forEach{it.state=ConnectionState.NOT_WORKING;it.detail="Reloading $next";it.updatedAt=null;it.lastError=null};targetPrice=null;targetSession=0;candidate=Verdict.DNT;entryUntil=0;lastVerdict=Verdict.DNT;logLocked("Symbol changed to $next");refreshAllLocked()}
  }}
  fun setStrictness(level:Int){scope.launch(Dispatchers.IO){mutex.withLock{val next=level.coerceIn(0,4);if(next!=strictnessLevel){strictnessLevel=next;candidate=Verdict.DNT;entryUntil=0;logLocked("Strictness changed: ${activeProfile.label} (score ±${activeProfile.scoreThreshold}, ${activeProfile.requiredConfirmations} confirmations, volume ${activeProfile.volumeExpansionRatio}x)");publishLocked()}}}}
- fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
+ fun setTargetPrice(raw:String){scope.launch(Dispatchers.IO){mutex.withLock{val parsed=raw.trim().replace(",","").toDoubleOrNull();if(parsed==null||!parsed.isFinite()||parsed<=0){logLocked("Rejected invalid Kalshi target: $raw")}else{manualTargetPrice=parsed;targetPrice=parsed;candidate=Verdict.DNT;entryUntil=0;logLocked("Kalshi binary target set to ${fmtPrice(parsed)}");publishLocked()}}}}\n fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
  fun stop(){jobs.forEach{it.cancel()};jobs.clear();http.dispatcher.executorService.shutdown();http.connectionPool.evictAll()}
  private fun poll(i:String,period:Long){jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(period-System.currentTimeMillis()%period+2000L);if(isActive)mutex.withLock{fetchLocked(i,"CANDLE CLOSE")}}}}
  private fun refreshAllLocked(){fetchLocked("1m","STARTUP");fetchLocked("5m","STARTUP");fetchLocked("15m","STARTUP")}
  private fun fetchLocked(i:String,via:String){try{val r=client.fetchKlines(symbol,i,150);r.notes.forEach{logLocked("$i fallback: $it")};val now=System.currentTimeMillis()
-  if(i=="15m"){val start=now/FIFTEEN*FIFTEEN;val active=r.candles.firstOrNull{it.openTime==start};if(active!=null){if(targetSession!=start){candidate=Verdict.DNT;entryUntil=0;logLocked("New 15m target: ${fmtPrice(active.open)}")};targetSession=start;targetPrice=active.open}}
+  if(i=="15m"){val start=now/FIFTEEN*FIFTEEN;val active=r.candles.firstOrNull{it.openTime==start};if(active!=null){if(targetSession!=start){candidate=Verdict.DNT;entryUntil=0;logLocked("New 15m session started")};targetSession=start;if(manualTargetPrice==null){targetPrice=null}}}
   val closed=r.candles.filter{it.closed};candles.getValue(i).apply{clear();addAll(closed)};feeds.getValue(i).apply{state=ConnectionState.CONNECTED;detail="$via OK via ${r.host} (${closed.size} closed candles)";updatedAt=now;lastError=null};logLocked("$i REST OK: ${closed.size} completed candles")
  }catch(e:Exception){feeds.getValue(i).apply{state=ConnectionState.NOT_WORKING;detail="Not Working";lastError=e.message};logLocked("$i REST FAIL: "+e.message)};publishLocked()}
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
