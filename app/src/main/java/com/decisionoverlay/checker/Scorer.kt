@@ -109,12 +109,16 @@ object Scorer {
         val closes = oneMinute.map { it.close }
         val currentMacd = Indicators.macd(closes)
         val previousMacd = Indicators.macd(oneMinute.dropLast(5).map { it.close })
-        val bullishExtreme = recent.size == 5 &&
-            recent.last().low <= recent.dropLast(1).minOf { it.low } &&
-            recent.last().close > recent.last().open
-        val bearishExtreme = recent.size == 5 &&
-            recent.last().high >= recent.dropLast(1).maxOf { it.high } &&
-            recent.last().close < recent.last().open
+        val localLowIndex = recent.indices.minByOrNull { recent[it].low }
+        val localHighIndex = recent.indices.maxByOrNull { recent[it].high }
+        val bullishExtreme = recent.size == 5 && localLowIndex != null &&
+            localLowIndex < recent.lastIndex &&
+            recent.last().close > recent.last().open &&
+            recent.last().close > recent[localLowIndex].close
+        val bearishExtreme = recent.size == 5 && localHighIndex != null &&
+            localHighIndex < recent.lastIndex &&
+            recent.last().close < recent.last().open &&
+            recent.last().close < recent[localHighIndex].close
         val bullishBreak = recent.size == 5 && recent.last().close > recent.dropLast(1).maxOf { it.high }
         val bearishBreak = recent.size == 5 && recent.last().close < recent.dropLast(1).minOf { it.low }
         val bullishDivergence = currentMacd != null && previousMacd != null &&
