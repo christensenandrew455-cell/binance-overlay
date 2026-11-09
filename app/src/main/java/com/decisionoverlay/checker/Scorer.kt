@@ -1,7 +1,6 @@
 package com.decisionoverlay.checker
 
 import kotlin.math.abs
-import kotlin.math.max
 
 data class TargetEvaluation(
     val score: Int,
@@ -87,93 +86,104 @@ object Scorer {
         val current = price!!
         val baseline = target!!
 
-        // The selected strictness profile scales threshold, target buffer, and lockout together.
+        // The target is a binary finish-line only: no dollar buffer or distance threshold.
+        // Below target, only a confirmed bullish reversal can signal UP. Above target,
+        // only a confirmed bearish reversal can signal DOWN.
+        val expectedDirection = when {
+            current < baseline -> 1
+            current > baseline -> -1
+            else -> 0
+        }
+        if (expectedDirection == 0) {
+            return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: price is sitting on the binary target; wait for a clear side.", emptyList())
+        }
+
         val profile = StrictnessProfile.fromLevel(strictnessLevel)
-        val activeThreshold = profile.threshold
-        val buffer = profile.targetBuffer
-        val longBias = current < baseline - buffer
-        val shortBias = current > baseline + buffer
-        val inBuffer = !longBias && !shortBias
+        val activeThreshold = profile.scoreThreshold
 
-        // 1m reversal trigger: inspect five consecutive closed candles and compare their
-        // volume with the five candles immediately before the cluster.
-        val cluster = oneMinute.takeLast(5)
-        val volumeBaseline = oneMinute.dropLast(5).takeLast(5).map { it.volume }.average()
-        val clusterVolume = cluster.map { it.volume }.average()
-        val volumeExpanded = volumeBaseline > 0.0 && clusterVolume >= volumeBaseline * 1.20
-        val last = cluster.last()
-        val prior = cluster.dropLast(1)
-        val greenCount = cluster.count { it.close > it.open }
-        val redCount = cluster.count { it.close < it.open }
-        val risingCloses = cluster.takeLast(3).zipWithNext().all { it.second.close > it.first.close }
-        val fallingCloses = cluster.takeLast(3).zipWithNext().all { it.second.close < it.first.close }
-        val earlySellPressure = cluster[1].close < cluster[0].close
-        val earlyBuyPressure = cluster[1].close > cluster[0].close
-        val bullishBreak = earlySellPressure && risingCloses && last.close > prior.maxOf { it.high } && last.close > last.open
-        val bearishBreak = earlyBuyPressure && fallingCloses && last.close < prior.minOf { it.low } && last.close < last.open
-        val bullishAbsorption = cluster.dropLast(1).any {
-            val body = abs(it.close - it.open).coerceAtLeast(0.0000001)
-            val lowerWick = minOf(it.open, it.close) - it.low
-            lowerWick >= body * 1.25
-        } && earlySellPressure && risingCloses && greenCount >= 3 && last.close > cluster.first().high
-        val bearishAbsorption = cluster.dropLast(1).any {
-            val body = abs(it.close - it.open).coerceAtLeast(0.0000001)
-            val upperWick = it.high - maxOf(it.open, it.close)
-            upperWick >= body * 1.25
-        } && earlyBuyPressure && fallingCloses && redCount >= 3 && last.close < cluster.first().low
+        // 1m exhaustion: price presses into a fresh local extreme, then closes back
+        // through nearby structure. Momentum divergence is measured by improving MACD
+        // histogram while price makes a new local extreme.
+        val recent = oneMinute.takeLast(5)
+        val prior = oneMinute.dropLast(5).takeLast(5)
+        val closes = oneMinute.map { it.close }
+        val currentMacd = Indicators.macd(closes)
+        val previousMacd = Indicators.macd(oneMinute.dropLast(5).map { it.close })
+        val bullishExtreme = recent.size == 5 &&
+            recent.last().low <= recent.dropLast(1).minOf { it.low } &&
+            recent.last().close > recent.last().open
+        val bearishExtreme = recent.size == 5 &&
+            recent.last().high >= recent.dropLast(1).maxOf { it.high } &&
+            recent.last().close < recent.last().open
+        val bullishBreak = recent.size == 5 && recent.last().close > recent.dropLast(1).maxOf { it.high }
+        val bearishBreak = recent.size == 5 && recent.last().close < recent.dropLast(1).minOf { it.low }
+        val bullishDivergence = currentMacd != null && previousMacd != null &&
+            recent.minOf { it.low } <= prior.minOf { it.low } &&
+            currentMacd.histogram > previousMacd.histogram
+        val bearishDivergence = currentMacd != null && previousMacd != null &&
+            recent.maxOf { it.high } >= prior.maxOf { it.high } &&
+            currentMacd.histogram < previousMacd.histogram
 
+        val baselineVolume = prior.map { it.volume }.average()
+        val recentVolume = recent.map { it.volume }.average()
+        val volumeExpanded = baselineVolume > 0.0 &&
+            recentVolume >= baselineVolume * profile.volumeExpansionRatio
+        val volumeDrying = baselineVolume > 0.0 &&
+            recentVolume <= baselineVolume * profile.volumeDryUpRatio
+        val volumeConfirmed = volumeExpanded || volumeDrying
+
+        val bullishExhaustion = bullishExtreme && (bullishBreak || bullishDivergence)
+        val bearishExhaustion = bearishExtreme && (bearishBreak || bearishDivergence)
+        val oneMinuteConfirmations = when (expectedDirection) {
+            1 -> listOf(bullishExtreme, bullishDivergence, bullishBreak, volumeConfirmed).count { it }
+            else -> listOf(bearishExtreme, bearishDivergence, bearishBreak, volumeConfirmed).count { it }
+        }
         val oneMinutePoints = when {
-            volumeExpanded && risingCloses && greenCount >= 3 &&
-                (bullishBreak || bullishAbsorption) -> 5
-            volumeExpanded && fallingCloses && redCount >= 3 &&
-                (bearishBreak || bearishAbsorption) -> -5
+            expectedDirection == 1 && bullishExhaustion && volumeConfirmed -> 5
+            expectedDirection == -1 && bearishExhaustion && volumeConfirmed -> -5
             else -> 0
         }
 
-        // 5m confirmation: three-candle higher-high/higher-low or lower-high/lower-low
-        // structure, directional closes, and expanding volume, only in the target-side bias.
+        // 5m structural confirmation: consecutive higher highs/lows or lower highs/lows.
         val fiveCluster = fiveMinute.takeLast(3)
-        val fiveVolumeBase = fiveMinute.dropLast(3).takeLast(3).map { it.volume }.average()
-        val fiveVolumeNow = fiveCluster.map { it.volume }.average()
-        val fiveVolumeExpanded = fiveVolumeBase > 0.0 && fiveVolumeNow >= fiveVolumeBase * 1.05
         val fiveUp = fiveCluster.size == 3 &&
             fiveCluster.zipWithNext().all { (a, b) -> b.high > a.high && b.low > a.low && b.close > a.close } &&
             fiveCluster.count { it.close > it.open } >= 2
         val fiveDown = fiveCluster.size == 3 &&
             fiveCluster.zipWithNext().all { (a, b) -> b.high < a.high && b.low < a.low && b.close < a.close } &&
             fiveCluster.count { it.close < it.open } >= 2
-        val fiveMinutePoints = when {
-            longBias && fiveUp && fiveVolumeExpanded -> 3
-            shortBias && fiveDown && fiveVolumeExpanded -> -3
-            else -> 0
-        }
+        val fiveMinuteConfirmed = if (expectedDirection == 1) fiveUp else fiveDown
+        val fiveMinutePoints = if (fiveMinuteConfirmed) expectedDirection * 3 else 0
 
-        // 15m macro confirmation: require a clear three-candle structure in
-        // the same direction as the target-side move. No alignment = 0 points.
+        // 15m is contextual structure, not a fixed score bias or dollar-distance rule.
         val macro = fifteenMinute.takeLast(3)
         val macroUp = macro.size == 3 &&
             macro.zipWithNext().all { (a, b) -> b.high > a.high && b.low > a.low && b.close > a.close }
         val macroDown = macro.size == 3 &&
             macro.zipWithNext().all { (a, b) -> b.high < a.high && b.low < a.low && b.close < a.close }
-        val targetPoints = when {
-            longBias && macroUp -> 2
-            shortBias && macroDown -> -2
-            else -> 0
-        }
+        val macroConfirmed = if (expectedDirection == 1) macroUp else macroDown
+        val targetPoints = if (macroConfirmed) expectedDirection * 2 else 0
 
+        val oneMinuteConfirmed = oneMinutePoints != 0
+        val confirmationCount = oneMinuteConfirmations +
+            (if (fiveMinuteConfirmed) 1 else 0) +
+            (if (macroConfirmed) 1 else 0)
         val total = oneMinutePoints + fiveMinutePoints + targetPoints
+        val enoughConfirmations = confirmationCount >= profile.requiredConfirmations
         val verdict = when {
-            total >= activeThreshold && longBias && oneMinutePoints > 0 -> Verdict.UP
-            total <= -activeThreshold && shortBias && oneMinutePoints < 0 -> Verdict.DOWN
+            expectedDirection == 1 && oneMinuteConfirmed && enoughConfirmations && total >= activeThreshold -> Verdict.UP
+            expectedDirection == -1 && oneMinuteConfirmed && enoughConfirmations && total <= -activeThreshold -> Verdict.DOWN
             else -> Verdict.DNT
         }
-        val reason = "1m ${signed(oneMinutePoints)}, 5m ${signed(fiveMinutePoints)}, 15m target ${signed(targetPoints)}; buffer ${fmtPrice(buffer)}, threshold ±$activeThreshold."
+
+        val side = if (expectedDirection > 0) "below target" else "above target"
+        val reason = "Target side: $side. 1m exhaustion ${signed(oneMinutePoints)}, 5m structure ${signed(fiveMinutePoints)}, 15m context ${signed(targetPoints)}. Confirmations $confirmationCount/${profile.requiredConfirmations}; volume ${if (volumeExpanded) "expanded" else if (volumeDrying) "drying" else "unconfirmed"}; MACD divergence ${if ((expectedDirection > 0 && bullishDivergence) || (expectedDirection < 0 && bearishDivergence)) "yes" else "no"}; score threshold ±$activeThreshold."
         val explanation = when (verdict) {
-            Verdict.UP -> "UP: bullish reversal below target. $reason"
-            Verdict.DOWN -> "DOWN: bearish reversal above target. $reason"
-            Verdict.DNT -> "DNT: score, reversal confirmation, or ±${fmtPrice(buffer)} target buffer does not qualify. $reason"
+            Verdict.UP -> "UP: bullish reversal confirmed while BTC is below the target. $reason"
+            Verdict.DOWN -> "DOWN: bearish reversal confirmed while BTC is above the target. $reason"
+            Verdict.DNT -> "DNT: reversal, volume, structure, or strictness confirmations are incomplete. $reason"
         }
-        return TargetEvaluation(total.coerceIn(-10, 10), verdict, buffer, explanation, emptyList(), oneMinutePoints, fiveMinutePoints, targetPoints)
+        return TargetEvaluation(total.coerceIn(-10, 10), verdict, 0.0, explanation, emptyList(), oneMinutePoints, fiveMinutePoints, targetPoints)
     }
 
     private fun score(c: List<Candle>, f: FeedStatus, label: String, interval: String): TimeframeScore {
@@ -182,7 +192,6 @@ object Scorer {
         val price = closes.lastOrNull()
         val ema = if (price == null) null else Indicators.ema(closes, 9)
         val rsi = if (price == null) null else Indicators.rsi(closes)
-        // Keep MACD metrics populated independently of the target-aware decision score.
         val macd = Indicators.macd(closes)
         val points = when {
             price == null || ema == null -> 0
