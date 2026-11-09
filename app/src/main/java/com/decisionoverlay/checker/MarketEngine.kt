@@ -37,17 +37,17 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
   val oneRaw=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot());val fiveRaw=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot());val fifteenRaw=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
   val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);val activeTarget=targetPrice.takeIf{targetSession==start};if(targetSession!=start){candidate=Verdict.DNT;entryUntil=0}
-  val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},activeTarget,oneRaw.price,dntThreshold,strictnessLevel)
-  val one=oneRaw.copy(score=ev.oneMinutePoints,components=listOf(ComponentScore("5-candle reversal trigger",ev.oneMinutePoints,"Volume expansion, sequential closes, and local structure/absorption.")))
-  val five=fiveRaw.copy(score=ev.fiveMinutePoints,components=listOf(ComponentScore("3-candle confirmation",ev.fiveMinutePoints,"Higher highs/lows or lower highs/lows with supporting volume, aligned to target bias.")))
-  val fifteen=fifteenRaw.copy(score=ev.targetPoints,components=listOf(ComponentScore("15m structural context",ev.targetPoints,"Three-candle macro structure aligned with the binary target side.")))
+  val ev=Scorer.evaluatePullback(candles.getValue("1m"),feeds.getValue("1m").snapshot(),strictnessLevel)
+  val one=oneRaw.copy(score=ev.score,components=listOf(ComponentScore("1m pullback score",ev.score,ev.reason)))
+  val five=fiveRaw.copy(score=0,components=listOf(ComponentScore("Context only",0,"1-minute chart is the primary signal timeframe.")))
+  val fifteen=fifteenRaw.copy(score=0,components=listOf(ComponentScore("Context only",0,"15-minute target is displayed for reference; it does not gate the 1-minute entry.")))
   var v=if(ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
-  if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v entry window opened for 60 seconds.")}
+  if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v pullback entry window opened for 60 seconds.")}
   if(v==Verdict.DNT){candidate=Verdict.DNT;entryUntil=0}
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
-  val reason=when{ev.problems.isNotEmpty()->"DNT: market data unavailable.";v==Verdict.DNT&&candidate!=Verdict.DNT->"DNT: 60-second entry window expired.";else->ev.reason}
-  if(v!=lastVerdict){logLocked("Decision changed to $v (score ${signed(ev.score)}).");lastVerdict=v}
-  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,activeTarget,one.price,remaining,(entryUntil-now).coerceAtLeast(0),null)
+  val reason=if(ev.problems.isNotEmpty())"DNT: 1-minute market data unavailable." else if(v==Verdict.DNT&&candidate!=Verdict.DNT)"DNT: 60-second entry window expired." else ev.reason
+  if(v!=lastVerdict){logLocked("Decision changed to $v (1m pullback score ${signed(ev.score)}).");lastVerdict=v}
+  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,null,one.price,remaining,(entryUntil-now).coerceAtLeast(0),null)
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
  }
  private fun age(i:String,max:Long,now:Long){val f=feeds.getValue(i);val u=f.updatedAt?:return;if(f.state==ConnectionState.CONNECTED&&now-u>max){f.state=ConnectionState.NOT_WORKING;f.detail="Stale data";f.lastError="No fresh $i candle inside ${max/1000}s"}}
