@@ -216,44 +216,53 @@ object Scorer {
         val ema7 = e7.last()
         val ema25 = e25.last()
         val ema99 = e99.last()
-        val upTrend = ema7 > ema25 && ema25 > ema99 && e7.last() > e7[e7.lastIndex - 1] && e25.last() > e25[e25.lastIndex - 1]
-        val downTrend = ema7 < ema25 && ema25 < ema99 && e7.last() < e7[e7.lastIndex - 1] && e25.last() < e25[e25.lastIndex - 1]
+        val lastPrice = closes.last()
+        val upTrend = lastPrice > ema7 && ema7 > ema25 && ema25 > ema99 &&
+            e7.last() > e7[e7.lastIndex - 1] && e25.last() > e25[e25.lastIndex - 1]
+        val downTrend = lastPrice < ema7 && ema7 < ema25 && ema25 < ema99 &&
+            e7.last() < e7[e7.lastIndex - 1] && e25.last() < e25[e25.lastIndex - 1]
+
         val recent = data.takeLast(4)
-        val pullbackUp = recent.take(2).all { it.close > it.open } // temporary rise inside downtrend
-        val pullbackDown = recent.take(2).all { it.close < it.open } // temporary dip inside uptrend
+        val pullbackUp = recent.take(2).all { it.close > it.open }
+        val pullbackDown = recent.take(2).all { it.close < it.open }
         val trigger = recent.last()
         val previous = recent[recent.lastIndex - 1]
+        // Both setups are BUY prompts, matching the requested behavior. A buy during
+        // a downtrend is explicitly marked countertrend rather than mislabeled as trend-following.
         val downtrendBuy = downTrend && pullbackUp && trigger.close > trigger.open && trigger.close > previous.high
-        val uptrendResume = upTrend && pullbackDown && trigger.close > trigger.open && trigger.close > previous.high
+        val uptrendBuy = upTrend && pullbackDown && trigger.close > trigger.open && trigger.close > previous.high
 
         val rsi = Indicators.rsi(closes)
         val macd = Indicators.macd(closes)
         val volumeRatio = Indicators.volumeRatio(data)
         val profile = StrictnessProfile.fromLevel(strictnessLevel)
         val rsiUp = rsi != null && rsi in 45.0..68.0
-        val rsiDown = rsi != null && rsi in 32.0..55.0
-        val macdUp = macd != null && macd.histogram > 0 && (macd.previousHistogram == null || macd.histogram >= macd.previousHistogram)
-        val macdDown = macd != null && macd.histogram < 0 && (macd.previousHistogram == null || macd.histogram <= macd.previousHistogram)
+        val macdUp = macd != null && macd.histogram > 0 &&
+            (macd.previousHistogram == null || macd.histogram >= macd.previousHistogram)
         val volumeOk = volumeRatio != null && volumeRatio >= profile.volumeExpansionRatio
 
         val upPoints = (if (upTrend) 3 else 0) + (if (pullbackDown) 2 else 0) +
-            (if (uptrendResume) 2 else 0) + (if (rsiUp) 1 else 0) +
+            (if (uptrendBuy) 2 else 0) + (if (rsiUp) 1 else 0) +
             (if (macdUp) 1 else 0) + (if (volumeOk) 1 else 0)
         val downPoints = (if (downTrend) 3 else 0) + (if (pullbackUp) 2 else 0) +
-            (if (downtrendResume) 2 else 0) + (if (rsiDown) 1 else 0) +
-            (if (macdDown) 1 else 0) + (if (volumeOk) 1 else 0)
+            (if (downtrendBuy) 2 else 0) + (if (rsiUp) 1 else 0) +
+            (if (macdUp) 1 else 0) + (if (volumeOk) 1 else 0)
+
+        val momentumConfirmations = listOf(rsiUp, macdUp, volumeOk).count { it }
         val required = profile.scoreThreshold + 5
-        val verdict = when {
-            uptrendResume && upPoints >= required -> Verdict.UP
-            downtrendBuy && downPoints >= required -> Verdict.UP
-            else -> Verdict.DNT
+        val confirmed = momentumConfirmations >= 2
+        val verdict = if (confirmed && ((uptrendBuy && upPoints >= required) ||
+                    (downtrendBuy && downPoints >= required))) Verdict.UP else Verdict.DNT
+        val score = when {
+            verdict != Verdict.UP -> (upPoints - downPoints).coerceIn(-10, 10)
+            downtrendBuy -> downPoints
+            else -> upPoints
         }
-        val score = if (verdict == Verdict.UP && uptrendResume) upPoints else if (verdict == Verdict.UP && downtrendBuy) downPoints else (upPoints - downPoints).coerceIn(-10, 10)
         val trend = when { upTrend -> "UPTREND"; downTrend -> "DOWNTREND"; else -> "NO CLEAR EMA TREND" }
-        val setup = when (verdict) {
-            Verdict.UP -> "BUY THE DIP: uptrend pullback has resumed upward."
-            Verdict.DOWN -> "SELL/SHORT THE RETRACEMENT: downtrend pullback has resumed downward."
-            Verdict.DNT -> "DNT: wait for a clear EMA trend, pullback, and confirming trigger."
+        val setup = when {
+            verdict == Verdict.UP && downtrendBuy -> "BUY THE RETRACEMENT: countertrend bounce confirmed inside a downtrend."
+            verdict == Verdict.UP && uptrendBuy -> "BUY THE DIP: uptrend pullback has resumed upward."
+            else -> "DNT: wait for a clear EMA trend, pullback, trigger candle, and indicator confirmation."
         }
         val reason = "$setup Trend=$trend; EMA7/25/99=${fmtNum(ema7)}/${fmtNum(ema25)}/${fmtNum(ema99)}; RSI=${fmtNum(rsi)}; MACD hist=${fmtNum(macd?.histogram)}; volume=${fmtNum(volumeRatio)}x; points UP=$upPoints DOWN=$downPoints; momentum confirmations=$momentumConfirmations/3; required=$required."
         return TargetEvaluation(score, verdict, 0.0, reason, emptyList(), score, 0, 0)
