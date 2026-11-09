@@ -87,7 +87,7 @@ class ScorerTest {
         val fifteen = candles(45, 1, interval = 900000L)
         val price = one.last().close
         val loose = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 101.0, price, 1, 0)
-        val balanced = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 201.0, price, 2, 2)
+        val balanced = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 201.0, price, 2, 1)
         assertEquals(100.0, loose.buffer, 0.0)
         assertEquals(200.0, balanced.buffer, 0.0)
     }
