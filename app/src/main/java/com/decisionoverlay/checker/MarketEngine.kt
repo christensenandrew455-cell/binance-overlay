@@ -31,12 +31,12 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  private fun poll(i:String,period:Long){jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(period-System.currentTimeMillis()%period+2000L);if(isActive)mutex.withLock{fetchLocked(i,"CANDLE CLOSE")}}}}
  private fun refreshAllLocked(){fetchLocked("1m","STARTUP");fetchLocked("5m","STARTUP");fetchLocked("15m","STARTUP")}
  private fun fetchLocked(i:String,via:String){try{val r=client.fetchKlines(symbol,i,150);r.notes.forEach{logLocked("$i fallback: $it")};val now=System.currentTimeMillis()
-   if(i=="15m"){val start=now/FIFTEEN*FIFTEEN;val active=r.candles.firstOrNull{it.openTime==start};if(active!=null){if(targetSession!=start){candidate=Verdict.DNT;entryUntil=0;logLocked("New 15m session: captured BTC opening target ${fmtPrice(active.open)}")};targetSession=start;targetPrice=active.open}}
+
   val closed=r.candles.filter{it.closed};candles.getValue(i).apply{clear();addAll(closed)};feeds.getValue(i).apply{state=ConnectionState.CONNECTED;detail="$via OK via ${r.host} (${closed.size} closed candles)";updatedAt=now;lastError=null};logLocked("$i REST OK: ${closed.size} completed candles")
  }catch(e:Exception){feeds.getValue(i).apply{state=ConnectionState.NOT_WORKING;detail="Not Working";lastError=e.message};logLocked("$i REST FAIL: "+e.message)};publishLocked()}
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
   val oneRaw=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot());val fiveRaw=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot());val fifteenRaw=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
-  val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);val activeTarget=targetPrice.takeIf{targetSession==start};if(targetSession!=start){candidate=Verdict.DNT;entryUntil=0}
+  val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L)
   val ev=Scorer.evaluatePullback(candles.getValue("1m"),feeds.getValue("1m").snapshot(),strictnessLevel)
   val one=oneRaw.copy(score=ev.score,components=listOf(ComponentScore("1m pullback score",ev.score,ev.reason)))
   val five=fiveRaw.copy(score=0,components=listOf(ComponentScore("Context only",0,"1-minute chart is the primary signal timeframe.")))
