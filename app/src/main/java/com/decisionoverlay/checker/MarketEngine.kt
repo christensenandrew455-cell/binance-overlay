@@ -37,7 +37,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  }catch(e:Exception){feeds.getValue(i).apply{state=ConnectionState.NOT_WORKING;detail="Not Working";lastError=e.message};logLocked("$i REST FAIL: "+e.message)};publishLocked()}
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
   val oneRaw=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot());val fiveRaw=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot());val fifteenRaw=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
-  val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);if(start!=targetSession){targetPrice=null;candidate=Verdict.DNT;entryUntil=0}
+  val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);if(start!=targetSession){if(manualTargetPrice==null)targetPrice=null;candidate=Verdict.DNT;entryUntil=0}
   val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},targetPrice,oneRaw.price,dntThreshold,strictnessLevel)
   val one=oneRaw.copy(score=ev.oneMinutePoints,components=listOf(ComponentScore("5-candle reversal trigger",ev.oneMinutePoints,"Volume expansion, sequential closes, and local structure/absorption.")))
   val five=fiveRaw.copy(score=ev.fiveMinutePoints,components=listOf(ComponentScore("3-candle confirmation",ev.fiveMinutePoints,"Higher highs/lows or lower highs/lows with supporting volume, aligned to target bias.")))
