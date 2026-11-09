@@ -5,8 +5,8 @@
   <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/app_name" android:textColor="@color/text" android:textSize="28sp" android:textStyle="bold"/>
   <TextView android:id="@+id/symbolHeading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="BTCUSDT • Waiting to start" android:textColor="@color/muted" android:textSize="14sp"/>
   <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="KALSHI 15-MINUTE TARGET PRICE" android:textColor="@color/text" android:textSize="12sp" android:textStyle="bold"/>
-  <EditText android:id="@+id/targetInput" android:layout_width="match_parent" android:layout_height="50dp" android:layout_marginTop="6dp" android:background="#252F42" android:hint="Enter Kalshi strike / target" android:inputType="numberDecimal" android:paddingStart="13dp" android:paddingEnd="13dp" android:singleLine="true" android:textColor="@color/text" android:textColorHint="@color/muted" android:textSize="15sp"/>
-  <Button android:id="@+id/setTargetButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="SET KALSHI TARGET"/>
+  
+  
   <EditText android:id="@+id/symbolInput" android:layout_width="match_parent" android:layout_height="50dp" android:layout_marginTop="16dp" android:background="#252F42" android:hint="BTCUSDT" android:importantForAutofill="no" android:inputType="textCapCharacters" android:paddingStart="13dp" android:paddingEnd="13dp" android:singleLine="true" android:textColor="@color/text" android:textColorHint="@color/muted" android:textSize="15sp"/>
   <Button android:id="@+id/startCheckButton" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="9dp" android:text="START CHECKING" android:textStyle="bold"/>
   <Button android:id="@+id/startButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="SHOW FLOATING DECISION"/>
