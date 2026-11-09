@@ -8,13 +8,15 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(EngineSnapshot)->Unit,initialDntThreshold:Int=Scorer.DEFAULT_DNT_THRESHOLD){
+class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(EngineSnapshot)->Unit,initialStrictnessLevel:Int=2){
  private val http=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(20,TimeUnit.SECONDS).build()
  private val client=BinanceClient(http);private val mutex=Mutex();private val started=AtomicBoolean(false);private val logs=ArrayDeque<String>()
  private val candles=linkedMapOf("1m" to mutableListOf<Candle>(),"5m" to mutableListOf<Candle>(),"15m" to mutableListOf<Candle>())
  private val feeds=linkedMapOf("1m" to MutableFeed(),"5m" to MutableFeed(),"15m" to MutableFeed())
  @Volatile var symbol="BTCUSDT";private set
- private val dntThreshold=Scorer.DEFAULT_DNT_THRESHOLD
+ @Volatile private var strictnessLevel=initialStrictnessLevel.coerceIn(0,4)
+ private val activeProfile get()=StrictnessProfile.fromLevel(strictnessLevel)
+ private val dntThreshold get()=activeProfile.threshold
  private val jobs=mutableListOf<Job>();private var targetPrice:Double?=null;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
  fun start(raw:String){if(!started.compareAndSet(false,true)){updateSymbol(raw);return};symbol=normalize(raw)?:"BTCUSDT"
   scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Started target-aware Binance feed for $symbol");refreshAllLocked()};poll("1m",ONE);poll("5m",FIVE);poll("15m",FIFTEEN)}
@@ -23,7 +25,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  fun updateSymbol(raw:String){scope.launch(Dispatchers.IO){val next=normalize(raw);if(next==null){mutex.withLock{logLocked("Rejected symbol '$raw'");publishLocked()};return@launch};if(next==symbol)return@launch;symbol=next
   mutex.withLock{candles.values.forEach{it.clear()};feeds.values.forEach{it.state=ConnectionState.NOT_WORKING;it.detail="Reloading $next";it.updatedAt=null;it.lastError=null};targetPrice=null;targetSession=0;candidate=Verdict.DNT;entryUntil=0;lastVerdict=Verdict.DNT;logLocked("Symbol changed to $next");refreshAllLocked()}
  }}
- fun setDntThreshold(v:Int){ if(v!=Scorer.DEFAULT_DNT_THRESHOLD) scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Entry threshold is fixed at ±${Scorer.DEFAULT_DNT_THRESHOLD}");publishLocked()}} }
+ fun setStrictness(level:Int){scope.launch(Dispatchers.IO){mutex.withLock{val next=level.coerceIn(0,4);if(next!=strictnessLevel){strictnessLevel=next;candidate=Verdict.DNT;entryUntil=0;logLocked("Strictness changed: ${activeProfile.label} (±${activeProfile.threshold}, buffer ${activeProfile.targetBuffer}, ${activeProfile.lockoutMinutes}m lockout)");publishLocked()}}}}
  fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
  fun stop(){jobs.forEach{it.cancel()};jobs.clear();http.dispatcher.executorService.shutdown();http.connectionPool.evictAll()}
  private fun poll(i:String,period:Long){jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(period-System.currentTimeMillis()%period+2000L);if(isActive)mutex.withLock{fetchLocked(i,"CANDLE CLOSE")}}}}
@@ -35,15 +37,15 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
   val oneRaw=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot());val fiveRaw=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot());val fifteenRaw=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
   val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L);if(start!=targetSession){targetPrice=null;candidate=Verdict.DNT;entryUntil=0}
-  val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},targetPrice,oneRaw.price,dntThreshold)
+  val ev=Scorer.evaluateTarget(candles.getValue("1m"),candles.getValue("5m"),candles.getValue("15m"),listOf("1m","5m","15m").map{feeds.getValue(it).snapshot()},targetPrice,oneRaw.price,dntThreshold,strictnessLevel)
   val one=oneRaw.copy(score=ev.oneMinutePoints,components=listOf(ComponentScore("5-candle reversal trigger",ev.oneMinutePoints,"Volume expansion, sequential closes, and local structure/absorption.")))
   val five=fiveRaw.copy(score=ev.fiveMinutePoints,components=listOf(ComponentScore("3-candle confirmation",ev.fiveMinutePoints,"Higher highs/lows or lower highs/lows with supporting volume, aligned to target bias.")))
   val fifteen=fifteenRaw.copy(score=ev.targetPoints,components=listOf(ComponentScore("Target buffer engine",ev.targetPoints,"Target distance and 15-minute direction toward target.")))
-  val locked=remaining<=180000L;var v=if(locked||ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
+  val locked=remaining<=activeProfile.lockoutMinutes*60000L;var v=if(locked||ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
   if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v entry window opened for 60 seconds.")}
   if(v==Verdict.DNT){candidate=Verdict.DNT;entryUntil=0}
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
-  val reason=when{locked->"DNT: final 3-minute lock-in buffer; no new entries.";ev.problems.isNotEmpty()->"DNT: market data unavailable.";v==Verdict.DNT&&candidate!=Verdict.DNT->"DNT: 60-second entry window expired.";else->ev.reason}
+  val reason=when{locked->"DNT: final ${activeProfile.lockoutMinutes}-minute lock-in buffer; no new entries.";ev.problems.isNotEmpty()->"DNT: market data unavailable.";v==Verdict.DNT&&candidate!=Verdict.DNT->"DNT: 60-second entry window expired.";else->ev.reason}
   if(v!=lastVerdict){logLocked("Decision changed to $v (score ${signed(ev.score)}).");lastVerdict=v}
   val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),ev.buffer.takeIf{it>0})
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
