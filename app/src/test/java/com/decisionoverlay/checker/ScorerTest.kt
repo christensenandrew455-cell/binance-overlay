@@ -61,6 +61,35 @@ class ScorerTest {
         assertEquals(Verdict.DNT, result.candidate)
     }
 
+    @Test fun strictnessProfilesScaleThresholdBufferAndLockoutTogether() {
+        val less = StrictnessProfile.fromLevel(0)
+        val balanced = StrictnessProfile.fromLevel(2)
+        val strict = StrictnessProfile.fromLevel(3)
+        val maximum = StrictnessProfile.fromLevel(4)
+        assertEquals(1, less.threshold)
+        assertEquals(100.0, less.targetBuffer, 0.0)
+        assertEquals(1, less.lockoutMinutes)
+        assertEquals(2, balanced.threshold)
+        assertEquals(200.0, balanced.targetBuffer, 0.0)
+        assertEquals(3, balanced.lockoutMinutes)
+        assertEquals(4, strict.threshold)
+        assertEquals(300.0, strict.targetBuffer, 0.0)
+        assertEquals(4, strict.lockoutMinutes)
+        assertEquals(5, maximum.threshold)
+        assertEquals(400.0, maximum.targetBuffer, 0.0)
+        assertEquals(5, maximum.lockoutMinutes)
+    }
+
+    @Test fun strictnessLevelChangesTargetBufferAndExecutionThreshold() {
+        val one = candles(45, 1, volumeBoost = true, reversal = true)
+        val five = candles(45, 1, interval = 300000L)
+        val fifteen = candles(45, 1, interval = 900000L)
+        val price = one.last().close
+        val loose = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 101.0, price, 1, 0)
+        val balanced = Scorer.evaluateTarget(one, five, fifteen, feeds(), price + 201.0, price, 2, 2)
+        assertEquals(100.0, loose.buffer, 0.0)
+        assertEquals(200.0, balanced.buffer, 0.0)
+    }
     private fun feeds() = listOf("1m", "5m", "15m").map {
         FeedStatus(ConnectionState.CONNECTED, "test", 1L, null)
     }
