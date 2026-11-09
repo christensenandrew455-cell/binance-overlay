@@ -43,12 +43,13 @@ object Scorer {
             .filter { it.connection != ConnectionState.CONNECTED || it.candleCount < MIN_CANDLES }
             .map { "${it.label}: data unavailable." }
         val total = (one.score + five.score + fifteen.score).coerceIn(-10, 10)
+        val activeThreshold = dntThreshold.coerceIn(MIN_DNT_THRESHOLD, MAX_DNT_THRESHOLD)
         val verdict = if (problems.isNotEmpty()) Verdict.DNT else when {
-            total >= DEFAULT_DNT_THRESHOLD -> Verdict.UP
-            total <= -DEFAULT_DNT_THRESHOLD -> Verdict.DOWN
+            total >= activeThreshold -> Verdict.UP
+            total <= -activeThreshold -> Verdict.DOWN
             else -> Verdict.DNT
         }
-        return Decision(verdict, "Compatibility decision", one, five, fifteen, problems, total, DEFAULT_DNT_THRESHOLD)
+        return Decision(verdict, "Compatibility decision", one, five, fifteen, problems, total, activeThreshold)
     }
 
     fun evaluateTarget(
