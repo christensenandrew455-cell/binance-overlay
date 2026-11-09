@@ -223,7 +223,7 @@ object Scorer {
         val pullbackDown = recent.take(2).all { it.close < it.open } // temporary dip inside uptrend
         val trigger = recent.last()
         val previous = recent[recent.lastIndex - 1]
-        val downtrendResume = downTrend && pullbackUp && trigger.close < trigger.open && trigger.close < previous.low
+        val downtrendBuy = downTrend && pullbackUp && trigger.close > trigger.open && trigger.close > previous.high
         val uptrendResume = upTrend && pullbackDown && trigger.close > trigger.open && trigger.close > previous.high
 
         val rsi = Indicators.rsi(closes)
@@ -245,10 +245,10 @@ object Scorer {
         val required = profile.scoreThreshold + 5
         val verdict = when {
             uptrendResume && upPoints >= required -> Verdict.UP
-            downtrendResume && downPoints >= required -> Verdict.DOWN
+            downtrendBuy && downPoints >= required -> Verdict.UP
             else -> Verdict.DNT
         }
-        val score = if (verdict == Verdict.UP) upPoints else if (verdict == Verdict.DOWN) -downPoints else (upPoints - downPoints).coerceIn(-10, 10)
+        val score = if (verdict == Verdict.UP && uptrendResume) upPoints else if (verdict == Verdict.UP && downtrendBuy) downPoints else (upPoints - downPoints).coerceIn(-10, 10)
         val trend = when { upTrend -> "UPTREND"; downTrend -> "DOWNTREND"; else -> "NO CLEAR EMA TREND" }
         val setup = when (verdict) {
             Verdict.UP -> "BUY THE DIP: uptrend pullback has resumed upward."
