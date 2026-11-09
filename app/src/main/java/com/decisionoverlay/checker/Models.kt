@@ -68,6 +68,10 @@ data class TimeframeScore(
     val updatedAt: Long?,
     val lastError: String?,
     val candleCount: Int,
+    val ema7: Double? = null,
+    val ema25: Double? = null,
+    val ema99: Double? = null,
+    val candles: List<Candle> = emptyList(),
 ) {
     fun headerStatus(): String {
         val link = if (connection == ConnectionState.CONNECTED) "Connected" else "Not Working"
