@@ -63,8 +63,8 @@ class ScorerTest {
 
     @Test fun strictnessProfilesScaleThresholdBufferAndLockoutTogether() {
         val less = StrictnessProfile.fromLevel(0)
-        val balanced = StrictnessProfile.fromLevel(2)
-        val strict = StrictnessProfile.fromLevel(3)
+        val balanced = StrictnessProfile.fromLevel(1)
+        val strict = StrictnessProfile.fromLevel(2)
         val maximum = StrictnessProfile.fromLevel(4)
         assertEquals(1, less.threshold)
         assertEquals(100.0, less.targetBuffer, 0.0)
@@ -72,9 +72,10 @@ class ScorerTest {
         assertEquals(2, balanced.threshold)
         assertEquals(200.0, balanced.targetBuffer, 0.0)
         assertEquals(3, balanced.lockoutMinutes)
-        assertEquals(4, strict.threshold)
+        assertEquals(3, strict.threshold)
         assertEquals(300.0, strict.targetBuffer, 0.0)
         assertEquals(4, strict.lockoutMinutes)
+        assertEquals(350.0, StrictnessProfile.fromLevel(3).targetBuffer, 0.0)
         assertEquals(5, maximum.threshold)
         assertEquals(400.0, maximum.targetBuffer, 0.0)
         assertEquals(5, maximum.lockoutMinutes)
