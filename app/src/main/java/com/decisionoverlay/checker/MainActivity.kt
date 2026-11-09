@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.SeekBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -41,11 +42,30 @@ class MainActivity:AppCompatActivity(){
   findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));if(checksStarted){engine.stop();checksStarted=false;findViewById<Button>(R.id.startCheckButton).text="START CHECKING"};setStatus("Trading checker stopped. Background checks and alerts are off.")}
   findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
   setupCollapsibleCharts()
-  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},Scorer.DEFAULT_DNT_THRESHOLD)
+  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_STRICTNESS,2))
+  setupStrictnessControl()
   // Deliberately do not fetch on app launch. The user starts the checker manually.
  }
  override fun onConfigurationChanged(newConfig:Configuration){super.onConfigurationChanged(newConfig)}
  override fun onDestroy(){engine.stop();screenScope.cancel();super.onDestroy()}
+ private fun setupStrictnessControl(){
+  val slider=findViewById<SeekBar>(R.id.strictnessSlider)
+  val description=findViewById<TextView>(R.id.strictnessDescription)
+  val saved=prefs.getInt(OverlayService.KEY_STRICTNESS,2).coerceIn(0,4)
+  slider.max=4
+  slider.progress=saved
+  fun renderProfile(level:Int){
+   val p=StrictnessProfile.fromLevel(level)
+   description.text=p.label+"  •  Score ±"+p.threshold+"  •  Target buffer ±$"+p.targetBuffer.toInt()+"  •  Lockout "+p.lockoutMinutes+" min"
+   findViewById<TextView>(R.id.thresholdLabel).text="ENTRY THRESHOLD: +"+p.threshold+" / -"+p.threshold
+  }
+  renderProfile(saved)
+  slider.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+   override fun onProgressChanged(seekBar:SeekBar?,progress:Int,fromUser:Boolean){renderProfile(progress)}
+   override fun onStartTrackingTouch(seekBar:SeekBar?){}
+   override fun onStopTrackingTouch(seekBar:SeekBar?){val level=seekBar?.progress?:2;prefs.edit().putInt(OverlayService.KEY_STRICTNESS,level).apply();engine.setStrictness(level)}
+  })
+ }
  private fun setupCollapsibleCharts(){
   listOf(R.id.chart1mHeader to R.id.chart1mBody,R.id.chart5Header to R.id.chart5Body,R.id.chart15Header to R.id.chart15Body).forEach{(headerId,bodyId)->
    val body=findViewById<View>(bodyId);body.visibility=View.GONE
@@ -80,7 +100,8 @@ class MainActivity:AppCompatActivity(){
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
-  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   ENTRY THRESHOLD ±2"
+  val profile=StrictnessProfile.fromLevel(prefs.getInt(OverlayService.KEY_STRICTNESS,2))
+  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT DECISION: "+s.decision.verdict.name+"   |   SCORE "+signed(s.decision.totalScore)+" / +10   |   ENTRY THRESHOLD ±"+profile.threshold
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
   updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
   updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
