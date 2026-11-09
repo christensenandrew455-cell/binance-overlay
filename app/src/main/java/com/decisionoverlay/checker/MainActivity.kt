@@ -42,7 +42,7 @@ class MainActivity:AppCompatActivity(){
   findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));if(checksStarted){engine.stop();checksStarted=false;findViewById<Button>(R.id.startCheckButton).text="START CHECKING"};setStatus("Trading checker stopped. Background checks and alerts are off.")}
   findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
   setupCollapsibleCharts()
-  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_STRICTNESS,2))
+  engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_STRICTNESS,1))
   setupStrictnessControl()
   // Deliberately do not fetch on app launch. The user starts the checker manually.
  }
@@ -63,7 +63,7 @@ class MainActivity:AppCompatActivity(){
   slider.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
    override fun onProgressChanged(seekBar:SeekBar?,progress:Int,fromUser:Boolean){renderProfile(progress)}
    override fun onStartTrackingTouch(seekBar:SeekBar?){}
-   override fun onStopTrackingTouch(seekBar:SeekBar?){val level=seekBar?.progress?:2;prefs.edit().putInt(OverlayService.KEY_STRICTNESS,level).apply();engine.setStrictness(level)}
+   override fun onStopTrackingTouch(seekBar:SeekBar?){val level=seekBar?.progress?:1;prefs.edit().putInt(OverlayService.KEY_STRICTNESS,level).apply();engine.setStrictness(level)}
   })
  }
  private fun setupCollapsibleCharts(){
