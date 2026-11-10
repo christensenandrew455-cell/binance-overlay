@@ -1,39 +1,175 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg" android:fillViewport="true" android:fitsSystemWindows="true" android:clipToPadding="false">
- <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingStart="18dp" android:paddingEnd="18dp" android:paddingTop="24dp" android:paddingBottom="44dp" android:fitsSystemWindows="true">
-  <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BINANCE / MARKET CHECKER" android:textColor="@color/muted" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.08"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/app_name" android:textColor="@color/text" android:textSize="28sp" android:textStyle="bold"/>
-  <TextView android:id="@+id/symbolHeading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="BTCUSDT • Waiting to start" android:textColor="@color/muted" android:textSize="14sp"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="1-MINUTE TARGET POINT SYSTEM" android:textColor="@color/text" android:textSize="12sp" android:textStyle="bold"/>
-  
-  
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="15-MINUTE MARKET TARGET PRICE" android:textColor="@color/text" android:textSize="13sp" android:textStyle="bold"/>
-  <EditText android:id="@+id/targetInput" android:layout_width="match_parent" android:layout_height="50dp" android:layout_marginTop="7dp" android:background="#252F42" android:hint="e.g. 78000" android:inputType="numberDecimal" android:paddingStart="13dp" android:paddingEnd="13dp" android:singleLine="true" android:textColor="@color/text" android:textColorHint="@color/muted" android:textSize="15sp"/>
-  <Button android:id="@+id/setTargetButton" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="6dp" android:text="SAVE TARGET PRICE"/>
-  <EditText android:id="@+id/symbolInput" android:layout_width="match_parent" android:layout_height="50dp" android:layout_marginTop="16dp" android:background="#252F42" android:hint="BTCUSDT" android:importantForAutofill="no" android:inputType="textCapCharacters" android:paddingStart="13dp" android:paddingEnd="13dp" android:singleLine="true" android:textColor="@color/text" android:textColorHint="@color/muted" android:textSize="15sp"/>
-  <Button android:id="@+id/startCheckButton" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="9dp" android:text="START CHECKING" android:textStyle="bold"/>
-  <Button android:id="@+id/startButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="SHOW FLOATING DECISION"/>
-  <Button android:id="@+id/stopButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="STOP RUNNING"/>
-  <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textColor="@color/muted" android:textSize="12sp"/>
-  <TextView android:id="@+id/overallStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="15dp" android:padding="13dp" android:background="#1A2435" android:text="CURRENT DECISION: WAITING" android:textColor="@color/text" android:textSize="18sp" android:textStyle="bold"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="TREND CLASSIFICATION" android:textColor="@color/text" android:textSize="14sp" android:textStyle="bold"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="UPWARD requires a trend score of +3 or higher. DOWNWARD requires -3 or lower. Scores between them are NEUTRAL." android:textColor="@color/muted" android:textSize="11sp"/>
-  <SeekBar android:id="@+id/strictnessSlider" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:max="4" android:progress="1"/>
-  <TextView android:id="@+id/strictnessDescription" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Balanced • Score ±2 • Confirmations 2 • Volume 1.15x" android:textColor="@color/text" android:textSize="12sp" android:textStyle="bold"/>
-  <TextView android:id="@+id/thresholdLabel" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="ENTRY SCORE: +2 / -2" android:textColor="@color/text" android:textSize="13sp" android:textStyle="bold"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Only completed 1-minute candles are scored: EMA 9/21, RSI(14), 3-candle ROC, target side, and reversal filter. 100 candles required." android:textColor="@color/muted" android:textSize="11sp"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="1-MINUTE PRICE CHART • LAST 100 CANDLES • EMA 9/21" android:textColor="@color/muted" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.08"/>
-  <TextView android:id="@+id/chart1mHeader" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:padding="14dp" android:background="#1A2435" android:text="▸  1 MINUTE CHART     WAITING" android:textColor="@color/text" android:textSize="14sp" android:textStyle="bold"/>
-  <com.decisionoverlay.checker.CandleChartView android:id="@+id/chart1mPlot" android:layout_width="match_parent" android:layout_height="220dp" android:layout_marginTop="6dp" android:background="#111A29" />
-  <TextView android:id="@+id/chart1mBody" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="13dp" android:background="#202B3E" android:text="Waiting…" android:textColor="@color/text" android:textSize="12sp" android:lineSpacingExtra="3dp"/>
-  <TextView android:id="@+id/chart5Header" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:padding="14dp" android:background="#1A2435" android:text="▸  5 MINUTE CHART     WAITING" android:textColor="@color/text" android:textSize="14sp" android:textStyle="bold"/>
-  <TextView android:id="@+id/chart5Body" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="13dp" android:background="#202B3E" android:text="Waiting…" android:textColor="@color/text" android:textSize="12sp" android:lineSpacingExtra="3dp"/>
-  <TextView android:id="@+id/chart15Header" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:padding="14dp" android:background="#1A2435" android:text="▸  15 MINUTE CHART     WAITING" android:textColor="@color/text" android:textSize="14sp" android:textStyle="bold"/>
-  <TextView android:id="@+id/chart15Body" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="13dp" android:background="#202B3E" android:text="Waiting…" android:textColor="@color/text" android:textSize="12sp" android:lineSpacingExtra="3dp"/>
-  <Button android:id="@+id/refreshButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="REFRESH ALL CHARTS"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="PROBLEMS / BLOCKERS" android:textColor="@color/muted" android:textSize="11sp" android:textStyle="bold"/>
-  <TextView android:id="@+id/problemsText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:padding="13dp" android:background="#1A2435" android:text="Press START CHECKING to begin." android:textColor="@color/text" android:textSize="12sp" android:lineSpacingExtra="3dp"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="CONNECTION / ERROR LOG" android:textColor="@color/muted" android:textSize="11sp" android:textStyle="bold"/>
-  <TextView android:id="@+id/logText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:padding="13dp" android:background="#1A2435" android:text="No checks have run yet." android:textColor="@color/text" android:textSize="11sp" android:lineSpacingExtra="3dp" android:textIsSelectable="true"/>
- </LinearLayout>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="36dp">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BINANCE / MARKET CHECKER"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/app_name"
+            android:textColor="@color/text"
+            android:textSize="28sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/symbolHeading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="BTCUSDT • Waiting to start"
+            android:textColor="@color/muted"
+            android:textSize="14sp"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="AUTOMATIC 15-MINUTE TARGET"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/targetText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="9dp"
+            android:padding="14dp"
+            android:background="#1A2435"
+            android:text="15-MINUTE START PRICE: WAITING"
+            android:textColor="@color/text"
+            android:textSize="17sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/windowText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:text="TARGET RESETS EVERY 15 MINUTES"
+            android:textColor="@color/muted"
+            android:textSize="12sp"/>
+        <EditText
+            android:id="@+id/symbolInput"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:layout_marginTop="18dp"
+            android:background="#252F42"
+            android:hint="BTCUSDT"
+            android:importantForAutofill="no"
+            android:inputType="textCapCharacters"
+            android:paddingStart="13dp"
+            android:paddingEnd="13dp"
+            android:singleLine="true"
+            android:textColor="@color/text"
+            android:textColorHint="@color/muted"
+            android:textSize="15sp"/>
+        <Button
+            android:id="@+id/startCheckButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="9dp"
+            android:text="START CHECKING"
+            android:textStyle="bold"/>
+        <Button
+            android:id="@+id/startButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="SHOW FLOATING DECISION"/>
+        <Button
+            android:id="@+id/stopButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="STOP RUNNING"/>
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/muted"
+            android:textSize="12sp"/>
+        <TextView
+            android:id="@+id/overallStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:padding="16dp"
+            android:background="#1A2435"
+            android:text="DNT • WAITING"
+            android:textColor="@color/text"
+            android:textSize="24sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/reasonText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="13dp"
+            android:background="#202B3E"
+            android:text="The 1-minute point system will appear here."
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:lineSpacingExtra="3dp"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="DATA STATUS"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/problemsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:padding="13dp"
+            android:background="#1A2435"
+            android:text="Press START CHECKING to begin."
+            android:textColor="@color/text"
+            android:textSize="12sp"/>
+        <Button
+            android:id="@+id/refreshButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="REFRESH 1-MINUTE DATA"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="CONNECTION / ERROR LOG"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/logText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:padding="13dp"
+            android:background="#1A2435"
+            android:text="No checks have run yet."
+            android:textColor="@color/text"
+            android:textSize="11sp"
+            android:lineSpacingExtra="3dp"
+            android:textIsSelectable="true"/>
+    </LinearLayout>
 </ScrollView>
