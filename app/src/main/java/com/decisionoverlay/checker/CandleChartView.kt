@@ -23,7 +23,7 @@ class CandleChartView @JvmOverloads constructor(
 
     fun setCandles(values: List<Candle>) {
         candles.clear()
-        candles.addAll(values.takeLast(150))
+        candles.addAll(values.takeLast(100))
         invalidate()
     }
 
