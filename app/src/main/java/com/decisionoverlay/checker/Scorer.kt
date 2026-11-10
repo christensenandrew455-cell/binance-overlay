@@ -198,38 +198,55 @@ object Scorer {
     fun evaluatePullback(candles: List<Candle>, feed: FeedStatus, strictnessLevel: Int = 1, targetPrice: Double? = null): TargetEvaluation {
         val data = candles.filter { it.closed }.sortedBy { it.openTime }.takeLast(100)
         val problems = mutableListOf<String>()
-        if (feed.state != ConnectionState.CONNECTED) problems += "1-minute feed unavailable: ${feed.lastError ?: feed.detail}."
-        if (data.size < 100) problems += "Need 100 completed 1-minute candles; received ${data.size}."
-        if (targetPrice == null || !targetPrice.isFinite() || targetPrice <= 0.0) problems += "Enter the active 15-minute market target price."
-        if (problems.isNotEmpty()) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: waiting for 100 completed 1-minute candles, live feed, and target price.", problems)
+        if (feed.state != ConnectionState.CONNECTED) problems += "1-minute BTC feed unavailable: ${feed.lastError ?: feed.detail}."
+        if (data.size < 100) problems += "Need exactly 100 completed 1-minute candles; received ${data.size}."
+        if (targetPrice == null || !targetPrice.isFinite() || targetPrice <= 0.0) problems += "Waiting for the automatic BTC price captured at the start of this 15-minute window."
+        if (problems.isNotEmpty()) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: waiting for 100 completed 1-minute candles and the automatic 15-minute target.", problems)
         val closes = data.map { it.close }
         val current = data.last()
         val previous = data[data.lastIndex - 1]
-        val e9 = Indicators.emaSeriesFromFirst(closes, 9)
-        val e21 = Indicators.emaSeriesFromFirst(closes, 21)
-        if (e9.size < 2 || e21.size < 2) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: EMA history is not ready.", listOf("Unable to calculate EMA 9/21."))
-        val ema9 = e9.last(); val ema21 = e21.last()
-        var gains = 0.0; var losses = 0.0
-        for (i in (closes.size - 14) until closes.size) { val change = closes[i] - closes[i - 1]; if (change > 0) gains += change else losses -= change }
-        val avgGain = gains / 14.0; val avgLoss = losses / 14.0
-        val rsi = when { avgLoss == 0.0 && avgGain == 0.0 -> 50.0; avgLoss == 0.0 -> 100.0; else -> 100.0 - (100.0 / (1.0 + avgGain / avgLoss)) }
-        val roc = if (closes[closes.lastIndex - 3] != 0.0) ((closes.last() - closes[closes.lastIndex - 3]) / closes[closes.lastIndex - 3]) * 100.0 else 0.0
-        var trendScore = if (ema9 > ema21) 2 else -2
-        if (rsi > 55.0) trendScore += 1 else if (rsi < 45.0) trendScore -= 1
-        if (roc > 0.0) trendScore += 1 else trendScore -= 1
-        val trend = when { trendScore >= 3 -> "UPWARD"; trendScore <= -3 -> "DOWNWARD"; else -> "NEUTRAL" }
-        val bullishReversal = rsi < 30.0 && current.close > previous.close && e9.last() > e9[e9.lastIndex - 1]
-        val bearishReversal = rsi > 70.0 && current.close < previous.close && e9.last() < e9[e9.lastIndex - 1]
-        val reversal = when { bullishReversal -> "BULLISH_REVERSAL"; bearishReversal -> "BEARISH_REVERSAL"; else -> "NONE" }
+        val ema9 = Indicators.emaSeriesFromFirst(closes, 9)
+        val ema21 = Indicators.emaSeriesFromFirst(closes, 21)
+        if (ema9.size < 2 || ema21.size < 2) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: EMA history is not ready.", listOf("Unable to calculate EMA 9/21."))
+        var gains = 0.0
+        var losses = 0.0
+        for (i in (closes.size - 14) until closes.size) {
+            val change = closes[i] - closes[i - 1]
+            if (change > 0.0) gains += change else losses -= change
+        }
+        val averageGain = gains / 14.0
+        val averageLoss = losses / 14.0
+        val rsi = when {
+            averageLoss == 0.0 && averageGain == 0.0 -> 50.0
+            averageLoss == 0.0 -> 100.0
+            else -> 100.0 - (100.0 / (1.0 + averageGain / averageLoss))
+        }
+        val priorClose = closes[closes.lastIndex - 3]
+        val roc = if (priorClose != 0.0) ((closes.last() - priorClose) / priorClose) * 100.0 else 0.0
+        var score = if (ema9.last() > ema21.last()) 2 else -2
+        if (rsi > 55.0) score += 1 else if (rsi < 45.0) score -= 1
+        if (roc > 0.0) score += 1 else score -= 1
+        val trend = when {
+            score >= 3 -> "UPWARD"
+            score <= -3 -> "DOWNWARD"
+            else -> "NEUTRAL"
+        }
+        val bullishReversal = rsi < 30.0 && current.close > previous.close && ema9.last() > ema9[ema9.lastIndex - 1]
+        val bearishReversal = rsi > 70.0 && current.close < previous.close && ema9.last() < ema9[ema9.lastIndex - 1]
         val target = targetPrice!!
-        val above = current.close > target
-        var verdict = Verdict.DNT
-        var signal = "HOLD / NO TRADE"
-        if (trend == "UPWARD" && !above && !bearishReversal) { verdict = Verdict.UP; signal = "ENTER YES / ABOVE — strong upward momentum below target" }
-        else if (trend == "DOWNWARD" && above && !bullishReversal) { verdict = Verdict.DOWN; signal = "ENTER NO / BELOW — strong downward momentum above target" }
-        val side = if (above) "ABOVE" else "AT OR BELOW"
-        val reason = "$signal | Trend=$trend (score $trendScore); target=$side; price=${fmtPrice(current.close)}; target=${fmtPrice(target)}; EMA9=${fmtPrice(ema9)}; EMA21=${fmtPrice(ema21)}; RSI14=${String.format(java.util.Locale.US, "%.2f", rsi)}; ROC3=${String.format(java.util.Locale.US, "%.4f", roc)}%; reversal=$reversal."
-        return TargetEvaluation(trendScore, verdict, current.close - target, reason, emptyList(), trendScore, 0, 0)
+        val aboveTarget = current.close > target
+        val verdict = when {
+            trend == "UPWARD" && !aboveTarget && !bearishReversal -> Verdict.UP
+            trend == "DOWNWARD" && aboveTarget && !bullishReversal -> Verdict.DOWN
+            else -> Verdict.DNT
+        }
+        val signal = when (verdict) {
+            Verdict.UP -> "UP — upward trend while BTC is at or below the 15-minute starting price"
+            Verdict.DOWN -> "DOWN — downward trend while BTC is above the 15-minute starting price"
+            Verdict.DNT -> "DNT — trend, target side, or reversal filter does not allow an entry"
+        }
+        val reason = "$signal | Trend=$trend (score $score); BTC=${fmtPrice(current.close)}; 15m start target=${fmtPrice(target)}; target side=${if (aboveTarget) "ABOVE" else "AT OR BELOW"}; EMA9=${fmtPrice(ema9.last())}; EMA21=${fmtPrice(ema21.last())}; RSI14=${String.format(java.util.Locale.US, "%.2f", rsi)}; ROC3=${String.format(java.util.Locale.US, "%.4f", roc)}%; reversal=${if (bullishReversal) "BULLISH" else if (bearishReversal) "BEARISH" else "NONE"}."
+        return TargetEvaluation(score, verdict, current.close - target, reason, emptyList(), score, 0, 0)
     }
 
     private fun score(c: List<Candle>, f: FeedStatus, label: String, interval: String): TimeframeScore {
