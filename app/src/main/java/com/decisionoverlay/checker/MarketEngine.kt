@@ -25,6 +25,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  fun updateSymbol(raw:String){scope.launch(Dispatchers.IO){val next=normalize(raw);if(next==null){mutex.withLock{logLocked("Rejected symbol '$raw'");publishLocked()};return@launch};if(next==symbol)return@launch;symbol=next
   mutex.withLock{candles.values.forEach{it.clear()};feeds.values.forEach{it.state=ConnectionState.NOT_WORKING;it.detail="Reloading $next";it.updatedAt=null;it.lastError=null};targetPrice=null;targetSession=0;candidate=Verdict.DNT;entryUntil=0;lastVerdict=Verdict.DNT;logLocked("Symbol changed to $next");refreshAllLocked()}
  }}
+ fun setTargetPrice(value:Double?){scope.launch(Dispatchers.IO){mutex.withLock{targetPrice=value?.takeIf{it.isFinite()&&it>0.0};candidate=Verdict.DNT;entryUntil=0;logLocked(if(targetPrice==null)"Target price cleared" else "Target price set to ${fmtPrice(targetPrice)}");publishLocked()}}}
  fun setStrictness(level:Int){scope.launch(Dispatchers.IO){mutex.withLock{val next=level.coerceIn(0,4);if(next!=strictnessLevel){strictnessLevel=next;candidate=Verdict.DNT;entryUntil=0;logLocked("Strictness changed: ${activeProfile.label} (score ±${activeProfile.scoreThreshold}, ${activeProfile.requiredConfirmations} confirmations, volume ${activeProfile.volumeExpansionRatio}x)");publishLocked()}}}}
  fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
  fun stop(){jobs.forEach{it.cancel()};jobs.clear();http.dispatcher.executorService.shutdown();http.connectionPool.evictAll()}
@@ -37,17 +38,17 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  private fun publishLocked(){val now=System.currentTimeMillis();age("1m",ONE*2,now);age("5m",FIVE*2,now);age("15m",FIFTEEN*2,now)
   val oneRaw=Scorer.score1m(candles.getValue("1m"),feeds.getValue("1m").snapshot());val fiveRaw=Scorer.score5m(candles.getValue("5m"),feeds.getValue("5m").snapshot());val fifteenRaw=Scorer.score15m(candles.getValue("15m"),feeds.getValue("15m").snapshot())
   val start=now/FIFTEEN*FIFTEEN;val remaining=(start+FIFTEEN-now).coerceAtLeast(0L)
-  val ev=Scorer.evaluatePullback(candles.getValue("1m"),feeds.getValue("1m").snapshot(),strictnessLevel)
-  val one=oneRaw.copy(score=ev.score,components=listOf(ComponentScore("1m pullback score",ev.score,ev.reason)))
+  val ev=Scorer.evaluatePullback(candles.getValue("1m"),feeds.getValue("1m").snapshot(),strictnessLevel,targetPrice)
+  val one=oneRaw.copy(score=ev.score,components=listOf(ComponentScore("1m target score",ev.score,ev.reason)))
   val five=fiveRaw.copy(score=0,components=listOf(ComponentScore("Context only",0,"1-minute chart is the primary signal timeframe.")))
   val fifteen=fifteenRaw.copy(score=0,components=listOf(ComponentScore("Context only",0,"15-minute target is displayed for reference; it does not gate the 1-minute entry.")))
   var v=if(ev.problems.isNotEmpty())Verdict.DNT else ev.candidate
-  if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v pullback entry window opened for 60 seconds.")}
+  if(v!=Verdict.DNT&&v!=candidate){candidate=v;entryUntil=now+60000L;logLocked("New $v target-aware 1m signal window opened for 60 seconds.")}
   if(v==Verdict.DNT){candidate=Verdict.DNT;entryUntil=0}
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
   val reason=if(ev.problems.isNotEmpty())"DNT: 1-minute market data unavailable." else if(v==Verdict.DNT&&candidate!=Verdict.DNT)"DNT: 60-second entry window expired." else ev.reason
   if(v!=lastVerdict){logLocked("Decision changed to $v (1m pullback score ${signed(ev.score)}).");lastVerdict=v}
-  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,null,one.price,remaining,(entryUntil-now).coerceAtLeast(0),null)
+  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),ev.buffer)
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
  }
  private fun age(i:String,max:Long,now:Long){val f=feeds.getValue(i);val u=f.updatedAt?:return;if(f.state==ConnectionState.CONNECTED&&now-u>max){f.state=ConnectionState.NOT_WORKING;f.detail="Stale data";f.lastError="No fresh $i candle inside ${max/1000}s"}}
