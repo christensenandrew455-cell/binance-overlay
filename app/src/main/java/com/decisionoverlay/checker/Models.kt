@@ -130,6 +130,7 @@ data class Decision(
     val sessionRemainingMs: Long = 0L,
     val entryRemainingMs: Long = 0L,
     val targetBuffer: Double? = null,
+    val steepnessScore: Double? = null,
 )
 
 data class EngineSnapshot(
