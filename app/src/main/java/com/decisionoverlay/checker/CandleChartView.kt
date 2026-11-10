@@ -61,9 +61,8 @@ class CandleChartView @JvmOverloads constructor(
         }
         val closes = history.map { it.close }
         val visibleStart = history.size - data.size
-        drawEma(canvas, closes, 7, visibleStart, left, slot, ::y, ema7Paint)
-        drawEma(canvas, closes, 25, visibleStart, left, slot, ::y, ema25Paint)
-        drawEma(canvas, closes, 99, visibleStart, left, slot, ::y, ema99Paint)
+        drawEma(canvas, closes, 9, visibleStart, left, slot, ::y, ema9Paint)
+        drawEma(canvas, closes, 21, visibleStart, left, slot, ::y, ema21Paint)
         canvas.drawText("100 × 1m candles", left, height - 3f, label)
     }
 
