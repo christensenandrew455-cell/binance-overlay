@@ -237,7 +237,7 @@ object Scorer {
         val closes = data.map { it.close }
         val price = closes.lastOrNull()
         val ema7 = Indicators.ema(closes, 7)
-        val ema25 = Indicators.ema(closes, 25)
+        val ema25 = Indicators.ema(closes, 21)
         val ema99 = Indicators.ema(closes, 99)
         val ema9 = Indicators.ema(closes, 9)
         val rsi = Indicators.rsi(closes)
@@ -255,7 +255,7 @@ object Scorer {
             listOf(ComponentScore("Data", 0, "Need $MIN_CANDLES completed candles, have ${data.size}."))
         } else {
             listOf(
-                ComponentScore("EMA 7/25/99", points, "Price ${fmtPrice(price)}; EMA7 ${fmtPrice(ema7)}, EMA25 ${fmtPrice(ema25)}, EMA99 ${fmtPrice(ema99)}."),
+                ComponentScore("EMA 9/21", points, "Price ${fmtPrice(price)}; EMA9 ${fmtPrice(ema9)}, EMA21 ${fmtPrice(ema25)}."),
                 ComponentScore("RSI(14)", if (rsi != null && rsi > 50) 1 else if (rsi != null && rsi < 50) -1 else 0, "RSI ${fmtNum(rsi)}."),
                 ComponentScore("MACD", if (macd != null && macd.histogram > 0) 1 else if (macd != null && macd.histogram < 0) -1 else 0, "Histogram ${fmtNum(macd?.histogram)}."),
                 ComponentScore("Volume", if (volumeRatio != null && volumeRatio >= 1.15) 1 else 0, "Current / 20-candle average ${fmtNum(volumeRatio)}x.")
