@@ -15,9 +15,9 @@ class CandleChartView @JvmOverloads constructor(
     private val candles = mutableListOf<Candle>()
     private val up = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF35C98A.toInt(); strokeWidth = 2f }
     private val down = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFF647C.toInt(); strokeWidth = 2f }
-    private val ema7Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFC857.toInt(); strokeWidth = 2.4f; style = Paint.Style.STROKE }
-    private val ema25Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF55B8FF.toInt(); strokeWidth = 2.4f; style = Paint.Style.STROKE }
-    private val ema99Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFCE93D8.toInt(); strokeWidth = 2.4f; style = Paint.Style.STROKE }
+    private val ema9Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFC857.toInt(); strokeWidth = 2.4f; style = Paint.Style.STROKE }
+    private val ema21Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF55B8FF.toInt(); strokeWidth = 2.4f; style = Paint.Style.STROKE }
+    
     private val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x334D607A; strokeWidth = 1f }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFB7C2D2.toInt(); textSize = 10f }
 
