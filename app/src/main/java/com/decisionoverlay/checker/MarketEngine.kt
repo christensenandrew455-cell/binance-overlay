@@ -17,6 +17,8 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
     private val started = AtomicBoolean(false)
     private val logs = ArrayDeque<String>()
     private val candles = mutableListOf<Candle>()
+    private val hourlyCandles = mutableListOf<Candle>()
+    private val hourlyFeed = MutableFeed()
     private val feed = MutableFeed()
     @Volatile var symbol = "BTCUSDT"
         private set
@@ -50,7 +52,9 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
             symbol = next
             mutex.withLock {
                 candles.clear()
+                hourlyCandles.clear()
                 feed.reset("Reloading $next")
+                hourlyFeed.reset("Reloading $next hourly candles")
                 targetPrice = null
                 targetSession = -1L
                 currentPrice = null
@@ -100,6 +104,20 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
         try {
             val result = client.fetchKlines(symbol, "1m", 150)
             result.notes.forEach { logLocked("1m fallback: $it") }
+            try {
+                val hourly = client.fetchKlines(symbol, "1h", 30)
+                hourlyCandles.clear()
+                hourlyCandles.addAll(hourly.candles.sortedBy { it.openTime })
+                hourlyFeed.state = ConnectionState.CONNECTED
+                hourlyFeed.detail = "1h OK via ${hourly.host} (${hourlyCandles.size} candles)"
+                hourlyFeed.updatedAt = System.currentTimeMillis()
+                hourlyFeed.lastError = null
+            } catch (hourError: Exception) {
+                hourlyFeed.state = ConnectionState.NOT_WORKING
+                hourlyFeed.detail = "1-hour data unavailable"
+                hourlyFeed.lastError = hourError.message
+                logLocked("1h REST FAIL: ${hourError.message}")
+            }
             val now = System.currentTimeMillis()
             val session = now / FIFTEEN * FIFTEEN
             val sessionCandle = result.candles.firstOrNull { it.openTime == session }
@@ -128,7 +146,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
             feed.detail = "$via OK via ${result.host} (${closed.size}/100 completed candles)"
             feed.updatedAt = now
             feed.lastError = null
-            logLocked("1m REST OK: ${closed.size} completed candles; automatic target ${fmtPrice(targetPrice)}")
+            logLocked("1m REST OK: ${closed.size} completed candles; 1h candles: ${hourlyCandles.size}")
         } catch (error: Exception) {
             feed.state = ConnectionState.NOT_WORKING
             feed.detail = "Not Working"
@@ -147,8 +165,14 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
             feed.lastError = "No fresh 1-minute candle inside 120s"
         }
         val status = feed.snapshot()
-        val ev = Scorer.evaluatePullback(candles, status, strictnessLevel, targetPrice, currentPrice)
-        val one = Scorer.score1m(candles, status).copy(score = ev.score, price = currentPrice, components = listOf(ComponentScore("1m target-aware trend", ev.score, ev.reason)))
+        val hourlyStatus = hourlyFeed.snapshot()
+        if (hourlyStatus.updatedAt != null && hourlyStatus.state == ConnectionState.CONNECTED && now - hourlyStatus.updatedAt > ONE * 2) {
+            hourlyFeed.state = ConnectionState.NOT_WORKING
+            hourlyFeed.detail = "Stale 1-hour data"
+            hourlyFeed.lastError = "No fresh hourly update inside 120s"
+        }
+        val ev = Scorer.evaluateHourlySteepness(hourlyCandles, hourlyFeed.snapshot())
+        val one = Scorer.score1m(candles, status).copy(score = ev.score, price = currentPrice, components = listOf(ComponentScore("1h steepness", ev.score, ev.reason)))
         val context = one.copy(label = "Not used", interval = "none", components = emptyList())
         var verdict = if (ev.problems.isNotEmpty()) Verdict.DNT else ev.candidate
         if (verdict != Verdict.DNT && verdict != candidate) {
@@ -166,7 +190,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
         if (verdict != lastVerdict) { logLocked("Decision changed to $verdict (1m score ${signed(ev.score)})."); lastVerdict = verdict }
         val sessionStart = now / FIFTEEN * FIFTEEN
         val remaining = (sessionStart + FIFTEEN - now).coerceAtLeast(0L)
-        val decision = Decision(verdict, reason, one, context, context, ev.problems, ev.score, 3, targetPrice, one.price, remaining, (entryUntil - now).coerceAtLeast(0L), ev.buffer)
+        val decision = Decision(verdict, reason, one, context, context, ev.problems, ev.score, 4, targetPrice, one.price, remaining, (entryUntil - now).coerceAtLeast(0L), ev.buffer, ev.steepnessScore)
         onUpdate(EngineSnapshot(symbol, decision, logs.joinToString("\n")))
     }
 
