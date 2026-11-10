@@ -92,8 +92,7 @@ data class TimeframeScore(
             "1m" -> {
                 appendLine("EMA 9: ${fmtNum(ema9)}")
                 appendLine("EMA 21: ${fmtNum(ema21)}")
-                appendLine("RSI(14): ${fmtNum(rsi)}")
-                appendLine("Target-aware point details: see decision reason")
+                appendLine("RSI(14) / ROC(3): see target decision details below")
             }
             "5m" -> {
                 appendLine("EMA9: ${fmtNum(ema9)}")
