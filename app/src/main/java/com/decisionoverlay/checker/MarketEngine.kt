@@ -174,23 +174,18 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
         val ev = Scorer.evaluateHourlySteepness(hourlyCandles, hourlyFeed.snapshot())
         val one = Scorer.score1m(candles, status).copy(score = ev.score, price = currentPrice, components = listOf(ComponentScore("1h steepness", ev.score, ev.reason)))
         val context = one.copy(label = "Not used", interval = "none", components = emptyList())
-        var verdict = if (ev.problems.isNotEmpty()) Verdict.DNT else ev.candidate
-        if (verdict != Verdict.DNT && verdict != candidate) {
+        val verdict = if (ev.problems.isNotEmpty()) Verdict.DNT else ev.candidate
+        if (verdict != candidate) {
             candidate = verdict
-            entryUntil = now + 60_000L
-            logLocked("New $verdict signal opened for 60 seconds")
+            logLocked("Hourly steepness signal changed to $verdict")
         }
-        if (verdict == Verdict.DNT) { candidate = Verdict.DNT; entryUntil = 0L }
-        if (verdict != Verdict.DNT && now >= entryUntil) verdict = Verdict.DNT
-        val reason = when {
-            ev.problems.isNotEmpty() -> "DNT: waiting for live 1-minute data, 100 completed candles, and the automatic 15-minute target."
-            verdict == Verdict.DNT && candidate != Verdict.DNT -> "DNT: 60-second entry window expired."
-            else -> ev.reason
-        }
+        val reason = if (ev.problems.isNotEmpty()) {
+            "DNT: waiting for 1-hour candle data and 24-return volatility history."
+        } else ev.reason
         if (verdict != lastVerdict) { logLocked("Decision changed to $verdict (1m score ${signed(ev.score)})."); lastVerdict = verdict }
         val sessionStart = now / FIFTEEN * FIFTEEN
         val remaining = (sessionStart + FIFTEEN - now).coerceAtLeast(0L)
-        val decision = Decision(verdict, reason, one, context, context, ev.problems, ev.score, 4, targetPrice, one.price, remaining, (entryUntil - now).coerceAtLeast(0L), ev.buffer, ev.steepnessScore)
+        val decision = Decision(verdict, reason, one, context, context, ev.problems, ev.score, 4, targetPrice, one.price, remaining, 0L, ev.buffer, ev.steepnessScore)
         onUpdate(EngineSnapshot(symbol, decision, logs.joinToString("\n")))
     }
 
