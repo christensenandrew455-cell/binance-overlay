@@ -195,77 +195,41 @@ object Scorer {
      * One-minute pullback strategy. UP means buy the dip in an uptrend;
      * DOWN means a short/sell setup after an upward retracement in a downtrend.
      */
-    fun evaluatePullback(
-        candles: List<Candle>,
-        feed: FeedStatus,
-        strictnessLevel: Int = 1,
-    ): TargetEvaluation {
+    fun evaluatePullback(candles: List<Candle>, feed: FeedStatus, strictnessLevel: Int = 1, targetPrice: Double? = null): TargetEvaluation {
         val data = candles.filter { it.closed }.sortedBy { it.openTime }.takeLast(100)
         val problems = mutableListOf<String>()
         if (feed.state != ConnectionState.CONNECTED) problems += "1-minute feed unavailable: ${feed.lastError ?: feed.detail}."
         if (data.size < 100) problems += "Need 100 completed 1-minute candles; received ${data.size}."
-        if (problems.isNotEmpty()) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: waiting for 100 one-minute candles and a live feed.", problems)
-
+        if (targetPrice == null || !targetPrice.isFinite() || targetPrice <= 0.0) problems += "Enter the active 15-minute market target price."
+        if (problems.isNotEmpty()) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: waiting for 100 completed 1-minute candles, live feed, and target price.", problems)
         val closes = data.map { it.close }
-        val e7 = Indicators.emaSeries(closes, 7)
-        val e25 = Indicators.emaSeries(closes, 25)
-        val e99 = Indicators.emaSeries(closes, 99)
-        if (e7.size < 2 || e25.size < 2 || e99.size < 2)
-            return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: EMA history is not ready.", listOf("Not enough data to calculate EMA 7/25/99."))
-
-        val ema7 = e7.last()
-        val ema25 = e25.last()
-        val ema99 = e99.last()
-        val lastPrice = closes.last()
-        val upTrend = lastPrice > ema7 && ema7 > ema25 && ema25 > ema99 &&
-            e7.last() > e7[e7.lastIndex - 1] && e25.last() > e25[e25.lastIndex - 1]
-        val downTrend = lastPrice < ema7 && ema7 < ema25 && ema25 < ema99 &&
-            e7.last() < e7[e7.lastIndex - 1] && e25.last() < e25[e25.lastIndex - 1]
-
-        val recent = data.takeLast(4)
-        val pullbackUp = recent.take(2).all { it.close > it.open }
-        val pullbackDown = recent.take(2).all { it.close < it.open }
-        val trigger = recent.last()
-        val previous = recent[recent.lastIndex - 1]
-        // Both setups are BUY prompts, matching the requested behavior. A buy during
-        // a downtrend is explicitly marked countertrend rather than mislabeled as trend-following.
-        val downtrendBuy = downTrend && pullbackUp && trigger.close > trigger.open && trigger.close > previous.high
-        val uptrendBuy = upTrend && pullbackDown && trigger.close > trigger.open && trigger.close > previous.high
-
-        val rsi = Indicators.rsi(closes)
-        val macd = Indicators.macd(closes)
-        val volumeRatio = Indicators.volumeRatio(data)
-        val profile = StrictnessProfile.fromLevel(strictnessLevel)
-        val rsiUp = rsi != null && rsi in 45.0..68.0
-        val macdUp = macd != null && macd.histogram > 0 &&
-            (macd.previousHistogram == null || macd.histogram >= macd.previousHistogram)
-        val volumeOk = volumeRatio != null && volumeRatio >= profile.volumeExpansionRatio
-
-        val upPoints = (if (upTrend) 3 else 0) + (if (pullbackDown) 2 else 0) +
-            (if (uptrendBuy) 2 else 0) + (if (rsiUp) 1 else 0) +
-            (if (macdUp) 1 else 0) + (if (volumeOk) 1 else 0)
-        val downPoints = (if (downTrend) 3 else 0) + (if (pullbackUp) 2 else 0) +
-            (if (downtrendBuy) 2 else 0) + (if (rsiUp) 1 else 0) +
-            (if (macdUp) 1 else 0) + (if (volumeOk) 1 else 0)
-
-        val momentumConfirmations = listOf(rsiUp, macdUp, volumeOk).count { it }
-        val required = profile.scoreThreshold + 5
-        val confirmed = momentumConfirmations >= 2
-        val verdict = if (confirmed && ((uptrendBuy && upPoints >= required) ||
-                    (downtrendBuy && downPoints >= required))) Verdict.UP else Verdict.DNT
-        val score = when {
-            verdict != Verdict.UP -> (upPoints - downPoints).coerceIn(-10, 10)
-            downtrendBuy -> downPoints
-            else -> upPoints
-        }
-        val trend = when { upTrend -> "UPTREND"; downTrend -> "DOWNTREND"; else -> "NO CLEAR EMA TREND" }
-        val setup = when {
-            verdict == Verdict.UP && downtrendBuy -> "BUY THE RETRACEMENT: countertrend bounce confirmed inside a downtrend."
-            verdict == Verdict.UP && uptrendBuy -> "BUY THE DIP: uptrend pullback has resumed upward."
-            else -> "DNT: wait for a clear EMA trend, pullback, trigger candle, and indicator confirmation."
-        }
-        val reason = "$setup Trend=$trend; EMA7/25/99=${fmtNum(ema7)}/${fmtNum(ema25)}/${fmtNum(ema99)}; RSI=${fmtNum(rsi)}; MACD hist=${fmtNum(macd?.histogram)}; volume=${fmtNum(volumeRatio)}x; points UP=$upPoints DOWN=$downPoints; momentum confirmations=$momentumConfirmations/3; required=$required."
-        return TargetEvaluation(score, verdict, 0.0, reason, emptyList(), score, 0, 0)
+        val current = data.last()
+        val previous = data[data.lastIndex - 1]
+        val e9 = Indicators.emaSeries(closes, 9)
+        val e21 = Indicators.emaSeries(closes, 21)
+        if (e9.size < 2 || e21.size < 2) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: EMA history is not ready.", listOf("Unable to calculate EMA 9/21."))
+        val ema9 = e9.last(); val ema21 = e21.last()
+        var gains = 0.0; var losses = 0.0
+        for (i in (closes.size - 14) until closes.size) { val change = closes[i] - closes[i - 1]; if (change > 0) gains += change else losses -= change }
+        val avgGain = gains / 14.0; val avgLoss = losses / 14.0
+        val rsi = when { avgLoss == 0.0 && avgGain == 0.0 -> 50.0; avgLoss == 0.0 -> 100.0; else -> 100.0 - (100.0 / (1.0 + avgGain / avgLoss)) }
+        val roc = if (closes[closes.lastIndex - 3] != 0.0) ((closes.last() - closes[closes.lastIndex - 3]) / closes[closes.lastIndex - 3]) * 100.0 else 0.0
+        var trendScore = if (ema9 > ema21) 2 else -2
+        if (rsi > 55.0) trendScore += 1 else if (rsi < 45.0) trendScore -= 1
+        if (roc > 0.0) trendScore += 1 else trendScore -= 1
+        val trend = when { trendScore >= 3 -> "UPWARD"; trendScore <= -3 -> "DOWNWARD"; else -> "NEUTRAL" }
+        val bullishReversal = rsi < 30.0 && current.close > previous.close && e9.last() > e9[e9.lastIndex - 1]
+        val bearishReversal = rsi > 70.0 && current.close < previous.close && e9.last() < e9[e9.lastIndex - 1]
+        val reversal = when { bullishReversal -> "BULLISH_REVERSAL"; bearishReversal -> "BEARISH_REVERSAL"; else -> "NONE" }
+        val target = targetPrice!!
+        val above = current.close > target
+        var verdict = Verdict.DNT
+        var signal = "HOLD / NO TRADE"
+        if (trend == "UPWARD" && !above && !bearishReversal) { verdict = Verdict.UP; signal = "ENTER YES / ABOVE — strong upward momentum below target" }
+        else if (trend == "DOWNWARD" && above && !bullishReversal) { verdict = Verdict.DOWN; signal = "ENTER NO / BELOW — strong downward momentum above target" }
+        val side = if (above) "ABOVE" else "AT OR BELOW"
+        val reason = "$signal | Trend=$trend (score $trendScore); target=$side; price=${fmtPrice(current.close)}; target=${fmtPrice(target)}; EMA9=${fmtPrice(ema9)}; EMA21=${fmtPrice(ema21)}; RSI14=${String.format(java.util.Locale.US, "%.2f", rsi)}; ROC3=${String.format(java.util.Locale.US, "%.4f", roc)}%; reversal=$reversal."
+        return TargetEvaluation(trendScore, verdict, current.close - target, reason, emptyList(), trendScore, 0, 0)
     }
 
     private fun score(c: List<Candle>, f: FeedStatus, label: String, interval: String): TimeframeScore {
