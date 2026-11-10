@@ -48,7 +48,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
   val reason=if(ev.problems.isNotEmpty())"DNT: 1-minute market data unavailable." else if(v==Verdict.DNT&&candidate!=Verdict.DNT)"DNT: 60-second entry window expired." else ev.reason
   if(v!=lastVerdict){logLocked("Decision changed to $v (1m trend score ${signed(ev.score)}).");lastVerdict=v}
-  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),ev.buffer)
+  val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,3,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),ev.buffer)
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
  }
  private fun age(i:String,max:Long,now:Long){val f=feeds.getValue(i);val u=f.updatedAt?:return;if(f.state==ConnectionState.CONNECTED&&now-u>max){f.state=ConnectionState.NOT_WORKING;f.detail="Stale data";f.lastError="No fresh $i candle inside ${max/1000}s"}}
