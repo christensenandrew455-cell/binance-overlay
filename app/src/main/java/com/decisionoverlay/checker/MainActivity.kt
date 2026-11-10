@@ -37,12 +37,15 @@ class MainActivity:AppCompatActivity(){
   WindowCompat.setDecorFitsSystemWindows(window,true)
   setContentView(R.layout.activity_main)
   findViewById<EditText>(R.id.symbolInput).setText(prefs.getString(OverlayService.KEY_SYMBOL,"BTCUSDT"))
+  findViewById<EditText>(R.id.targetInput).setText(prefs.getString(OverlayService.KEY_TARGET,""))
+  findViewById<Button>(R.id.setTargetButton).setOnClickListener{saveTargetPrice()}
   findViewById<Button>(R.id.startCheckButton).setOnClickListener{startChecks()}
   findViewById<Button>(R.id.startButton).setOnClickListener{startOverlay()}
   findViewById<Button>(R.id.stopButton).setOnClickListener{stopService(Intent(this,OverlayService::class.java));if(checksStarted){engine.stop();checksStarted=false;findViewById<Button>(R.id.startCheckButton).text="START CHECKING"};setStatus("Trading checker stopped. Background checks and alerts are off.")}
   findViewById<Button>(R.id.refreshButton).setOnClickListener{if(checksStarted)engine.refreshNow() else setStatus("Press START CHECKING first.")}
   setupCollapsibleCharts()
   engine=MarketEngine(screenScope,{s->runOnUiThread{render(s)}},prefs.getInt(OverlayService.KEY_STRICTNESS,1))
+  engine.setTargetPrice(prefs.getString(OverlayService.KEY_TARGET,null)?.toDoubleOrNull())
   setupStrictnessControl()
   // Deliberately do not fetch on app launch. The user starts the checker manually.
  }
@@ -81,10 +84,18 @@ class MainActivity:AppCompatActivity(){
   val match=Regex("(UP|DOWN|DNT)\\s+([+-]?\\d+)").find(text)
   return match?.let{"     ${it.groupValues[1]}  ${it.groupValues[2]}"}?:""
  }
+ private fun saveTargetPrice(){
+  val raw=findViewById<EditText>(R.id.targetInput).text?.toString()?.trim().orEmpty()
+  val value=raw.toDoubleOrNull()
+  if(value==null||!value.isFinite()||value<=0.0){setStatus("Enter a valid target price, e.g. 78000.");return}
+  prefs.edit().putString(OverlayService.KEY_TARGET,value.toString()).apply()
+  engine.setTargetPrice(value)
+  setStatus("15-minute market target saved: $"+fmtPrice(value))
+ }
  private fun startChecks(){
   val symbol=readSymbol()?:return
   prefs.edit().putString(OverlayService.KEY_SYMBOL,symbol).apply()
-  if(!checksStarted){checksStarted=true;engine.start(symbol);setStatus("Checking $symbol now. The 1-minute pullback setup is the primary signal.");findViewById<Button>(R.id.startCheckButton).text="CHECKING • RUNNING"}
+  if(!checksStarted){checksStarted=true;engine.start(symbol);setStatus("Checking $symbol now. The target-aware 1-minute point system is the primary signal.");findViewById<Button>(R.id.startCheckButton).text="CHECKING • RUNNING"}
   else{if(symbol!=engine.symbol)engine.updateSymbol(symbol) else engine.refreshNow();setStatus("Refreshed $symbol. Automatic candle-close checks remain active.")}
   requestAndLaunchService(symbol,false)
  }
@@ -102,7 +113,7 @@ class MainActivity:AppCompatActivity(){
   findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
   val profile=StrictnessProfile.fromLevel(prefs.getInt(OverlayService.KEY_STRICTNESS,1))
-  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT SETUP: "+(if(s.decision.verdict==Verdict.UP)"BUY ENTRY" else if(s.decision.verdict==Verdict.DOWN)"SELL ENTRY" else "WAIT / DNT")+"   |   SCORE "+signed(s.decision.totalScore)+"   |   REQUIRED ±"+profile.scoreThreshold
+  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT SETUP: "+(if(s.decision.verdict==Verdict.UP)"YES / ABOVE" else if(s.decision.verdict==Verdict.DOWN)"NO / BELOW" else "WAIT / DNT")+"   |   SCORE "+signed(s.decision.totalScore)+"   |   REQUIRED ±"+profile.scoreThreshold
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
   updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
   updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
