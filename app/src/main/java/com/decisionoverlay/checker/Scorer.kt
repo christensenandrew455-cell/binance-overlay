@@ -195,13 +195,14 @@ object Scorer {
      * One-minute pullback strategy. UP means buy the dip in an uptrend;
      * DOWN means a short/sell setup after an upward retracement in a downtrend.
      */
-    fun evaluatePullback(candles: List<Candle>, feed: FeedStatus, strictnessLevel: Int = 1, targetPrice: Double? = null): TargetEvaluation {
+    fun evaluatePullback(candles: List<Candle>, feed: FeedStatus, strictnessLevel: Int = 1, targetPrice: Double? = null, currentPrice: Double? = null): TargetEvaluation {
         val data = candles.filter { it.closed }.sortedBy { it.openTime }.takeLast(100)
         val problems = mutableListOf<String>()
         if (feed.state != ConnectionState.CONNECTED) problems += "1-minute BTC feed unavailable: ${feed.lastError ?: feed.detail}."
         if (data.size < 100) problems += "Need exactly 100 completed 1-minute candles; received ${data.size}."
-        if (targetPrice == null || !targetPrice.isFinite() || targetPrice <= 0.0) problems += "Waiting for the automatic BTC price captured at the start of this 15-minute window."
-        if (problems.isNotEmpty()) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: waiting for 100 completed 1-minute candles and the automatic 15-minute target.", problems)
+        if (targetPrice == null || !targetPrice.isFinite() || targetPrice <= 0.0) problems += "Waiting for the active quarter-hour checkpoint target."
+        if (currentPrice == null || !currentPrice.isFinite() || currentPrice <= 0.0) problems += "Waiting for the latest BTC market price."
+        if (problems.isNotEmpty()) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: waiting for 100 completed 1-minute candles, the active checkpoint target, and the latest BTC price.", problems)
         val closes = data.map { it.close }
         val current = data.last()
         val previous = data[data.lastIndex - 1]
@@ -234,19 +235,20 @@ object Scorer {
         val bullishReversal = rsi < 30.0 && current.close > previous.close && ema9.last() > ema9[ema9.lastIndex - 1]
         val bearishReversal = rsi > 70.0 && current.close < previous.close && ema9.last() < ema9[ema9.lastIndex - 1]
         val target = targetPrice!!
-        val aboveTarget = current.close > target
+        val livePrice = currentPrice!!
+        val aboveTarget = livePrice > target
         val verdict = when {
             trend == "UPWARD" && !aboveTarget && !bearishReversal -> Verdict.UP
             trend == "DOWNWARD" && aboveTarget && !bullishReversal -> Verdict.DOWN
             else -> Verdict.DNT
         }
         val signal = when (verdict) {
-            Verdict.UP -> "UP — upward trend while BTC is at or below the 15-minute starting price"
-            Verdict.DOWN -> "DOWN — downward trend while BTC is above the 15-minute starting price"
-            Verdict.DNT -> "DNT — trend, target side, or reversal filter does not allow an entry"
+            Verdict.UP -> "UP — upward trend while the current BTC price is at or below the active checkpoint target"
+            Verdict.DOWN -> "DOWN — downward trend while the current BTC price is above the active checkpoint target"
+            Verdict.DNT -> "DNT — trend, current-price side of target, or reversal filter does not allow an entry"
         }
-        val reason = "$signal | Trend=$trend (score $score); BTC=${fmtPrice(current.close)}; 15m start target=${fmtPrice(target)}; target side=${if (aboveTarget) "ABOVE" else "AT OR BELOW"}; EMA9=${fmtPrice(ema9.last())}; EMA21=${fmtPrice(ema21.last())}; RSI14=${String.format(java.util.Locale.US, "%.2f", rsi)}; ROC3=${String.format(java.util.Locale.US, "%.4f", roc)}%; reversal=${if (bullishReversal) "BULLISH" else if (bearishReversal) "BEARISH" else "NONE"}."
-        return TargetEvaluation(score, verdict, current.close - target, reason, emptyList(), score, 0, 0)
+        val reason = "$signal | Trend=$trend (score $score); current BTC=${fmtPrice(livePrice)}; active checkpoint target=${fmtPrice(target)}; target side=${if (aboveTarget) "ABOVE" else if (livePrice < target) "BELOW" else "AT"}; EMA9=${fmtPrice(ema9.last())}; EMA21=${fmtPrice(ema21.last())}; RSI14=${String.format(java.util.Locale.US, "%.2f", rsi)}; ROC3=${String.format(java.util.Locale.US, "%.4f", roc)}%; reversal=${if (bullishReversal) "BULLISH" else if (bearishReversal) "BEARISH" else "NONE"}. "
+        return TargetEvaluation(score, verdict, livePrice - target, reason, emptyList(), score, 0, 0)
     }
 
     private fun score(c: List<Candle>, f: FeedStatus, label: String, interval: String): TimeframeScore {
