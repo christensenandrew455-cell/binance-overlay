@@ -205,8 +205,8 @@ object Scorer {
         val closes = data.map { it.close }
         val current = data.last()
         val previous = data[data.lastIndex - 1]
-        val e9 = Indicators.emaSeries(closes, 9)
-        val e21 = Indicators.emaSeries(closes, 21)
+        val e9 = Indicators.emaSeriesFromFirst(closes, 9)
+        val e21 = Indicators.emaSeriesFromFirst(closes, 21)
         if (e9.size < 2 || e21.size < 2) return TargetEvaluation(0, Verdict.DNT, 0.0, "DNT: EMA history is not ready.", listOf("Unable to calculate EMA 9/21."))
         val ema9 = e9.last(); val ema21 = e21.last()
         var gains = 0.0; var losses = 0.0
@@ -237,9 +237,9 @@ object Scorer {
         val closes = data.map { it.close }
         val price = closes.lastOrNull()
         val ema7 = Indicators.ema(closes, 7)
-        val ema25 = Indicators.ema(closes, 21)
+        val ema25 = Indicators.emaSeriesFromFirst(closes, 21).lastOrNull()
         val ema99 = Indicators.ema(closes, 99)
-        val ema9 = Indicators.ema(closes, 9)
+        val ema9 = Indicators.emaSeriesFromFirst(closes, 9).lastOrNull()
         val rsi = Indicators.rsi(closes)
         val macd = Indicators.macd(closes)
         val volumeRatio = Indicators.volumeRatio(data)
