@@ -93,7 +93,7 @@ class MainActivity : AppCompatActivity() {
                 Verdict.UP -> "UP"
                 Verdict.DOWN -> "DOWN"
                 Verdict.DNT -> "DNT"
-            } + "   •   STEEPNESS " + (decision.steepnessScore?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—") + "/10
+            } + "   •   STEEPNESS " + (decision.steepnessScore?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—") + "/10"
             setTextColor(ContextCompat.getColor(this@MainActivity, when (decision.verdict) {
                 Verdict.UP -> R.color.up
                 Verdict.DOWN -> R.color.down
