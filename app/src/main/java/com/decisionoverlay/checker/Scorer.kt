@@ -1,6 +1,9 @@
 package com.decisionoverlay.checker
 
 import kotlin.math.abs
+import kotlin.math.sqrt
+import kotlin.math.round
+import kotlin.math.roundToInt
 
 data class TargetEvaluation(
     val score: Int,
@@ -11,6 +14,7 @@ data class TargetEvaluation(
     val oneMinutePoints: Int = 0,
     val fiveMinutePoints: Int = 0,
     val targetPoints: Int = 0,
+    val steepnessScore: Double? = null,
 )
 
 object Scorer {
@@ -190,6 +194,54 @@ object Scorer {
         return TargetEvaluation(total.coerceIn(-10, 10), verdict, 0.0, explanation, emptyList(), oneMinutePoints, fiveMinutePoints, targetPoints)
     }
 
+
+    /**
+     * Uses the latest 1-hour candle's move, normalized by population
+     * standard deviation of the latest 24 close-to-close hourly returns.
+     */
+    fun evaluateHourlySteepness(candles: List<Candle>, feed: FeedStatus): TargetEvaluation {
+        val data = candles.sortedBy { it.openTime }
+        val problems = mutableListOf<String>()
+        if (feed.state != ConnectionState.CONNECTED) {
+            problems += "1-hour BTC feed unavailable: ${feed.lastError ?: feed.detail}."
+        }
+        if (data.size < 25) {
+            problems += "Need at least 25 hourly candles for 24 returns; received ${data.size}."
+        }
+        if (problems.isNotEmpty()) {
+            return TargetEvaluation(0, Verdict.DNT, 0.0,
+                "DNT: waiting for 1-hour candles and volatility history.", problems)
+        }
+        val latest = data.last()
+        if (latest.open <= 0.0) {
+            return TargetEvaluation(0, Verdict.DNT, 0.0,
+                "DNT: latest hourly candle has an invalid opening price.",
+                listOf("Invalid 1-hour opening price."))
+        }
+        val priceChangePct = ((latest.close - latest.open) / latest.open) * 100.0
+        val closes = data.map { it.close }
+        val returns = closes.zipWithNext { previous, current ->
+            if (previous != 0.0) (current - previous) / previous else 0.0
+        }.takeLast(24)
+        val mean = returns.average()
+        val historicalStd = sqrt(returns.map { (it - mean) * (it - mean) }.average()) * 100.0
+        val denominator = if (historicalStd > 0.0) historicalStd else 1.0
+        val steepness = minOf(10.0, round((kotlin.math.abs(priceChangePct) / denominator * 2.5) * 10.0) / 10.0)
+        val direction = if (priceChangePct > 0.0) Verdict.UP else Verdict.DOWN
+        val verdict = if (steepness < 4.0) Verdict.DNT else direction
+        val directionText = if (direction == Verdict.UP) "UP" else "DOWN"
+        val reason = "1H candle change=${String.format(java.util.Locale.US, "%.4f", priceChangePct)}%; " +
+            "24-return volatility=${String.format(java.util.Locale.US, "%.4f", historicalStd)}%; " +
+            "steepness=${String.format(java.util.Locale.US, "%.1f", steepness)}/10 (minimum 4.0); " +
+            "hourly direction=$directionText."
+        val explanation = when (verdict) {
+            Verdict.UP -> "UP — 1-hour move is steep enough. $reason"
+            Verdict.DOWN -> "DOWN — 1-hour move is steep enough. $reason"
+            Verdict.DNT -> "DNT — 1-hour move is not steep enough. $reason"
+        }
+        return TargetEvaluation(steepness.roundToInt(), verdict, 0.0, explanation, emptyList(),
+            steepnessScore = steepness)
+    }
 
     /**
      * One-minute pullback strategy. UP means buy the dip in an uptrend;
