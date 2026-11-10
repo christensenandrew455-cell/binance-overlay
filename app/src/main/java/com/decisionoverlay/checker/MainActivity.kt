@@ -138,8 +138,8 @@ class MainActivity : AppCompatActivity() {
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
             .putExtra(OverlayService.EXTRA_SHOW_PANEL, showOverlay)
         ContextCompat.startForegroundService(this, intent)
-        setStatus(if (showOverlay) "Floating decision and automatic 15-minute checker running for $symbol."
-        else "Background checker running for $symbol. Use STOP RUNNING to turn it off.")
+        setStatus(if (showOverlay) "Floating 1-hour steepness decision running for $symbol."
+        else "1-hour steepness checker running for $symbol. Use STOP RUNNING to turn it off.")
     }
 
     private fun setStatus(message: String) { findViewById<TextView>(R.id.statusText).text = message }
