@@ -36,7 +36,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
         symbol = normalize(raw) ?: "BTCUSDT"
         scope.launch(Dispatchers.IO) {
             mutex.withLock {
-                logLocked("Started automatic 15-minute BTC target with 1-minute candles for $symbol")
+                logLocked("Started 1-hour BTC steepness checker for $symbol; refreshed every minute")
                 fetchOneMinuteLocked("STARTUP")
             }
             pollOneMinute()
