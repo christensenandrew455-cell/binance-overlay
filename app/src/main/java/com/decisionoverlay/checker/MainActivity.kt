@@ -112,7 +112,7 @@ class MainActivity:AppCompatActivity(){
   bindChart(R.id.chart15Body,R.id.chart15Header,"15 MINUTE CHART",s.decision.fifteen)
   findViewById<TextView>(R.id.problemsText).text=if(s.decision.problems.isEmpty())"No data blockers. Decision is based on the combined weighted score." else s.decision.problems.joinToString("\n\n"){"• "+it}
   findViewById<TextView>(R.id.logText).text=s.logText.ifBlank{"Waiting for first data update…"}
-  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT SETUP: "+(if(s.decision.verdict==Verdict.UP)"YES / ABOVE" else if(s.decision.verdict==Verdict.DOWN)"NO / BELOW" else "WAIT / DNT")+"   |   TREND SCORE "+signed(s.decision.totalScore)+"   |   TREND LIMIT ±3
+  val status=findViewById<TextView>(R.id.overallStatus);status.text="CURRENT SETUP: "+(if(s.decision.verdict==Verdict.UP)"YES / ABOVE" else if(s.decision.verdict==Verdict.DOWN)"NO / BELOW" else "WAIT / DNT")+"   |   TREND SCORE "+signed(s.decision.totalScore)+"   |   TREND LIMIT ±3"
   status.setTextColor(ContextCompat.getColor(this,when(s.decision.verdict){Verdict.UP->R.color.up;Verdict.DOWN->R.color.down;Verdict.DNT->R.color.dnt}))
   updateHeader(R.id.chart1mHeader,"1 MINUTE CHART",s.decision.one)
   updateHeader(R.id.chart5Header,"5 MINUTE CHART",s.decision.five)
