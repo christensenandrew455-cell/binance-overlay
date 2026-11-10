@@ -70,12 +70,12 @@ class CandleChartView @JvmOverloads constructor(
         canvas: Canvas, values: List<Double>, period: Int, visibleStart: Int,
         left: Float, slot: Float, y: (Double) -> Float, paint: Paint
     ) {
-        val series = Indicators.emaSeries(values, period)
+        val series = Indicators.emaSeriesFromFirst(values, period)
         if (series.size < 2) return
         val path = Path()
         var started = false
         series.forEachIndexed { index, value ->
-            val candleIndex = index + period - 1
+            val candleIndex = index
             if (candleIndex >= visibleStart) {
                 val x = left + slot * (candleIndex - visibleStart + 0.5f)
                 if (!started) {
