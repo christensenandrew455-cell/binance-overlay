@@ -17,7 +17,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  @Volatile private var strictnessLevel=initialStrictnessLevel.coerceIn(0,4)
  private val activeProfile get()=StrictnessProfile.fromLevel(strictnessLevel)
  private val dntThreshold get()=activeProfile.scoreThreshold
- private val jobs=mutableListOf<Job>();private var targetPrice:Double?=null;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
+ private val jobs=mutableListOf<Job>();@Volatile private var targetPrice:Double?=null;private var targetSession=0L;private var candidate=Verdict.DNT;private var entryUntil=0L;private var lastVerdict=Verdict.DNT
  fun start(raw:String){if(!started.compareAndSet(false,true)){updateSymbol(raw);return};symbol=normalize(raw)?:"BTCUSDT"
   scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Started target-aware Binance feed for $symbol");refreshAllLocked()};poll("1m",ONE);poll("5m",FIVE);poll("15m",FIFTEEN)}
   jobs+=scope.launch(Dispatchers.IO){while(isActive){delay(1000);mutex.withLock{publishLocked()}}}
@@ -25,7 +25,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
  fun updateSymbol(raw:String){scope.launch(Dispatchers.IO){val next=normalize(raw);if(next==null){mutex.withLock{logLocked("Rejected symbol '$raw'");publishLocked()};return@launch};if(next==symbol)return@launch;symbol=next
   mutex.withLock{candles.values.forEach{it.clear()};feeds.values.forEach{it.state=ConnectionState.NOT_WORKING;it.detail="Reloading $next";it.updatedAt=null;it.lastError=null};targetPrice=null;targetSession=0;candidate=Verdict.DNT;entryUntil=0;lastVerdict=Verdict.DNT;logLocked("Symbol changed to $next");refreshAllLocked()}
  }}
- fun setTargetPrice(value:Double?){scope.launch(Dispatchers.IO){mutex.withLock{targetPrice=value?.takeIf{it.isFinite()&&it>0.0};candidate=Verdict.DNT;entryUntil=0;logLocked(if(targetPrice==null)"Target price cleared" else "Target price set to ${fmtPrice(targetPrice)}");publishLocked()}}}
+ fun setTargetPrice(value:Double?){targetPrice=value?.takeIf{it.isFinite()&&it>0.0};scope.launch(Dispatchers.IO){mutex.withLock{candidate=Verdict.DNT;entryUntil=0;logLocked(if(targetPrice==null)"Target price cleared" else "Target price set to ${fmtPrice(targetPrice)}");publishLocked()}}}
  fun setStrictness(level:Int){scope.launch(Dispatchers.IO){mutex.withLock{val next=level.coerceIn(0,4);if(next!=strictnessLevel){strictnessLevel=next;candidate=Verdict.DNT;entryUntil=0;logLocked("Strictness changed: ${activeProfile.label} (score ±${activeProfile.scoreThreshold}, ${activeProfile.requiredConfirmations} confirmations, volume ${activeProfile.volumeExpansionRatio}x)");publishLocked()}}}}
  fun refreshNow(){scope.launch(Dispatchers.IO){mutex.withLock{logLocked("Manual refresh");refreshAllLocked()}}}
  fun stop(){jobs.forEach{it.cancel()};jobs.clear();http.dispatcher.executorService.shutdown();http.connectionPool.evictAll()}
@@ -47,7 +47,7 @@ class MarketEngine(private val scope:CoroutineScope,private val onUpdate:(Engine
   if(v==Verdict.DNT){candidate=Verdict.DNT;entryUntil=0}
   if(v!=Verdict.DNT&&now>=entryUntil)v=Verdict.DNT
   val reason=if(ev.problems.isNotEmpty())"DNT: 1-minute market data unavailable." else if(v==Verdict.DNT&&candidate!=Verdict.DNT)"DNT: 60-second entry window expired." else ev.reason
-  if(v!=lastVerdict){logLocked("Decision changed to $v (1m pullback score ${signed(ev.score)}).");lastVerdict=v}
+  if(v!=lastVerdict){logLocked("Decision changed to $v (1m trend score ${signed(ev.score)}).");lastVerdict=v}
   val d=Decision(v,reason,one,five,fifteen,ev.problems,ev.score,dntThreshold,targetPrice,one.price,remaining,(entryUntil-now).coerceAtLeast(0),ev.buffer)
   onUpdate(EngineSnapshot(symbol,d,logs.joinToString("\n")))
  }
