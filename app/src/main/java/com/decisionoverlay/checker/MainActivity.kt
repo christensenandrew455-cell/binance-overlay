@@ -65,11 +65,11 @@ class MainActivity : AppCompatActivity() {
         if (!checksStarted) {
             checksStarted = true
             engine.start(symbol)
-            setStatus("Checking $symbol. The active target is captured from BTC at the latest :00, :15, :30, or :45 checkpoint.")
+            setStatus("Checking $symbol. The 1-hour candle direction is filtered by normalized steepness (minimum 4.0/10).")
             findViewById<Button>(R.id.startCheckButton).text = "CHECKING • RUNNING"
         } else {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
-            setStatus("Refreshed $symbol. The active checkpoint target updates at :00, :15, :30, and :45.")
+            setStatus("Refreshed $symbol. The hourly steepness signal refreshes with live Binance data.")
         }
         requestAndLaunchService(symbol, false)
     }
@@ -86,14 +86,14 @@ class MainActivity : AppCompatActivity() {
     private fun render(snapshot: EngineSnapshot) {
         val decision = snapshot.decision
         findViewById<TextView>(R.id.symbolHeading).text = snapshot.symbol + " • BTC $" + fmtPrice(decision.currentPrice)
-        findViewById<TextView>(R.id.targetText).text = "ACTIVE 15-MINUTE TARGET: $" + fmtPrice(decision.targetPrice)
-        findViewById<TextView>(R.id.windowText).text = "NEXT AUTOMATIC RESET IN " + clock(decision.sessionRemainingMs)
+        findViewById<TextView>(R.id.targetText).text = "1-HOUR STEEPNESS: " + (decision.steepnessScore?.let { String.format(java.util.Locale.US, "%.1f/10", it) } ?: "WAITING")
+        findViewById<TextView>(R.id.windowText).text = "SIGNAL RULE: UP/DOWN only at 4.0/10 or higher"
         findViewById<TextView>(R.id.overallStatus).apply {
             text = when (decision.verdict) {
                 Verdict.UP -> "UP"
                 Verdict.DOWN -> "DOWN"
                 Verdict.DNT -> "DNT"
-            } + "   •   SCORE " + signed(decision.totalScore)
+            } + "   •   STEEPNESS " + (decision.steepnessScore?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—") + "/10
             setTextColor(ContextCompat.getColor(this@MainActivity, when (decision.verdict) {
                 Verdict.UP -> R.color.up
                 Verdict.DOWN -> R.color.down
