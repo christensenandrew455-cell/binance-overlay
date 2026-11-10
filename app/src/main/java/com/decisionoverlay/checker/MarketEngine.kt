@@ -23,6 +23,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
     @Volatile private var strictnessLevel = initialStrictnessLevel.coerceIn(0, 4)
     private var targetPrice: Double? = null
     private var targetSession = -1L
+    private var currentPrice: Double? = null
     private val jobs = mutableListOf<Job>()
     private var candidate = Verdict.DNT
     private var entryUntil = 0L
@@ -52,6 +53,7 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
                 feed.reset("Reloading $next")
                 targetPrice = null
                 targetSession = -1L
+                currentPrice = null
                 candidate = Verdict.DNT
                 entryUntil = 0L
                 lastVerdict = Verdict.DNT
@@ -118,6 +120,8 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
             }
 
             val closed = result.candles.filter { it.closed }.sortedBy { it.openTime }.takeLast(100)
+            // Use the newest exchange candle close as the live price; it updates during the current 1-minute candle.
+            currentPrice = result.candles.maxByOrNull { it.openTime }?.close ?: closed.lastOrNull()?.close
             candles.clear()
             candles.addAll(closed)
             feed.state = ConnectionState.CONNECTED
@@ -143,8 +147,8 @@ class MarketEngine(private val scope: CoroutineScope, private val onUpdate: (Eng
             feed.lastError = "No fresh 1-minute candle inside 120s"
         }
         val status = feed.snapshot()
-        val ev = Scorer.evaluatePullback(candles, status, strictnessLevel, targetPrice)
-        val one = Scorer.score1m(candles, status).copy(score = ev.score, components = listOf(ComponentScore("1m target-aware trend", ev.score, ev.reason)))
+        val ev = Scorer.evaluatePullback(candles, status, strictnessLevel, targetPrice, currentPrice)
+        val one = Scorer.score1m(candles, status).copy(score = ev.score, price = currentPrice, components = listOf(ComponentScore("1m target-aware trend", ev.score, ev.reason)))
         val context = one.copy(label = "Not used", interval = "none", components = emptyList())
         var verdict = if (ev.problems.isNotEmpty()) Verdict.DNT else ev.candidate
         if (verdict != Verdict.DNT && verdict != candidate) {
