@@ -93,20 +93,21 @@ class MainActivity : AppCompatActivity() {
             metrics.targetPrice,
         )
         findViewById<IndicatorLineChartView>(R.id.volumeChart).setHeartbeat(
-            "VOLUME • BASELINE + UNUSUAL SPIKES",
-            snapshot.volumeBaselineSeries,
+            "VOLUME • GREEN UP / RED DOWN • TALL = HIGH",
+            snapshot.volumeSeries,
             snapshot.volumeSpikeSeries,
+            snapshot.volumeUpSeries,
         )
         findViewById<IndicatorLineChartView>(R.id.momentumChart).setMomentum(
-            "MOMENTUM • GREEN ABOVE ZERO / RED BELOW",
+            "MOMENTUM • 1M HISTOGRAM • GREEN / RED",
             snapshot.momentumSeries,
         )
         findViewById<TextView>(R.id.priceValue).text =
             "EMA 7: ${fmtPrice(metrics.ema7Price)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
         findViewById<TextView>(R.id.volumeValue).text =
-            "Volume EMA 2: ${fmtNum(metrics.ema2Volume)}  •  spikes mark volume above its recent average by 2 standard deviations"
+            "Each box = one 1-minute candle. Green = candle closed up; red = candle closed down. Taller boxes = unusually high total volume."
         findViewById<TextView>(R.id.momentumValue).text =
-            "Latest 1-minute change: ${fmtNum(metrics.currentMomentum)}  •  large local peaks are labeled"
+            "Each bar shows the 1-minute price change from zero. Green = positive; red = negative. Taller bars = stronger movement."
         findViewById<TextView>(R.id.outlierText).text =
             "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
         findViewById<TextView>(R.id.overallStatus).text = when {
@@ -114,7 +115,7 @@ class MainActivity : AppCompatActivity() {
             else -> "OVERALL TREND: ${metrics.trend}"
         }
         findViewById<TextView>(R.id.reasonText).text =
-            "EMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume spikes show unusually high total traded volume (not buy/sell direction). Momentum is each candle's close-to-close change, green above zero and red below; only larger local peaks are labeled."
+            "EMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume boxes are colored by candle direction (green close above open, red close below open); box height highlights unusually high total traded volume, not buyer-versus-seller volume. Momentum is shown as histogram bars around zero, green for positive changes and red for negative changes; no signal lines are drawn."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
