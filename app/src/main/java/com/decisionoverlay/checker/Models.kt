@@ -82,7 +82,7 @@ fun fmtPrice(value: Double?): String {
         magnitude >= 1 -> 4
         else -> 6
     }
-    return String.format(Locale.US, "%,. " .trim() + digits + "f", value)
+    return String.format(Locale.US, "%,." + digits + "f", value)
 }
 
 private val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
