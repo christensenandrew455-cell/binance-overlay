@@ -16,7 +16,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="BINANCE / MARKET CHECKER"
+            android:text="BINANCE.US / INDICATOR MONITOR"
             android:textColor="@color/muted"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -41,7 +41,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="1-HOUR STEEPNESS FILTER"
+            android:text="EMA 7 + UNUSUAL-MOVEMENT DETECTION"
             android:textColor="@color/text"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -52,18 +52,10 @@
             android:layout_marginTop="9dp"
             android:padding="14dp"
             android:background="#1A2435"
-            android:text="1-HOUR STEEPNESS: WAITING"
+            android:text="Waiting for 100 one-minute candles…"
             android:textColor="@color/text"
-            android:textSize="17sp"
-            android:textStyle="bold"/>
-        <TextView
-            android:id="@+id/windowText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="7dp"
-            android:text="UP / DOWN THRESHOLD: 4.0 / 10"
-            android:textColor="@color/muted"
-            android:textSize="12sp"/>
+            android:textSize="14sp"
+            android:lineSpacingExtra="4dp"/>
         <EditText
             android:id="@+id/symbolInput"
             android:layout_width="match_parent"
@@ -84,20 +76,20 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="9dp"
-            android:text="START CHECKING"
+            android:text="START MONITORING"
             android:textStyle="bold"/>
         <Button
             android:id="@+id/startButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="5dp"
-            android:text="SHOW FLOATING DECISION"/>
+            android:text="SHOW FLOATING MONITOR"/>
         <Button
             android:id="@+id/stopButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
-            android:text="STOP RUNNING"/>
+            android:text="STOP MONITORING"/>
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
@@ -112,9 +104,9 @@
             android:layout_marginTop="16dp"
             android:padding="16dp"
             android:background="#1A2435"
-            android:text="DNT • WAITING"
+            android:text="COLLECTING CANDLES"
             android:textColor="@color/text"
-            android:textSize="24sp"
+            android:textSize="20sp"
             android:textStyle="bold"/>
         <TextView
             android:id="@+id/reasonText"
@@ -123,7 +115,7 @@
             android:layout_marginTop="12dp"
             android:padding="13dp"
             android:background="#202B3E"
-            android:text="The 1-hour candle steepness calculation will appear here."
+            android:text="EMA 7 and anomaly details will appear here."
             android:textColor="@color/text"
             android:textSize="12sp"
             android:lineSpacingExtra="3dp"/>
@@ -131,7 +123,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="DATA STATUS"
+            android:text="BINANCE.US DATA STATUS"
             android:textColor="@color/muted"
             android:textSize="11sp"
             android:textStyle="bold"/>
@@ -142,7 +134,7 @@
             android:layout_marginTop="7dp"
             android:padding="13dp"
             android:background="#1A2435"
-            android:text="Press START CHECKING to begin."
+            android:text="Press START MONITORING to begin."
             android:textColor="@color/text"
             android:textSize="12sp"/>
         <Button
@@ -155,7 +147,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="CONNECTION / ERROR LOG"
+            android:text="FETCH LOG"
             android:textColor="@color/muted"
             android:textSize="11sp"
             android:textStyle="bold"/>
