@@ -196,7 +196,7 @@ class IndicatorLineChartView @JvmOverloads constructor(
             val heightRatio = (ratio / max(3.0, maxRatio)).coerceIn(0.12, 1.0)
             val x = left + (right - left) * index / max(1, count - 1).toFloat()
             canvas.drawLine(x, baseY, x, baseY - plotHeight * 0.78f * heightRatio.toFloat(), spikePaint)
-            canvas.drawCircle(x, baseY - plotHeight * 0.78f * heightRatio, 2.5f * density, markerPaint.apply { color = spikePaint.color })
+            canvas.drawCircle(x, baseY - plotHeight * 0.78f * heightRatio.toFloat(), 2.5f * density, markerPaint.apply { color = spikePaint.color })
         }
         peakTextPaint.color = Color.rgb(255, 190, 75)
         canvas.drawText("UNUSUAL VOLUME", left, top + 11f * density, peakTextPaint)
