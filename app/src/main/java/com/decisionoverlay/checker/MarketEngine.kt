@@ -80,8 +80,7 @@ class MarketEngine(
         try {
             val result = client.fetchKlines(symbol, "1m", 100)
             candles = result.candles.sortedBy { it.openTime }.takeLast(100)
-            val now = System.currentTimeMillis()
-            updatedAt = now
+            updatedAt = System.currentTimeMillis()
             lastError = null
             feedDetail = "Connected to Binance.US via ${result.host} • $source"
             log("Fetched ${candles.size} one-minute candles from ${result.host}")
@@ -103,21 +102,23 @@ class MarketEngine(
             if (previous != 0.0) (current - previous) / previous * 100.0 else 0.0
         }
 
-        val latest = data.lastOrNull()
-        val priceEma = Indicators.emaSeriesFromFirst(closes, 7).lastOrNull()
-        val volumeEma = Indicators.emaSeriesFromFirst(volumes, 7).lastOrNull()
-        val momentumEma = Indicators.emaSeriesFromFirst(momentum, 7).lastOrNull()
+        // All three series are calculated locally from raw 1-minute candle values.
+        val priceEmaSeries = Indicators.emaSeriesFromFirst(closes, 7)
+        val volumeEmaSeries = Indicators.emaSeriesFromFirst(volumes, 7)
+        val momentumEmaSeries = Indicators.emaSeriesFromFirst(momentum, 7)
+        val priceMoveEmaSeries = Indicators.emaSeriesFromFirst(priceMoves, 7)
 
+        val latest = data.lastOrNull()
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
-            ema7Price = priceEma,
+            ema7Price = priceEmaSeries.lastOrNull(),
             currentVolume = latest?.volume,
-            ema7Volume = volumeEma,
+            ema7Volume = volumeEmaSeries.lastOrNull(),
             currentMomentum = momentum.lastOrNull(),
-            ema7Momentum = momentumEma,
-            priceAnomaly = isOutlier(priceMoves),
-            volumeAnomaly = isOutlier(volumes),
-            momentumAnomaly = isOutlier(momentum),
+            ema7Momentum = momentumEmaSeries.lastOrNull(),
+            priceAnomaly = isOutlier(priceMoveEmaSeries),
+            volumeAnomaly = isOutlier(volumeEmaSeries),
+            momentumAnomaly = isOutlier(momentumEmaSeries),
             candleCount = data.size,
             updatedAt = updatedAt,
             feedDetail = feedDetail,
@@ -126,8 +127,8 @@ class MarketEngine(
         onUpdate(EngineSnapshot(symbol, metrics, logs.joinToString("\n")))
     }
 
-    // Compare the newest value with the preceding 14 observations using a 2-sigma test.
-    // The baseline excludes the newest candle so a spike cannot inflate its own threshold.
+    // Compare the newest EMA value with the preceding 14 EMA values (sample standard deviation).
+    // The current observation is excluded from its own baseline so a spike cannot hide itself.
     private fun isOutlier(values: List<Double>): Boolean? {
         if (values.size < 15) return null
         val baseline = values.dropLast(1).takeLast(14)
