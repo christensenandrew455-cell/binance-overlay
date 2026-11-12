@@ -90,11 +90,11 @@ class OverlayPanel(
 
     fun render(snapshot: EngineSnapshot) {
         val m = snapshot.metrics
-        heading.text = "${snapshot.symbol} • 1M EMA 7/3"
+        heading.text = "${snapshot.symbol} • 1M TREND ${m.trend}"
         price.text = fmtPrice(m.currentPrice)
-        emaPrice.text = "Price EMA7: ${fmtPrice(m.ema7Price)}"
-        emaVolume.text = "Volume EMA3: ${fmtNum(m.ema3Volume)}"
-        emaMomentum.text = "Momentum EMA3: ${fmtNum(m.ema3Momentum)}"
+        emaPrice.text = "EMA7: ${fmtPrice(m.ema7Price)}  |  EMA99: ${fmtPrice(m.ema99Price)}"
+        emaVolume.text = "Volume EMA2: ${fmtNum(m.ema2Volume)}"
+        emaMomentum.text = "Momentum: ${fmtNum(m.currentMomentum)}"
         val flags = listOfNotNull(
             if (m.priceAnomaly == true) "PRICE" else null,
             if (m.volumeAnomaly == true) "VOLUME" else null,
