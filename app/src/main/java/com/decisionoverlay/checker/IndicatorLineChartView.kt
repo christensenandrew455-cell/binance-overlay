@@ -82,6 +82,8 @@ class IndicatorLineChartView @JvmOverloads constructor(
     private var targetPrice: Double? = null
     private var baselineValues: List<Double> = emptyList()
     private var spikeValues: List<Double?> = emptyList()
+    private var volumeValues: List<Double> = emptyList()
+    private var volumeUpValues: List<Boolean> = emptyList()
 
     fun setSeries(title: String, series: List<Double>, color: Int) {
         setSeries(title, series, color, emptyList(), Color.WHITE)
@@ -107,11 +109,13 @@ class IndicatorLineChartView @JvmOverloads constructor(
         invalidate()
     }
 
-    fun setHeartbeat(title: String, baseline: List<Double>, spikes: List<Double?>) {
+    fun setHeartbeat(title: String, volumes: List<Double>, spikes: List<Double?>, candleUp: List<Boolean>) {
         mode = Mode.HEARTBEAT
         chartTitle = title
-        baselineValues = baseline.takeLast(60)
+        volumeValues = volumes.takeLast(60)
         spikeValues = spikes.takeLast(60)
+        volumeUpValues = candleUp.takeLast(60)
+        baselineValues = emptyList()
         values = emptyList()
         secondaryValues = emptyList()
         invalidate()
@@ -174,54 +178,67 @@ class IndicatorLineChartView @JvmOverloads constructor(
     }
 
     private fun drawHeartbeat(canvas: Canvas, left: Float, right: Float, top: Float, bottom: Float) {
-        if (baselineValues.isEmpty()) {
+        if (volumeValues.isEmpty()) {
             drawWaiting(canvas, left, top, bottom)
             return
         }
         val plotHeight = bottom - top
-        val baseY = bottom - plotHeight * 0.10f
-        canvas.drawLine(left, baseY, right, baseY, secondaryPaint.apply { color = Color.rgb(110, 168, 254) })
-        val count = max(baselineValues.size, spikeValues.size)
-        if (count == 0) return
-        val maxRatio = spikeValues.indices.mapNotNull { index ->
-            val spike = spikeValues[index] ?: return@mapNotNull null
-            val base = baselineValues.getOrNull(index) ?: return@mapNotNull null
-            if (base <= 0.0) null else spike / base
-        }.maxOrNull() ?: 1.0
-        spikeValues.forEachIndexed { index, spike ->
-            if (spike == null) return@forEachIndexed
-            val base = baselineValues.getOrNull(index) ?: return@forEachIndexed
-            if (base <= 0.0) return@forEachIndexed
-            val ratio = (spike / base).coerceAtLeast(1.0)
-            val heightRatio = (ratio / max(3.0, maxRatio)).coerceIn(0.12, 1.0)
-            val x = left + (right - left) * index / max(1, count - 1).toFloat()
-            canvas.drawLine(x, baseY, x, baseY - plotHeight * 0.78f * heightRatio.toFloat(), spikePaint)
-            canvas.drawCircle(x, baseY - plotHeight * 0.78f * heightRatio.toFloat(), 2.5f * density, markerPaint.apply { color = spikePaint.color })
+        val baseY = bottom - plotHeight * 0.08f
+        canvas.drawLine(left, baseY, right, baseY, zeroPaint)
+        val maxVolume = volumeValues.maxOrNull()?.coerceAtLeast(0.0000001) ?: 1.0
+        val count = volumeValues.size
+        val slotWidth = (right - left) / count.toFloat()
+        val barWidth = (slotWidth * 0.58f).coerceAtLeast(2f * density)
+        volumeValues.forEachIndexed { index, volume ->
+            val x = left + slotWidth * (index + 0.5f)
+            val isSpike = spikeValues.getOrNull(index) != null
+            // Keep ordinary candles visible as tiny blocks; unusual volume gets a taller pulse.
+            val relative = (volume / maxVolume).coerceIn(0.0, 1.0)
+            val normalHeight = (2.5f * density + relative.toFloat() * plotHeight * 0.10f)
+            val spikeHeight = (plotHeight * (0.18f + relative.toFloat() * 0.68f))
+            val barHeight = if (isSpike) spikeHeight else normalHeight
+            val up = volumeUpValues.getOrNull(index) ?: true
+            val color = if (up) Color.rgb(22, 190, 130) else Color.rgb(239, 75, 98)
+            markerPaint.color = color
+            val rect = android.graphics.RectF(
+                x - barWidth / 2f,
+                baseY - barHeight,
+                x + barWidth / 2f,
+                baseY
+            )
+            canvas.drawRoundRect(rect, 1.5f * density, 1.5f * density, markerPaint)
         }
         peakTextPaint.color = Color.rgb(255, 190, 75)
-        canvas.drawText("UNUSUAL VOLUME", left, top + 11f * density, peakTextPaint)
+        canvas.drawText("GREEN = UP CANDLE  •  RED = DOWN CANDLE  •  TALL = HIGH VOLUME", left, top + 11f * density, peakTextPaint)
     }
 
     private fun drawMomentum(canvas: Canvas, left: Float, right: Float, top: Float, bottom: Float) {
-        if (values.size < 2) {
+        if (values.isEmpty()) {
             drawWaiting(canvas, left, top, bottom)
             return
         }
         val maxAbs = max(values.maxOf { abs(it) }, 0.000001)
-        val bound = maxAbs * 1.15
+        val bound = maxAbs * 1.12
         val zeroY = yFor(0.0, top, bottom, -bound, bound)
         canvas.drawLine(left, zeroY, right, zeroY, zeroPaint)
-        val points = values.mapIndexed { index, value ->
-            val x = left + (right - left) * index / (values.size - 1).toFloat()
-            Pair(x, yFor(value, top, bottom, -bound, bound))
+        val count = values.size
+        val slotWidth = (right - left) / count.toFloat()
+        val barWidth = (slotWidth * 0.68f).coerceAtLeast(2f * density)
+        values.forEachIndexed { index, value ->
+            val x = left + slotWidth * (index + 0.5f)
+            val valueY = yFor(value, top, bottom, -bound, bound)
+            val color = if (value >= 0.0) positivePaint.color else negativePaint.color
+            markerPaint.color = color
+            val rect = android.graphics.RectF(
+                x - barWidth / 2f,
+                minOf(zeroY, valueY),
+                x + barWidth / 2f,
+                maxOf(zeroY, valueY)
+            )
+            canvas.drawRoundRect(rect, 1.5f * density, 1.5f * density, markerPaint)
         }
-        for (index in 1 until points.size) {
-            val previous = points[index - 1]
-            val current = points[index]
-            val value = (values[index - 1] + values[index]) / 2.0
-            canvas.drawLine(previous.first, previous.second, current.first, current.second, if (value >= 0.0) positivePaint else negativePaint)
-        }
-        drawMajorPeaks(canvas, points, top, bottom)
+        peakTextPaint.color = titlePaint.color
+        canvas.drawText("1-MIN CHANGE  •  HISTOGRAM", left, top + 11f * density, peakTextPaint)
     }
 
     private fun drawMajorPeaks(canvas: Canvas, points: List<Pair<Float, Float>>, top: Float, bottom: Float) {
