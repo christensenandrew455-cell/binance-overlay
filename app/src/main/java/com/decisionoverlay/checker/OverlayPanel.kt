@@ -37,9 +37,9 @@ class OverlayPanel(
     private val heading = label(11f, MUTED, true)
     private val price = label(18f, TEXT, true)
     private val emaPrice = label(11f, TEXT, false)
+    private val target = label(11f, TARGET, true)
     private val emaVolume = label(11f, TEXT, false)
-    private val emaMomentum = label(11f, TEXT, false)
-    private val anomalies = label(10f, ALERT, true)
+    private val emaMomentum = label(11f, TEXT, true)
     private val close = label(20f, MUTED, true).apply {
         text = "×"
         gravity = Gravity.CENTER
@@ -65,9 +65,9 @@ class OverlayPanel(
         })
         addView(price)
         addView(emaPrice)
+        addView(target)
         addView(emaVolume)
         addView(emaMomentum)
-        addView(anomalies)
     }
 
     init { heading.setOnTouchListener { _, event -> drag(event) } }
@@ -90,18 +90,13 @@ class OverlayPanel(
 
     fun render(snapshot: EngineSnapshot) {
         val m = snapshot.metrics
-        heading.text = "${snapshot.symbol} • 1M TREND ${m.trend}"
+        heading.text = "${snapshot.symbol} • TREND ${m.trend}"
         price.text = fmtPrice(m.currentPrice)
-        emaPrice.text = "EMA7: ${fmtPrice(m.ema7Price)}  |  EMA99: ${fmtPrice(m.ema99Price)}"
-        emaVolume.text = "Volume EMA2: ${fmtNum(m.ema2Volume)}"
-        emaMomentum.text = "Momentum: ${fmtNum(m.currentMomentum)}"
-        val flags = listOfNotNull(
-            if (m.priceAnomaly == true) "PRICE" else null,
-            if (m.volumeAnomaly == true) "VOLUME" else null,
-            if (m.momentumAnomaly == true) "MOMENTUM" else null,
-        )
-        anomalies.text = if (flags.isEmpty()) "OUTLIERS: NONE" else "OUTLIER: " + flags.joinToString(" • ")
-        anomalies.setTextColor(if (flags.isEmpty()) MUTED else ALERT)
+        emaPrice.text = "EMA7 ${fmtPrice(m.ema7Price)}  |  EMA99 ${fmtPrice(m.ema99Price)}"
+        target.text = "15M TARGET ${fmtPrice(m.targetPrice)}  •  ${formatTime(m.targetTime)}"
+        emaVolume.text = "VOLUME EMA2 ${fmtNum(m.ema2Volume)}"
+        emaMomentum.text = "MOMENTUM ${fmtNum(m.currentMomentum)}"
+        emaMomentum.setTextColor(if ((m.currentMomentum ?: 0.0) >= 0.0) GREEN else RED)
     }
 
     private var startX = 0
@@ -136,6 +131,8 @@ class OverlayPanel(
     companion object {
         private val TEXT = Color.parseColor("#F4F7FB")
         private val MUTED = Color.parseColor("#9AA4B5")
-        private val ALERT = Color.parseColor("#FFC45C")
+        private val TARGET = Color.parseColor("#FFC45C")
+        private val GREEN = Color.parseColor("#34D399")
+        private val RED = Color.parseColor("#F85C5C")
     }
 }
