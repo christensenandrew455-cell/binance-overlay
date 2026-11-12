@@ -151,6 +151,8 @@ class MarketEngine(
                 priceEma99Series = priceEma99.takeLast(60),
                 volumeBaselineSeries = volumeBaseline.takeLast(60),
                 volumeSpikeSeries = volumeSpikes.takeLast(60),
+                volumeSeries = volumes.takeLast(60),
+                volumeUpSeries = data.takeLast(60).map { it.close >= it.open },
                 momentumSeries = displayedMomentum,
             )
         )
