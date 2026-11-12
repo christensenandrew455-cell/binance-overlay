@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.sqrt
 
 class MarketEngine(
     private val scope: CoroutineScope,
@@ -78,7 +79,7 @@ class MarketEngine(
 
     private fun fetchAndPublish(source: String) {
         try {
-            // 150 candles warm up EMA 99; only the newest 60 are graphed.
+            // Warm up EMA 99 with 150 candles, but only graph the newest 60.
             val result = client.fetchKlines(symbol, "1m", 150)
             candles = result.candles.sortedBy { it.openTime }.takeLast(150)
             updatedAt = System.currentTimeMillis()
@@ -98,14 +99,29 @@ class MarketEngine(
         val data = candles
         val closes = data.map { it.close }
         val volumes = data.map { it.volume }
-        // Momentum is the unsmoothed close-to-close change for each one-minute candle.
         val momentum = closes.zipWithNext { previous, current -> current - previous }
-
         val priceEma7 = Indicators.emaSeriesFromFirst(closes, 7)
         val priceEma99 = Indicators.emaSeriesFromFirst(closes, 99)
         val volumeEma2 = Indicators.emaSeriesFromFirst(volumes, 2)
+        val volumeBaseline = rollingAverage(volumes, 14)
+        val volumeSpikes = volumes.mapIndexed { index, volume ->
+            if (index < 14) null
+            else {
+                val sample = volumes.subList(index - 14, index)
+                val mean = sample.average()
+                val variance = sample.sumOf { (it - mean) * (it - mean) } / (sample.size - 1)
+                val threshold = mean + 2.0 * sqrt(variance)
+                if (volume > threshold) volume else null
+            }
+        }
         val latest = data.lastOrNull()
+        // A checkpoint is the close of the 1-minute candle ending exactly at :00/:15/:30/:45.
+        // If launched mid-interval, this deliberately keeps the previous checkpoint target.
+        val target = data.lastOrNull { candle ->
+            candle.closed && (candle.closeTime + 1L) % FIFTEEN_MINUTES_MS == 0L
+        }
         val trend = overallTrend(closes, priceEma99)
+        val displayedMomentum = momentum.takeLast(60)
 
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
@@ -115,9 +131,11 @@ class MarketEngine(
             currentVolume = latest?.volume,
             ema2Volume = volumeEma2.lastOrNull(),
             currentMomentum = momentum.lastOrNull(),
+            targetPrice = target?.close,
+            targetTime = target?.closeTime?.plus(1L),
             priceAnomaly = isOutlier(priceEma7),
             volumeAnomaly = isOutlier(volumeEma2),
-            momentumAnomaly = isOutlier(momentum),
+            momentumAnomaly = isOutlier(displayedMomentum),
             candleCount = data.size,
             displayedCandleCount = minOf(60, data.size),
             updatedAt = updatedAt,
@@ -131,11 +149,18 @@ class MarketEngine(
                 logText = logs.joinToString("\n"),
                 priceEmaSeries = priceEma7.takeLast(60),
                 priceEma99Series = priceEma99.takeLast(60),
-                volumeEmaSeries = volumeEma2.takeLast(60),
-                momentumSeries = momentum.takeLast(60),
+                volumeBaselineSeries = volumeBaseline.takeLast(60),
+                volumeSpikeSeries = volumeSpikes.takeLast(60),
+                momentumSeries = displayedMomentum,
             )
         )
     }
+
+    private fun rollingAverage(values: List<Double>, window: Int): List<Double> =
+        values.indices.map { index ->
+            val start = (index - window + 1).coerceAtLeast(0)
+            values.subList(start, index + 1).average()
+        }
 
     private fun overallTrend(closes: List<Double>, ema99: List<Double>): String {
         if (closes.isEmpty() || ema99.size < 6) return "NEUTRAL"
@@ -149,13 +174,12 @@ class MarketEngine(
         }
     }
 
-    // Compare newest value with the previous 14 observations (sample standard deviation).
     private fun isOutlier(values: List<Double>): Boolean? {
         if (values.size < 15) return null
         val baseline = values.dropLast(1).takeLast(14)
         val mean = baseline.average()
         val variance = baseline.sumOf { (it - mean) * (it - mean) } / (baseline.size - 1)
-        val standardDeviation = kotlin.math.sqrt(variance)
+        val standardDeviation = sqrt(variance)
         if (standardDeviation <= 0.0) return values.last() != mean
         return kotlin.math.abs(values.last() - mean) > 2.0 * standardDeviation
     }
@@ -169,6 +193,7 @@ class MarketEngine(
         value.trim().uppercase(Locale.US).takeIf { SYMBOL.matches(it) }
 
     companion object {
+        private const val FIFTEEN_MINUTES_MS = 15L * 60L * 1000L
         private val SYMBOL = Regex("^[A-Z0-9]{5,20}$")
     }
 }
