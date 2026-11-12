@@ -37,7 +37,7 @@ class MarketEngine(
             return
         }
         symbol = normalize(raw) ?: "BTCUSDT"
-        log("Started Binance.US 1-minute EMA monitor for $symbol")
+        log("Started Binance.US 1-minute monitor for $symbol")
         fetchJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 mutex.withLock { fetchAndPublish("AUTO") }
@@ -78,12 +78,13 @@ class MarketEngine(
 
     private fun fetchAndPublish(source: String) {
         try {
-            val result = client.fetchKlines(symbol, "1m", 100)
-            candles = result.candles.sortedBy { it.openTime }.takeLast(100)
+            // 150 candles warm up EMA 99; only the newest 60 are graphed.
+            val result = client.fetchKlines(symbol, "1m", 150)
+            candles = result.candles.sortedBy { it.openTime }.takeLast(150)
             updatedAt = System.currentTimeMillis()
             lastError = null
             feedDetail = "Connected to Binance.US via ${result.host} • $source"
-            log("Fetched ${candles.size} one-minute candles from ${result.host}")
+            log("Fetched ${candles.size} one-minute candles; displaying latest 60")
             result.notes.forEach { log("Fallback: $it") }
         } catch (error: Exception) {
             lastError = error.message ?: error.javaClass.simpleName
@@ -97,34 +98,58 @@ class MarketEngine(
         val data = candles
         val closes = data.map { it.close }
         val volumes = data.map { it.volume }
+        // Momentum is the unsmoothed close-to-close change for each one-minute candle.
         val momentum = closes.zipWithNext { previous, current -> current - previous }
 
-        // Price uses EMA 7; volume and momentum use the faster EMA 3.
-        val priceEmaSeries = Indicators.emaSeriesFromFirst(closes, 7)
-        val volumeEmaSeries = Indicators.emaSeriesFromFirst(volumes, 3)
-        val momentumEmaSeries = Indicators.emaSeriesFromFirst(momentum, 3)
-
+        val priceEma7 = Indicators.emaSeriesFromFirst(closes, 7)
+        val priceEma99 = Indicators.emaSeriesFromFirst(closes, 99)
+        val volumeEma2 = Indicators.emaSeriesFromFirst(volumes, 2)
         val latest = data.lastOrNull()
+        val trend = overallTrend(closes, priceEma99)
+
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
-            ema7Price = priceEmaSeries.lastOrNull(),
+            ema7Price = priceEma7.lastOrNull(),
+            ema99Price = priceEma99.lastOrNull(),
+            trend = trend,
             currentVolume = latest?.volume,
-            ema3Volume = volumeEmaSeries.lastOrNull(),
+            ema2Volume = volumeEma2.lastOrNull(),
             currentMomentum = momentum.lastOrNull(),
-            ema3Momentum = momentumEmaSeries.lastOrNull(),
-            priceAnomaly = isOutlier(priceEmaSeries),
-            volumeAnomaly = isOutlier(volumeEmaSeries),
-            momentumAnomaly = isOutlier(momentumEmaSeries),
+            priceAnomaly = isOutlier(priceEma7),
+            volumeAnomaly = isOutlier(volumeEma2),
+            momentumAnomaly = isOutlier(momentum),
             candleCount = data.size,
+            displayedCandleCount = minOf(60, data.size),
             updatedAt = updatedAt,
             feedDetail = feedDetail,
             lastError = lastError,
         )
-        onUpdate(EngineSnapshot(symbol, metrics, logs.joinToString("\n"), priceEmaSeries.takeLast(60), volumeEmaSeries.takeLast(60), momentumEmaSeries.takeLast(60)))
+        onUpdate(
+            EngineSnapshot(
+                symbol = symbol,
+                metrics = metrics,
+                logText = logs.joinToString("\n"),
+                priceEmaSeries = priceEma7.takeLast(60),
+                priceEma99Series = priceEma99.takeLast(60),
+                volumeEmaSeries = volumeEma2.takeLast(60),
+                momentumSeries = momentum.takeLast(60),
+            )
+        )
     }
 
-    // Compare the newest EMA value with the preceding 14 EMA values (sample standard deviation).
-    // The current observation is excluded from its own baseline so a spike cannot hide itself.
+    private fun overallTrend(closes: List<Double>, ema99: List<Double>): String {
+        if (closes.isEmpty() || ema99.size < 6) return "NEUTRAL"
+        val price = closes.last()
+        val currentAverage = ema99.last()
+        val priorAverage = ema99[ema99.lastIndex - 5]
+        return when {
+            price > currentAverage && currentAverage > priorAverage -> "UP"
+            price < currentAverage && currentAverage < priorAverage -> "DOWN"
+            else -> "NEUTRAL"
+        }
+    }
+
+    // Compare newest value with the previous 14 observations (sample standard deviation).
     private fun isOutlier(values: List<Double>): Boolean? {
         if (values.size < 15) return null
         val baseline = values.dropLast(1).takeLast(14)
