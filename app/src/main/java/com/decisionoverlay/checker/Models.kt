@@ -1,20 +1,6 @@
 package com.decisionoverlay.checker
 
 import java.util.Locale
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-
-enum class Verdict {
-    UP,
-    DOWN,
-    DNT,
-}
-
-enum class ConnectionState {
-    CONNECTED,
-    NOT_WORKING,
-}
 
 data class Candle(
     val openTime: Long,
@@ -27,122 +13,56 @@ data class Candle(
     val closed: Boolean,
 )
 
-data class ComponentScore(
-    val name: String,
-    val points: Int,
-    val detail: String,
-)
-
-data class FeedStatus(
-    val state: ConnectionState,
-    val detail: String,
-    val updatedAt: Long?,
-    val lastError: String?,
-) {
-    companion object {
-        fun waiting() = FeedStatus(
-            state = ConnectionState.NOT_WORKING,
-            detail = "Waiting for first fetch",
-            updatedAt = null,
-            lastError = null,
-        )
-    }
-}
-
-data class TimeframeScore(
-    val label: String,
-    val interval: String,
-    val score: Int,
-    val components: List<ComponentScore>,
-    val price: Double?,
-    val ema9: Double?,
-    val ema21: Double?,
-    val rsi: Double?,
-    val macdLine: Double?,
-    val macdSignal: Double?,
-    val macdHist: Double?,
-    val candleBias: String,
-    val volumeRatio: Double?,
-    val connection: ConnectionState,
-    val connectionDetail: String,
-    val updatedAt: Long?,
-    val lastError: String?,
+data class MetricSnapshot(
+    val currentPrice: Double?,
+    val ema7Price: Double?,
+    val currentVolume: Double?,
+    val ema7Volume: Double?,
+    val currentMomentum: Double?,
+    val ema7Momentum: Double?,
+    val priceAnomaly: Boolean?,
+    val volumeAnomaly: Boolean?,
+    val momentumAnomaly: Boolean?,
     val candleCount: Int,
-    val ema7: Double? = null,
-    val ema25: Double? = null,
-    val ema99: Double? = null,
-    val candles: List<Candle> = emptyList(),
+    val updatedAt: Long?,
+    val feedDetail: String,
+    val lastError: String?,
 ) {
-    fun headerStatus(): String {
-        val link = if (connection == ConnectionState.CONNECTED) "Connected" else "Not Working"
-        return "${signed(score)}   $link"
-    }
-
-    fun metricsText(): String = buildString {
-        val link = if (connection == ConnectionState.CONNECTED) "Connected" else "Not Working"
-        appendLine("POINTS: " + signed(score))
-        appendLine("Binance: $link")
-        appendLine(connectionDetail)
-        if (!lastError.isNullOrBlank()) appendLine("Last error: $lastError")
-        appendLine("Last fetch: ${formatTime(updatedAt)}")
-        appendLine("Completed candles: $candleCount")
-        appendLine("Price: ${fmtPrice(price)}")
-        when (interval) {
-            "1h" -> { appendLine("EMA20: ${fmtNum(ema9)}"); appendLine("RSI(14): ${fmtNum(rsi)}") }
-            "1m" -> {
-                appendLine("EMA 9: ${fmtNum(ema9)}")
-                appendLine("EMA 21: ${fmtNum(ema21)}")
-                appendLine("RSI(14) / ROC(3): see target decision details below")
-            }
-            "5m" -> {
-                appendLine("EMA9: ${fmtNum(ema9)}")
-                appendLine("MACD: ${fmtNum(macdLine)}")
-                appendLine("Signal: ${fmtNum(macdSignal)}")
-                appendLine("Volume / 20 SMA: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—"))
-            }
-            "15m" -> {
-                appendLine("MACD: ${fmtNum(macdLine)}")
-                appendLine("Signal: ${fmtNum(macdSignal)}")
-                appendLine("Volume / 20 SMA: " + (volumeRatio?.let { String.format(Locale.US, "%.2fx", it) } ?: "—"))
-            }
-        }
-        if (components.isEmpty()) {
-            append("No component scores yet.")
-        } else {
-            components.forEach { component ->
-                appendLine("• ${component.name} ${signed(component.points)} — ${component.detail}")
-            }
-        }
+    fun displayText(): String = buildString {
+        appendLine("1-MINUTE EMA 7")
+        appendLine("Price EMA 7: ${fmtPrice(ema7Price)}")
+        appendLine("Volume EMA 7: ${fmtNum(ema7Volume)}")
+        appendLine("Momentum EMA 7: ${fmtNum(ema7Momentum)}")
+        appendLine()
+        appendLine("OUTLIER CHECK (2σ / last 14 candles)")
+        appendLine("Price movement: ${anomalyText(priceAnomaly)}")
+        appendLine("Volume: ${anomalyText(volumeAnomaly)}")
+        appendLine("Momentum: ${anomalyText(momentumAnomaly)}")
+        appendLine()
+        appendLine("Current price: ${fmtPrice(currentPrice)}")
+        appendLine("Current volume: ${fmtNum(currentVolume)}")
+        appendLine("Current momentum: ${fmtNum(currentMomentum)}")
+        appendLine("Candles: $candleCount / 100")
+        appendLine(feedDetail)
+        if (!lastError.isNullOrBlank()) appendLine("Error: $lastError")
+        append("Updated: ${formatTime(updatedAt)}")
     }.trimEnd()
-}
 
-data class Decision(
-    val verdict: Verdict,
-    val reason: String,
-    val one: TimeframeScore,
-    val five: TimeframeScore,
-    val fifteen: TimeframeScore,
-    val problems: List<String> = emptyList(),
-    val totalScore: Int = 0,
-    val dntThreshold: Int = Scorer.DEFAULT_DNT_THRESHOLD,
-    val targetPrice: Double? = null,
-    val currentPrice: Double? = null,
-    val sessionRemainingMs: Long = 0L,
-    val entryRemainingMs: Long = 0L,
-    val targetBuffer: Double? = null,
-    val steepnessScore: Double? = null,
-)
+    private fun anomalyText(value: Boolean?): String = when (value) {
+        true -> "UNUSUAL MOVE"
+        false -> "Normal range"
+        null -> "Collecting history"
+    }
+}
 
 data class EngineSnapshot(
     val symbol: String,
-    val decision: Decision,
+    val metrics: MetricSnapshot,
     val logText: String,
 )
 
-fun signed(points: Int): String = if (points > 0) "+$points" else points.toString()
-
 fun fmtNum(value: Double?): String {
-    if (value == null || value.isNaN()) return "—"
+    if (value == null || !value.isFinite()) return "—"
     val magnitude = kotlin.math.abs(value)
     val digits = when {
         magnitude == 0.0 -> 2
@@ -151,20 +71,22 @@ fun fmtNum(value: Double?): String {
         magnitude >= 0.01 -> 4
         else -> 6
     }
-    return String.format(Locale.US, "%.${digits}f", value)
+    return String.format(Locale.US, "%." + digits + "f", value)
 }
 
 fun fmtPrice(value: Double?): String {
-    if (value == null || value.isNaN()) return "—"
+    if (value == null || !value.isFinite()) return "—"
     val magnitude = kotlin.math.abs(value)
     val digits = when {
         magnitude >= 1000 -> 2
         magnitude >= 1 -> 4
         else -> 6
     }
-    return String.format(Locale.US, "%,.${digits}f", value)
+    return String.format(Locale.US, "%,." + digits + "f", value)
 }
 
-private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+private val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    .withZone(java.time.ZoneId.systemDefault())
 
-fun formatTime(epochMs: Long?): String = if (epochMs == null) "—" else clock.format(Instant.ofEpochMilli(epochMs))
+fun formatTime(epochMs: Long?): String =
+    if (epochMs == null) "—" else clock.format(java.time.Instant.ofEpochMilli(epochMs))
