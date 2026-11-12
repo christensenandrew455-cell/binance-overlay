@@ -94,9 +94,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.momentumValue).text = "Momentum (latest candle): ${fmtNum(metrics.currentMomentum)}"
         findViewById<TextView>(R.id.outlierText).text = "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
         findViewById<TextView>(R.id.overallStatus).text = when {
-            metrics.priceAnomaly == true || metrics.volumeAnomaly == true || metrics.momentumAnomaly == true -> "UNUSUAL MOVEMENT DETECTED"
-            metrics.candleCount < 15 -> "COLLECTING CANDLES"
-            else -> "WITHIN NORMAL RANGE"
+            metrics.candleCount < 100 -> "WARMING UP EMA 99"
+            else -> "OVERALL TREND: ${metrics.trend}"
         }
         findViewById<TextView>(R.id.reasonText).text =
             "EMA 7 and EMA 99 are calculated locally from candle closing prices. Volume uses EMA 2. Momentum is the raw close-to-close change for each one-minute candle, with no smoothing. Trend is UP when price is above a rising EMA 99, DOWN when below a falling EMA 99, otherwise NEUTRAL."
@@ -139,8 +138,8 @@ class MainActivity : AppCompatActivity() {
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
             .putExtra(OverlayService.EXTRA_SHOW_PANEL, showOverlay)
         ContextCompat.startForegroundService(this, intent)
-        setStatus(if (showOverlay) "Floating monitor running for $symbol (price EMA 7, volume/momentum EMA 3)."
-        else "Monitor running for $symbol (price EMA 7, volume/momentum EMA 3).")
+        setStatus(if (showOverlay) "Floating monitor running for $symbol (EMA 7 / EMA 99, volume EMA 2, raw momentum)."
+        else "Monitor running for $symbol (EMA 7 / EMA 99, volume EMA 2, raw momentum).")
     }
 
     private fun setStatus(message: String) {
