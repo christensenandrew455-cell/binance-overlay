@@ -86,7 +86,13 @@ class MainActivity : AppCompatActivity() {
         val metrics = snapshot.metrics
         findViewById<TextView>(R.id.symbolHeading).text =
             snapshot.symbol + " • " + fmtPrice(metrics.currentPrice)
-        findViewById<TextView>(R.id.targetText).text = metrics.displayText()
+        findViewById<IndicatorLineChartView>(R.id.priceChart).setSeries("PRICE • EMA 7", snapshot.priceEmaSeries, android.graphics.Color.parseColor("#55D6BE"))
+        findViewById<IndicatorLineChartView>(R.id.volumeChart).setSeries("VOLUME • EMA 3", snapshot.volumeEmaSeries, android.graphics.Color.parseColor("#6EA8FE"))
+        findViewById<IndicatorLineChartView>(R.id.momentumChart).setSeries("MOMENTUM • EMA 3", snapshot.momentumEmaSeries, android.graphics.Color.parseColor("#F5B95F"))
+        findViewById<TextView>(R.id.priceValue).text = "Price EMA 7: ${fmtPrice(metrics.ema7Price)}"
+        findViewById<TextView>(R.id.volumeValue).text = "Volume EMA 3: ${fmtNum(metrics.ema3Volume)}"
+        findViewById<TextView>(R.id.momentumValue).text = "Momentum EMA 3: ${fmtNum(metrics.ema3Momentum)}"
+        findViewById<TextView>(R.id.outlierText).text = "OUTLIERS  •  Price: ${anomalyLabel(metrics.priceAnomaly)}  |  Volume: ${anomalyLabel(metrics.volumeAnomaly)}  |  Momentum: ${anomalyLabel(metrics.momentumAnomaly)}"
         findViewById<TextView>(R.id.overallStatus).text = when {
             metrics.priceAnomaly == true || metrics.volumeAnomaly == true || metrics.momentumAnomaly == true -> "UNUSUAL MOVEMENT DETECTED"
             metrics.candleCount < 15 -> "COLLECTING CANDLES"
@@ -97,6 +103,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
+    }
+
+    private fun anomalyLabel(value: Boolean?): String = when (value) {
+        true -> "UNUSUAL"
+        false -> "NORMAL"
+        null -> "WAITING"
     }
 
     private fun startOverlay() {
