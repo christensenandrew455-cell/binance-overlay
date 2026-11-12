@@ -21,6 +21,8 @@ data class MetricSnapshot(
     val currentVolume: Double?,
     val ema2Volume: Double?,
     val currentMomentum: Double?,
+    val targetPrice: Double?,
+    val targetTime: Long?,
     val priceAnomaly: Boolean?,
     val volumeAnomaly: Boolean?,
     val momentumAnomaly: Boolean?,
@@ -37,7 +39,8 @@ data class EngineSnapshot(
     val logText: String,
     val priceEmaSeries: List<Double> = emptyList(),
     val priceEma99Series: List<Double> = emptyList(),
-    val volumeEmaSeries: List<Double> = emptyList(),
+    val volumeBaselineSeries: List<Double> = emptyList(),
+    val volumeSpikeSeries: List<Double?> = emptyList(),
     val momentumSeries: List<Double> = emptyList(),
 )
 
@@ -65,7 +68,7 @@ fun fmtPrice(value: Double?): String {
     return String.format(Locale.US, "%,." + digits + "f", value)
 }
 
-private val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+private val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
     .withZone(java.time.ZoneId.systemDefault())
 
 fun formatTime(epochMs: Long?): String =
