@@ -59,6 +59,9 @@ data class EngineSnapshot(
     val symbol: String,
     val metrics: MetricSnapshot,
     val logText: String,
+    val priceEmaSeries: List<Double> = emptyList(),
+    val volumeEmaSeries: List<Double> = emptyList(),
+    val momentumEmaSeries: List<Double> = emptyList(),
 )
 
 fun fmtNum(value: Double?): String {
