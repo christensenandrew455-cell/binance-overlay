@@ -37,7 +37,7 @@ class MarketEngine(
             return
         }
         symbol = normalize(raw) ?: "BTCUSDT"
-        log("Started Binance.US 1-minute EMA 7 monitor for $symbol")
+        log("Started Binance.US 1-minute EMA monitor for $symbol")
         fetchJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 mutex.withLock { fetchAndPublish("AUTO") }
@@ -99,19 +99,19 @@ class MarketEngine(
         val volumes = data.map { it.volume }
         val momentum = closes.zipWithNext { previous, current -> current - previous }
 
-        // EMA 7 is calculated from raw candle values locally, not fetched from an indicator API.
+        // Price uses EMA 7; volume and momentum use the faster EMA 3.
         val priceEmaSeries = Indicators.emaSeriesFromFirst(closes, 7)
-        val volumeEmaSeries = Indicators.emaSeriesFromFirst(volumes, 7)
-        val momentumEmaSeries = Indicators.emaSeriesFromFirst(momentum, 7)
+        val volumeEmaSeries = Indicators.emaSeriesFromFirst(volumes, 3)
+        val momentumEmaSeries = Indicators.emaSeriesFromFirst(momentum, 3)
 
         val latest = data.lastOrNull()
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
             ema7Price = priceEmaSeries.lastOrNull(),
             currentVolume = latest?.volume,
-            ema7Volume = volumeEmaSeries.lastOrNull(),
+            ema3Volume = volumeEmaSeries.lastOrNull(),
             currentMomentum = momentum.lastOrNull(),
-            ema7Momentum = momentumEmaSeries.lastOrNull(),
+            ema3Momentum = momentumEmaSeries.lastOrNull(),
             priceAnomaly = isOutlier(priceEmaSeries),
             volumeAnomaly = isOutlier(volumeEmaSeries),
             momentumAnomaly = isOutlier(momentumEmaSeries),
