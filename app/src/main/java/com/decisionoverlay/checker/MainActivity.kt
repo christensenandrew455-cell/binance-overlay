@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
         }
-        setStatus("Fetching 150 one-minute candles to warm up EMA 99; displaying the latest 60. Price EMA 7, volume EMA 2, and raw candle momentum.")
+        setStatus("Fetching 150 one-minute candles to warm up EMA 99; displaying the latest 60. Target resets on each 15-minute candle close.")
         requestAndLaunchService(symbol, false)
     }
 
@@ -86,28 +86,38 @@ class MainActivity : AppCompatActivity() {
         val metrics = snapshot.metrics
         findViewById<TextView>(R.id.symbolHeading).text =
             snapshot.symbol + " • " + fmtPrice(metrics.currentPrice)
-        findViewById<IndicatorLineChartView>(R.id.priceChart).setSeries("PRICE • EMA 7 + EMA 99", snapshot.priceEmaSeries, android.graphics.Color.parseColor("#55D6BE"), snapshot.priceEma99Series, android.graphics.Color.parseColor("#C28BFA"))
-        findViewById<IndicatorLineChartView>(R.id.volumeChart).setSeries("VOLUME • EMA 2", snapshot.volumeEmaSeries, android.graphics.Color.parseColor("#6EA8FE"))
-        findViewById<IndicatorLineChartView>(R.id.momentumChart).setSeries("MOMENTUM • RAW 1-MIN CHANGE", snapshot.momentumSeries, android.graphics.Color.parseColor("#F5B95F"))
-        findViewById<TextView>(R.id.priceValue).text = "Price EMA 7: ${fmtPrice(metrics.ema7Price)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}"
-        findViewById<TextView>(R.id.volumeValue).text = "Volume EMA 2: ${fmtNum(metrics.ema2Volume)}"
-        findViewById<TextView>(R.id.momentumValue).text = "Momentum (latest candle): ${fmtNum(metrics.currentMomentum)}"
-        findViewById<TextView>(R.id.outlierText).text = "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
+        findViewById<IndicatorLineChartView>(R.id.priceChart).setPriceSeries(
+            "PRICE • EMA 7 / EMA 99 / 15M TARGET",
+            snapshot.priceEmaSeries,
+            snapshot.priceEma99Series,
+            metrics.targetPrice,
+        )
+        findViewById<IndicatorLineChartView>(R.id.volumeChart).setHeartbeat(
+            "VOLUME • BASELINE + UNUSUAL SPIKES",
+            snapshot.volumeBaselineSeries,
+            snapshot.volumeSpikeSeries,
+        )
+        findViewById<IndicatorLineChartView>(R.id.momentumChart).setMomentum(
+            "MOMENTUM • GREEN ABOVE ZERO / RED BELOW",
+            snapshot.momentumSeries,
+        )
+        findViewById<TextView>(R.id.priceValue).text =
+            "EMA 7: ${fmtPrice(metrics.ema7Price)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
+        findViewById<TextView>(R.id.volumeValue).text =
+            "Volume EMA 2: ${fmtNum(metrics.ema2Volume)}  •  spikes mark volume above its recent average by 2 standard deviations"
+        findViewById<TextView>(R.id.momentumValue).text =
+            "Latest 1-minute change: ${fmtNum(metrics.currentMomentum)}  •  large local peaks are labeled"
+        findViewById<TextView>(R.id.outlierText).text =
+            "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
         findViewById<TextView>(R.id.overallStatus).text = when {
             metrics.candleCount < 100 -> "WARMING UP EMA 99"
             else -> "OVERALL TREND: ${metrics.trend}"
         }
         findViewById<TextView>(R.id.reasonText).text =
-            "EMA 7 and EMA 99 are calculated locally from candle closing prices. Volume uses EMA 2. Momentum is the raw close-to-close change for each one-minute candle, with no smoothing. Trend is UP when price is above a rising EMA 99, DOWN when below a falling EMA 99, otherwise NEUTRAL."
+            "EMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume spikes show unusually high total traded volume (not buy/sell direction). Momentum is each candle's close-to-close change, green above zero and red below; only larger local peaks are labeled."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
-    }
-
-    private fun anomalyLabel(value: Boolean?): String = when (value) {
-        true -> "UNUSUAL"
-        false -> "NORMAL"
-        null -> "WAITING"
     }
 
     private fun startOverlay() {
@@ -138,8 +148,8 @@ class MainActivity : AppCompatActivity() {
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
             .putExtra(OverlayService.EXTRA_SHOW_PANEL, showOverlay)
         ContextCompat.startForegroundService(this, intent)
-        setStatus(if (showOverlay) "Floating monitor running for $symbol (EMA 7 / EMA 99, volume EMA 2, raw momentum)."
-        else "Monitor running for $symbol (EMA 7 / EMA 99, volume EMA 2, raw momentum).")
+        setStatus(if (showOverlay) "Floating monitor running for $symbol (EMA 7 / EMA 99, 15-minute target, volume spikes, colored momentum)."
+        else "Monitor running for $symbol (EMA 7 / EMA 99, 15-minute target, volume spikes, colored momentum).")
     }
 
     private fun setStatus(message: String) {
