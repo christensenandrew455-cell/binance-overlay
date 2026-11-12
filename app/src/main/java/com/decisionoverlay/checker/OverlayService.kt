@@ -33,7 +33,7 @@ class OverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startInForeground("Starting Binance.US EMA 7 monitor")
+        startInForeground("Starting Binance.US market monitor")
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
@@ -80,7 +80,7 @@ class OverlayService : Service() {
         val status = if (flags.isEmpty()) "No unusual movement" else "Unusual: " + flags.joinToString(", ")
         getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
-            buildNotification("${snapshot.symbol} • ${status} • EMA7 ${fmtPrice(m.ema7Price)}"),
+            buildNotification("${snapshot.symbol} • ${status} • Price EMA7 ${fmtPrice(m.ema7Price)}"),
         )
     }
 
@@ -104,7 +104,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Binance.US EMA 7 monitor")
+            .setContentTitle("Binance.US market monitor")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
@@ -117,7 +117,7 @@ class OverlayService : Service() {
     private fun createChannel() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "EMA 7 market monitor", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_ID, "EMA market monitor", NotificationManager.IMPORTANCE_LOW),
         )
     }
 
@@ -130,7 +130,7 @@ class OverlayService : Service() {
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         const val KEY_TARGET = "target_price"
         const val KEY_STRICTNESS = "strictness_level"
-        private const val CHANNEL_ID = "ema7_market_monitor"
+        private const val CHANNEL_ID = "ema_market_monitor"
         private const val NOTIFICATION_ID = 42
     }
 }
