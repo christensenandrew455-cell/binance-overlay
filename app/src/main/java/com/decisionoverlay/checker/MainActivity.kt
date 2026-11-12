@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
         }
-        setStatus("Reading 100 one-minute candles. EMA 7 and outlier checks update every 5 seconds.")
+        setStatus("Reading 100 one-minute candles. Price EMA 7; volume and momentum EMA 3. Outlier checks update every 5 seconds.")
         requestAndLaunchService(symbol, false)
     }
 
@@ -93,7 +93,7 @@ class MainActivity : AppCompatActivity() {
             else -> "WITHIN NORMAL RANGE"
         }
         findViewById<TextView>(R.id.reasonText).text =
-            "EMA 7 is calculated locally from Binance.US 1-minute candle close, volume, and close-to-close momentum. Outliers are flagged when the newest value is more than 2 standard deviations from the previous 14 candles."
+            "Price EMA 7 and volume/momentum EMA 3 are calculated locally from Binance.US 1-minute candles. Outliers are flagged when the newest smoothed value is more than 2 standard deviations from the previous 14 values."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
@@ -127,8 +127,8 @@ class MainActivity : AppCompatActivity() {
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
             .putExtra(OverlayService.EXTRA_SHOW_PANEL, showOverlay)
         ContextCompat.startForegroundService(this, intent)
-        setStatus(if (showOverlay) "Floating EMA 7 monitor running for $symbol."
-        else "EMA 7 monitor running for $symbol in the background.")
+        setStatus(if (showOverlay) "Floating monitor running for $symbol (price EMA 7, volume/momentum EMA 3)."
+        else "Monitor running for $symbol (price EMA 7, volume/momentum EMA 3).")
     }
 
     private fun setStatus(message: String) {
