@@ -16,52 +16,29 @@ data class Candle(
 data class MetricSnapshot(
     val currentPrice: Double?,
     val ema7Price: Double?,
+    val ema99Price: Double?,
+    val trend: String,
     val currentVolume: Double?,
-    val ema3Volume: Double?,
+    val ema2Volume: Double?,
     val currentMomentum: Double?,
-    val ema3Momentum: Double?,
     val priceAnomaly: Boolean?,
     val volumeAnomaly: Boolean?,
     val momentumAnomaly: Boolean?,
     val candleCount: Int,
+    val displayedCandleCount: Int,
     val updatedAt: Long?,
     val feedDetail: String,
     val lastError: String?,
-) {
-    fun displayText(): String = buildString {
-        appendLine("1-MINUTE EMA SETTINGS")
-        appendLine("Price EMA 7: ${fmtPrice(ema7Price)}")
-        appendLine("Volume EMA 3: ${fmtNum(ema3Volume)}")
-        appendLine("Momentum EMA 3: ${fmtNum(ema3Momentum)}")
-        appendLine()
-        appendLine("OUTLIER CHECK (2σ / last 14 values)")
-        appendLine("Price movement: ${anomalyText(priceAnomaly)}")
-        appendLine("Volume: ${anomalyText(volumeAnomaly)}")
-        appendLine("Momentum: ${anomalyText(momentumAnomaly)}")
-        appendLine()
-        appendLine("Current price: ${fmtPrice(currentPrice)}")
-        appendLine("Current volume: ${fmtNum(currentVolume)}")
-        appendLine("Current momentum: ${fmtNum(currentMomentum)}")
-        appendLine("Candles: $candleCount / 100")
-        appendLine(feedDetail)
-        if (!lastError.isNullOrBlank()) appendLine("Error: $lastError")
-        append("Updated: ${formatTime(updatedAt)}")
-    }.trimEnd()
-
-    private fun anomalyText(value: Boolean?): String = when (value) {
-        true -> "UNUSUAL MOVE"
-        false -> "Normal range"
-        null -> "Collecting history"
-    }
-}
+)
 
 data class EngineSnapshot(
     val symbol: String,
     val metrics: MetricSnapshot,
     val logText: String,
     val priceEmaSeries: List<Double> = emptyList(),
+    val priceEma99Series: List<Double> = emptyList(),
     val volumeEmaSeries: List<Double> = emptyList(),
-    val momentumEmaSeries: List<Double> = emptyList(),
+    val momentumSeries: List<Double> = emptyList(),
 )
 
 fun fmtNum(value: Double?): String {
@@ -85,7 +62,7 @@ fun fmtPrice(value: Double?): String {
         magnitude >= 1 -> 4
         else -> 6
     }
-    return String.format(Locale.US, "%,." + digits + "f", value)
+    return String.format(Locale.US, "%,. " .trim() + digits + "f", value)
 }
 
 private val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
