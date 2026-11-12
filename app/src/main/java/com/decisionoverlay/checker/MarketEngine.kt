@@ -99,7 +99,13 @@ class MarketEngine(
         val data = candles
         val closes = data.map { it.close }
         val volumes = data.map { it.volume }
-        val momentum = closes.zipWithNext { previous, current -> current - previous }
+        // Binance-style MACD histogram: 2 x (DIF - signal), with DIF = EMA12 - EMA26.
+        // Display only histogram bars, not either signal line.
+        val macdFast = Indicators.emaSeriesFromFirst(closes, 12)
+        val macdSlow = Indicators.emaSeriesFromFirst(closes, 26)
+        val macdDif = macdFast.zip(macdSlow) { fast, slow -> fast - slow }
+        val macdSignal = Indicators.emaSeriesFromFirst(macdDif, 9)
+        val momentum = macdDif.zip(macdSignal) { dif, signal -> 2.0 * (dif - signal) }
         val priceEma7 = Indicators.emaSeriesFromFirst(closes, 7)
         val priceEma99 = Indicators.emaSeriesFromFirst(closes, 99)
         val volumeEma2 = Indicators.emaSeriesFromFirst(volumes, 2)
