@@ -41,21 +41,68 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="EMA 7 + UNUSUAL-MOVEMENT DETECTION"
+            android:text="LIVE EMA LINE CHARTS • 1-MINUTE"
             android:textColor="@color/text"
             android:textSize="13sp"
             android:textStyle="bold"/>
+        <com.decisionoverlay.checker.IndicatorLineChartView
+            android:id="@+id/priceChart"
+            android:layout_width="match_parent"
+            android:layout_height="148dp"
+            android:layout_marginTop="10dp"/>
         <TextView
-            android:id="@+id/targetText"
+            android:id="@+id/priceValue"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="9dp"
-            android:padding="14dp"
+            android:paddingStart="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="10dp"
+            android:text="Price EMA 7: —"
+            android:textColor="#55D6BE"
+            android:textSize="13sp"
+            android:textStyle="bold"/>
+        <com.decisionoverlay.checker.IndicatorLineChartView
+            android:id="@+id/volumeChart"
+            android:layout_width="match_parent"
+            android:layout_height="148dp"
+            android:layout_marginTop="3dp"/>
+        <TextView
+            android:id="@+id/volumeValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="10dp"
+            android:text="Volume EMA 3: —"
+            android:textColor="#6EA8FE"
+            android:textSize="13sp"
+            android:textStyle="bold"/>
+        <com.decisionoverlay.checker.IndicatorLineChartView
+            android:id="@+id/momentumChart"
+            android:layout_width="match_parent"
+            android:layout_height="148dp"
+            android:layout_marginTop="3dp"/>
+        <TextView
+            android:id="@+id/momentumValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="10dp"
+            android:text="Momentum EMA 3: —"
+            android:textColor="#F5B95F"
+            android:textSize="13sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/outlierText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:padding="12dp"
             android:background="#1A2435"
-            android:text="Waiting for 100 one-minute candles…"
+            android:text="OUTLIERS • Waiting for data"
             android:textColor="@color/text"
-            android:textSize="14sp"
-            android:lineSpacingExtra="4dp"/>
+            android:textSize="12sp"/>
         <EditText
             android:id="@+id/symbolInput"
             android:layout_width="match_parent"
@@ -115,7 +162,7 @@
             android:layout_marginTop="12dp"
             android:padding="13dp"
             android:background="#202B3E"
-            android:text="EMA 7 and anomaly details will appear here."
+            android:text="Each smooth line shows the latest 60 EMA readings from one-minute candles."
             android:textColor="@color/text"
             android:textSize="12sp"
             android:lineSpacingExtra="3dp"/>
