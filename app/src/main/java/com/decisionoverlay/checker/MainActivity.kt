@@ -31,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         val symbol = pendingSymbol
         pendingSymbol = null
         if (granted && symbol != null) launchService(symbol, pendingShowOverlay)
-        else if (symbol != null) setStatus("Notification permission is needed for background status and UP / DOWN alerts.")
+        else if (symbol != null) setStatus("Notification permission is needed to keep the background monitor running.")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,14 +46,14 @@ class MainActivity : AppCompatActivity() {
             if (checksStarted) {
                 engine.stop()
                 checksStarted = false
-                findViewById<Button>(R.id.startCheckButton).text = "START CHECKING"
+                findViewById<Button>(R.id.startCheckButton).text = "START MONITORING"
             }
-            setStatus("Checker stopped. Background checks and alerts are off.")
+            setStatus("Monitor stopped.")
         }
         findViewById<Button>(R.id.refreshButton).setOnClickListener {
-            if (checksStarted) engine.refreshNow() else setStatus("Press START CHECKING first.")
+            if (checksStarted) engine.refreshNow() else setStatus("Press START MONITORING first.")
         }
-        engine = MarketEngine(screenScope, { snapshot -> runOnUiThread { render(snapshot) } }, prefs.getInt(OverlayService.KEY_STRICTNESS, 1))
+        engine = MarketEngine(screenScope, { snapshot -> runOnUiThread { render(snapshot) } })
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig) }
@@ -65,12 +65,11 @@ class MainActivity : AppCompatActivity() {
         if (!checksStarted) {
             checksStarted = true
             engine.start(symbol)
-            setStatus("Checking $symbol. The 1-hour candle direction is filtered by normalized steepness (minimum 4.0/10).")
-            findViewById<Button>(R.id.startCheckButton).text = "CHECKING • RUNNING"
+            findViewById<Button>(R.id.startCheckButton).text = "MONITORING • RUNNING"
         } else {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
-            setStatus("Refreshed $symbol. The hourly steepness signal refreshes with live Binance data.")
         }
+        setStatus("Reading 100 one-minute candles. EMA 7 and outlier checks update every 5 seconds.")
         requestAndLaunchService(symbol, false)
     }
 
@@ -84,36 +83,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun render(snapshot: EngineSnapshot) {
-        val decision = snapshot.decision
-        findViewById<TextView>(R.id.symbolHeading).text = snapshot.symbol + " • BTC $" + fmtPrice(decision.currentPrice)
-        findViewById<TextView>(R.id.targetText).text = "1-HOUR STEEPNESS: " + (decision.steepnessScore?.let { String.format(java.util.Locale.US, "%.1f/10", it) } ?: "WAITING")
-        findViewById<TextView>(R.id.windowText).text = "SIGNAL RULE: UP/DOWN only at 4.0/10 or higher"
-        findViewById<TextView>(R.id.overallStatus).apply {
-            text = when (decision.verdict) {
-                Verdict.UP -> "UP"
-                Verdict.DOWN -> "DOWN"
-                Verdict.DNT -> "DNT"
-            } + "   •   STEEPNESS " + (decision.steepnessScore?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—") + "/10"
-            setTextColor(ContextCompat.getColor(this@MainActivity, when (decision.verdict) {
-                Verdict.UP -> R.color.up
-                Verdict.DOWN -> R.color.down
-                Verdict.DNT -> R.color.dnt
-            }))
+        val metrics = snapshot.metrics
+        findViewById<TextView>(R.id.symbolHeading).text =
+            snapshot.symbol + " • " + fmtPrice(metrics.currentPrice)
+        findViewById<TextView>(R.id.targetText).text = metrics.displayText()
+        findViewById<TextView>(R.id.overallStatus).text = when {
+            metrics.priceAnomaly == true || metrics.volumeAnomaly == true || metrics.momentumAnomaly == true -> "UNUSUAL MOVEMENT DETECTED"
+            metrics.candleCount < 15 -> "COLLECTING CANDLES"
+            else -> "WITHIN NORMAL RANGE"
         }
-        findViewById<TextView>(R.id.reasonText).text = decision.reason
-        findViewById<TextView>(R.id.problemsText).text = if (decision.problems.isEmpty()) "No data blockers." else decision.problems.joinToString("\n") { "• " + it }
-        findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first data update…" }
-    }
-
-    private fun clock(ms: Long): String {
-        val totalSeconds = (ms.coerceAtLeast(0L) + 999L) / 1000L
-        return String.format(java.util.Locale.US, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L)
+        findViewById<TextView>(R.id.reasonText).text =
+            "EMA 7 is calculated locally from Binance.US 1-minute candle close, volume, and close-to-close momentum. Outliers are flagged when the newest value is more than 2 standard deviations from the previous 14 candles."
+        findViewById<TextView>(R.id.problemsText).text =
+            if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
+        findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
     }
 
     private fun startOverlay() {
         val symbol = readSymbol() ?: return
         if (!Settings.canDrawOverlays(this)) {
-            setStatus("Android needs permission for the floating decision. Opening permission settings.")
+            setStatus("Android needs permission for the floating monitor. Opening permission settings.")
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
         }
@@ -138,9 +127,11 @@ class MainActivity : AppCompatActivity() {
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
             .putExtra(OverlayService.EXTRA_SHOW_PANEL, showOverlay)
         ContextCompat.startForegroundService(this, intent)
-        setStatus(if (showOverlay) "Floating 1-hour steepness decision running for $symbol."
-        else "1-hour steepness checker running for $symbol. Use STOP RUNNING to turn it off.")
+        setStatus(if (showOverlay) "Floating EMA 7 monitor running for $symbol."
+        else "EMA 7 monitor running for $symbol in the background.")
     }
 
-    private fun setStatus(message: String) { findViewById<TextView>(R.id.statusText).text = message }
+    private fun setStatus(message: String) {
+        findViewById<TextView>(R.id.statusText).text = message
+    }
 }
