@@ -120,7 +120,7 @@ class MarketEngine(
             feedDetail = feedDetail,
             lastError = lastError,
         )
-        onUpdate(EngineSnapshot(symbol, metrics, logs.joinToString("\n")))
+        onUpdate(EngineSnapshot(symbol, metrics, logs.joinToString("\n"), priceEmaSeries.takeLast(60), volumeEmaSeries.takeLast(60), momentumEmaSeries.takeLast(60)))
     }
 
     // Compare the newest EMA value with the preceding 14 EMA values (sample standard deviation).
