@@ -80,7 +80,7 @@ class OverlayService : Service() {
         val status = if (flags.isEmpty()) "No unusual movement" else "Unusual: " + flags.joinToString(", ")
         getSystemService(NotificationManager::class.java).notify(
             NOTIFICATION_ID,
-            buildNotification("${snapshot.symbol} • ${status} • Price EMA7 ${fmtPrice(m.ema7Price)}"),
+            buildNotification("${snapshot.symbol} • TREND ${m.trend} • EMA99 ${fmtPrice(m.ema99Price)}"),
         )
     }
 
