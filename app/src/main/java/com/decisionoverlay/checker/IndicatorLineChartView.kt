@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.abs
@@ -37,26 +38,90 @@ class IndicatorLineChartView @JvmOverloads constructor(
         strokeJoin = Paint.Join.ROUND
     }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val targetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 196, 92)
+        strokeWidth = 1.6f * density
+        pathEffect = DashPathEffect(floatArrayOf(7f * density, 5f * density), 0f)
+    }
+    private val zeroPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(190, 220, 225, 235)
+        strokeWidth = 1.2f * density
+        pathEffect = DashPathEffect(floatArrayOf(5f * density, 5f * density), 0f)
+    }
+    private val positivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(52, 211, 153)
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f * density
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val negativePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(248, 92, 92)
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f * density
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val spikePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 190, 75)
+        strokeWidth = 3f * density
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(26, 36, 53) }
+    private val peakTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 9f * density
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+    }
+
+    private enum class Mode { LINES, HEARTBEAT, MOMENTUM }
+    private var mode = Mode.LINES
     private var chartTitle = "EMA LINE"
     private var values: List<Double> = emptyList()
     private var secondaryValues: List<Double> = emptyList()
     private var lineColor = Color.CYAN
     private var secondaryColor = Color.WHITE
+    private var targetPrice: Double? = null
+    private var baselineValues: List<Double> = emptyList()
+    private var spikeValues: List<Double?> = emptyList()
 
     fun setSeries(title: String, series: List<Double>, color: Int) {
         setSeries(title, series, color, emptyList(), Color.WHITE)
     }
 
     fun setSeries(title: String, series: List<Double>, color: Int, secondSeries: List<Double>, secondColor: Int) {
+        mode = Mode.LINES
         chartTitle = title
         values = series.filter { it.isFinite() }.takeLast(60)
         secondaryValues = secondSeries.filter { it.isFinite() }.takeLast(60)
+        targetPrice = null
         lineColor = color
         secondaryColor = secondColor
         linePaint.color = lineColor
         secondaryPaint.color = secondaryColor
         dotPaint.color = lineColor
+        invalidate()
+    }
+
+    fun setPriceSeries(title: String, ema7: List<Double>, ema99: List<Double>, target: Double?) {
+        setSeries(title, ema7, Color.rgb(85, 214, 190), ema99, Color.rgb(194, 139, 250))
+        targetPrice = target?.takeIf { it.isFinite() }
+        invalidate()
+    }
+
+    fun setHeartbeat(title: String, baseline: List<Double>, spikes: List<Double?>) {
+        mode = Mode.HEARTBEAT
+        chartTitle = title
+        baselineValues = baseline.takeLast(60)
+        spikeValues = spikes.takeLast(60)
+        values = emptyList()
+        secondaryValues = emptyList()
+        invalidate()
+    }
+
+    fun setMomentum(title: String, series: List<Double>) {
+        mode = Mode.MOMENTUM
+        chartTitle = title
+        values = series.filter { it.isFinite() }.takeLast(60)
+        secondaryValues = emptyList()
         invalidate()
     }
 
@@ -66,23 +131,29 @@ class IndicatorLineChartView @JvmOverloads constructor(
         val right = width - 12f * density
         val top = 27f * density
         val bottom = height - 12f * density
-        val radius = 11f * density
-        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), radius, radius, cardPaint)
+        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 11f * density, 11f * density, cardPaint)
         canvas.drawText(chartTitle, left, 17f * density, titlePaint)
         val plotHeight = bottom - top
-        if (values.size < 2 || right <= left || plotHeight <= 0f) {
-            titlePaint.textSize = 11f * density
-            canvas.drawText("Waiting for candle history…", left, top + plotHeight / 2f, titlePaint)
-            titlePaint.textSize = 10f * density
-            return
-        }
+        if (right <= left || plotHeight <= 0f) return
         for (i in 0..3) {
             val y = top + plotHeight * i / 3f
             canvas.drawLine(left, y, right, y, gridPaint)
         }
-        val allValues = values + secondaryValues
-        var low = allValues.minOrNull() ?: 0.0
-        var high = allValues.maxOrNull() ?: 1.0
+        when (mode) {
+            Mode.LINES -> drawLines(canvas, left, right, top, bottom)
+            Mode.HEARTBEAT -> drawHeartbeat(canvas, left, right, top, bottom)
+            Mode.MOMENTUM -> drawMomentum(canvas, left, right, top, bottom)
+        }
+    }
+
+    private fun drawLines(canvas: Canvas, left: Float, right: Float, top: Float, bottom: Float) {
+        if (values.size < 2) {
+            drawWaiting(canvas, left, top, bottom)
+            return
+        }
+        val all = values + secondaryValues + listOfNotNull(targetPrice)
+        var low = all.minOrNull() ?: 0.0
+        var high = all.maxOrNull() ?: 1.0
         if (high - low < 1e-12) {
             val pad = max(abs(high) * 0.002, 0.000001)
             low -= pad
@@ -93,10 +164,96 @@ class IndicatorLineChartView @JvmOverloads constructor(
             high += pad
         }
         drawSmoothLine(canvas, values, left, right, top, bottom, low, high, linePaint, true)
-        if (secondaryValues.size > 1) {
-            drawSmoothLine(canvas, secondaryValues, left, right, top, bottom, low, high, secondaryPaint, false)
+        if (secondaryValues.size > 1) drawSmoothLine(canvas, secondaryValues, left, right, top, bottom, low, high, secondaryPaint, false)
+        targetPrice?.let { target ->
+            val y = yFor(target, top, bottom, low, high)
+            canvas.drawLine(left, y, right, y, targetPaint)
+            peakTextPaint.color = targetPaint.color
+            canvas.drawText("TARGET ${fmtPrice(target)}", left + 5f * density, (y - 4f * density).coerceAtLeast(top + 10f * density), peakTextPaint)
         }
     }
+
+    private fun drawHeartbeat(canvas: Canvas, left: Float, right: Float, top: Float, bottom: Float) {
+        if (baselineValues.isEmpty()) {
+            drawWaiting(canvas, left, top, bottom)
+            return
+        }
+        val plotHeight = bottom - top
+        val baseY = bottom - plotHeight * 0.10f
+        canvas.drawLine(left, baseY, right, baseY, secondaryPaint.apply { color = Color.rgb(110, 168, 254) })
+        val count = max(baselineValues.size, spikeValues.size)
+        if (count == 0) return
+        val maxRatio = spikeValues.indices.mapNotNull { index ->
+            val spike = spikeValues[index] ?: return@mapNotNull null
+            val base = baselineValues.getOrNull(index) ?: return@mapNotNull null
+            if (base <= 0.0) null else spike / base
+        }.maxOrNull() ?: 1.0
+        spikeValues.forEachIndexed { index, spike ->
+            if (spike == null) return@forEachIndexed
+            val base = baselineValues.getOrNull(index) ?: return@forEachIndexed
+            if (base <= 0.0) return@forEachIndexed
+            val ratio = (spike / base).coerceAtLeast(1.0)
+            val heightRatio = (ratio / max(3.0, maxRatio)).coerceIn(0.12, 1.0)
+            val x = left + (right - left) * index / max(1, count - 1).toFloat()
+            canvas.drawLine(x, baseY, x, baseY - plotHeight * 0.78f * heightRatio, spikePaint)
+            canvas.drawCircle(x, baseY - plotHeight * 0.78f * heightRatio, 2.5f * density, markerPaint.apply { color = spikePaint.color })
+        }
+        peakTextPaint.color = Color.rgb(255, 190, 75)
+        canvas.drawText("UNUSUAL VOLUME", left, top + 11f * density, peakTextPaint)
+    }
+
+    private fun drawMomentum(canvas: Canvas, left: Float, right: Float, top: Float, bottom: Float) {
+        if (values.size < 2) {
+            drawWaiting(canvas, left, top, bottom)
+            return
+        }
+        val maxAbs = max(values.maxOf { abs(it) }, 0.000001)
+        val bound = maxAbs * 1.15
+        val zeroY = yFor(0.0, top, bottom, -bound, bound)
+        canvas.drawLine(left, zeroY, right, zeroY, zeroPaint)
+        val points = values.mapIndexed { index, value ->
+            val x = left + (right - left) * index / (values.size - 1).toFloat()
+            Pair(x, yFor(value, top, bottom, -bound, bound))
+        }
+        for (index in 1 until points.size) {
+            val previous = points[index - 1]
+            val current = points[index]
+            val value = (values[index - 1] + values[index]) / 2.0
+            canvas.drawLine(previous.first, previous.second, current.first, current.second, if (value >= 0.0) positivePaint else negativePaint)
+        }
+        drawMajorPeaks(canvas, points, top, bottom)
+    }
+
+    private fun drawMajorPeaks(canvas: Canvas, points: List<Pair<Float, Float>>, top: Float, bottom: Float) {
+        if (values.size < 5) return
+        val magnitudes = values.map { abs(it) }.sorted()
+        val threshold = magnitudes[(magnitudes.size * 0.80).toInt().coerceIn(0, magnitudes.lastIndex)]
+        for (i in 1 until values.lastIndex) {
+            val value = values[i]
+            if (abs(value) < threshold) continue
+            val isPeak = if (value >= 0.0) value >= values[i - 1] && value > values[i + 1]
+                else value <= values[i - 1] && value < values[i + 1]
+            if (!isPeak) continue
+            val point = points[i]
+            val color = if (value >= 0.0) positivePaint.color else negativePaint.color
+            markerPaint.color = color
+            canvas.drawCircle(point.first, point.second, 4f * density, markerPaint)
+            peakTextPaint.color = color
+            val label = if (value >= 0.0) "GREEN PEAK" else "RED PEAK"
+            val labelY = if (value >= 0.0) (point.second - 8f * density).coerceAtLeast(top + 10f * density)
+                else (point.second + 14f * density).coerceAtMost(bottom - 2f * density)
+            canvas.drawText(label, point.first + 4f * density, labelY, peakTextPaint)
+        }
+    }
+
+    private fun drawWaiting(canvas: Canvas, left: Float, top: Float, bottom: Float) {
+        titlePaint.textSize = 11f * density
+        canvas.drawText("Waiting for candle history…", left, top + (bottom - top) / 2f, titlePaint)
+        titlePaint.textSize = 10f * density
+    }
+
+    private fun yFor(value: Double, top: Float, bottom: Float, low: Double, high: Double): Float =
+        bottom - ((value - low) / (high - low)).toFloat() * (bottom - top)
 
     private fun drawSmoothLine(
         canvas: Canvas,
@@ -111,11 +268,9 @@ class IndicatorLineChartView @JvmOverloads constructor(
         showDot: Boolean,
     ) {
         if (series.size < 2) return
-        val plotHeight = bottom - top
         val points = series.mapIndexed { index, value ->
             val x = left + (right - left) * index / (series.size - 1).toFloat()
-            val y = bottom - ((value - low) / (high - low)).toFloat() * plotHeight
-            Pair(x, y)
+            Pair(x, yFor(value, top, bottom, low, high))
         }
         val path = Path().apply {
             moveTo(points.first().first, points.first().second)
@@ -129,6 +284,9 @@ class IndicatorLineChartView @JvmOverloads constructor(
             lineTo(points.last().first, points.last().second)
         }
         canvas.drawPath(path, paint)
-        if (showDot) canvas.drawCircle(points.last().first, points.last().second, 3.4f * density, dotPaint)
+        if (showDot) {
+            dotPaint.color = paint.color
+            canvas.drawCircle(points.last().first, points.last().second, 3.4f * density, dotPaint)
+        }
     }
 }
