@@ -17,9 +17,9 @@ data class MetricSnapshot(
     val currentPrice: Double?,
     val ema7Price: Double?,
     val currentVolume: Double?,
-    val ema7Volume: Double?,
+    val ema3Volume: Double?,
     val currentMomentum: Double?,
-    val ema7Momentum: Double?,
+    val ema3Momentum: Double?,
     val priceAnomaly: Boolean?,
     val volumeAnomaly: Boolean?,
     val momentumAnomaly: Boolean?,
@@ -29,12 +29,12 @@ data class MetricSnapshot(
     val lastError: String?,
 ) {
     fun displayText(): String = buildString {
-        appendLine("1-MINUTE EMA 7")
+        appendLine("1-MINUTE EMA SETTINGS")
         appendLine("Price EMA 7: ${fmtPrice(ema7Price)}")
-        appendLine("Volume EMA 7: ${fmtNum(ema7Volume)}")
-        appendLine("Momentum EMA 7: ${fmtNum(ema7Momentum)}")
+        appendLine("Volume EMA 3: ${fmtNum(ema3Volume)}")
+        appendLine("Momentum EMA 3: ${fmtNum(ema3Momentum)}")
         appendLine()
-        appendLine("OUTLIER CHECK (2σ / last 14 candles)")
+        appendLine("OUTLIER CHECK (2σ / last 14 values)")
         appendLine("Price movement: ${anomalyText(priceAnomaly)}")
         appendLine("Volume: ${anomalyText(volumeAnomaly)}")
         appendLine("Momentum: ${anomalyText(momentumAnomaly)}")
@@ -82,7 +82,7 @@ fun fmtPrice(value: Double?): String {
         magnitude >= 1 -> 4
         else -> 6
     }
-    return String.format(Locale.US, "%,." + digits + "f", value)
+    return String.format(Locale.US, "%,. " .trim() + digits + "f", value)
 }
 
 private val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
