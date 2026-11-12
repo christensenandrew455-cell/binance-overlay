@@ -41,6 +41,8 @@ data class EngineSnapshot(
     val priceEma99Series: List<Double> = emptyList(),
     val volumeBaselineSeries: List<Double> = emptyList(),
     val volumeSpikeSeries: List<Double?> = emptyList(),
+    val volumeSeries: List<Double> = emptyList(),
+    val volumeUpSeries: List<Boolean> = emptyList(),
     val momentumSeries: List<Double> = emptyList(),
 )
 
