@@ -218,16 +218,30 @@ class IndicatorLineChartView @JvmOverloads constructor(
             return
         }
         val maxAbs = max(values.maxOf { abs(it) }, 0.000001)
-        val bound = maxAbs * 1.12
+        // Leave headroom like an exchange MACD panel instead of stretching every move
+        // to the full chart height.
+        val bound = maxAbs * 2.8
         val zeroY = yFor(0.0, top, bottom, -bound, bound)
-        canvas.drawLine(left, zeroY, right, zeroY, zeroPaint)
+        val baselinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(210, 190, 198, 210)
+            strokeWidth = 1.2f * density
+        }
+        canvas.drawLine(left, zeroY, right, zeroY, baselinePaint)
+
         val count = values.size
         val slotWidth = (right - left) / count.toFloat()
-        val barWidth = (slotWidth * 0.68f).coerceAtLeast(2f * density)
+        val barWidth = (slotWidth * 0.62f).coerceAtLeast(2f * density)
         values.forEachIndexed { index, value ->
             val x = left + slotWidth * (index + 0.5f)
             val valueY = yFor(value, top, bottom, -bound, bound)
-            val color = if (value >= 0.0) positivePaint.color else negativePaint.color
+            val previous = values.getOrNull(index - 1) ?: value
+            val rising = value > previous
+            val color = when {
+                value >= 0.0 && rising -> Color.rgb(45, 202, 158)
+                value >= 0.0 -> Color.rgb(91, 151, 133)
+                !rising -> Color.rgb(239, 83, 101)
+                else -> Color.rgb(164, 91, 105)
+            }
             markerPaint.color = color
             val rect = android.graphics.RectF(
                 x - barWidth / 2f,
@@ -235,10 +249,10 @@ class IndicatorLineChartView @JvmOverloads constructor(
                 x + barWidth / 2f,
                 maxOf(zeroY, valueY)
             )
-            canvas.drawRoundRect(rect, 1.5f * density, 1.5f * density, markerPaint)
+            canvas.drawRoundRect(rect, 0.8f * density, 0.8f * density, markerPaint)
         }
         peakTextPaint.color = titlePaint.color
-        canvas.drawText("1-MIN CHANGE  •  HISTOGRAM", left, top + 11f * density, peakTextPaint)
+        canvas.drawText("MACD HISTOGRAM  •  12 / 26 / 9", left, top + 11f * density, peakTextPaint)
     }
 
     private fun drawMajorPeaks(canvas: Canvas, points: List<Pair<Float, Float>>, top: Float, bottom: Float) {
