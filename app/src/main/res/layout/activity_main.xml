@@ -41,7 +41,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="LIVE EMA LINE CHARTS • 1-MINUTE"
+            android:text="LIVE INDICATOR LINES • LATEST 60 CANDLES"
             android:textColor="@color/text"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -57,7 +57,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="Price EMA 7: —"
+            android:text="Price EMA 7: —  •  EMA 99: —"
             android:textColor="#55D6BE"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -73,7 +73,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="Volume EMA 3: —"
+            android:text="Volume EMA 2: —"
             android:textColor="#6EA8FE"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -89,7 +89,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="Momentum EMA 3: —"
+            android:text="Momentum (latest candle): —"
             android:textColor="#F5B95F"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -100,7 +100,7 @@
             android:layout_marginTop="8dp"
             android:padding="12dp"
             android:background="#1A2435"
-            android:text="OUTLIERS • Waiting for data"
+            android:text="OVERALL TREND • Waiting for data"
             android:textColor="@color/text"
             android:textSize="12sp"/>
         <EditText
@@ -162,7 +162,7 @@
             android:layout_marginTop="12dp"
             android:padding="13dp"
             android:background="#202B3E"
-            android:text="Each smooth line shows the latest 60 EMA readings from one-minute candles."
+            android:text="The price chart overlays EMA 7 and EMA 99. Volume is EMA 2. Momentum shows the raw change from each one-minute candle."
             android:textColor="@color/text"
             android:textSize="12sp"
             android:lineSpacingExtra="3dp"/>
