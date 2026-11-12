@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
             snapshot.volumeUpSeries,
         )
         findViewById<IndicatorLineChartView>(R.id.momentumChart).setMomentum(
-            "MOMENTUM • 1M HISTOGRAM • GREEN / RED",
+            "MOMENTUM • MACD HISTOGRAM • GREEN / RED",
             snapshot.momentumSeries,
         )
         findViewById<TextView>(R.id.priceValue).text =
@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.volumeValue).text =
             "Each box = one 1-minute candle. Green = candle closed up; red = candle closed down. Taller boxes = unusually high total volume."
         findViewById<TextView>(R.id.momentumValue).text =
-            "Each bar shows the 1-minute price change from zero. Green = positive; red = negative. Taller bars = stronger movement."
+            "MACD histogram (12, 26, 9). Bars above zero are positive; bars below zero are negative. Brighter bars show momentum strengthening; muted bars show it easing."
         findViewById<TextView>(R.id.outlierText).text =
             "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
         findViewById<TextView>(R.id.overallStatus).text = when {
@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
             else -> "OVERALL TREND: ${metrics.trend}"
         }
         findViewById<TextView>(R.id.reasonText).text =
-            "EMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume boxes are colored by candle direction (green close above open, red close below open); box height highlights unusually high total traded volume, not buyer-versus-seller volume. Momentum is shown as histogram bars around zero, green for positive changes and red for negative changes; no signal lines are drawn."
+            "EMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume boxes are colored by candle direction (green close above open, red close below open); box height highlights unusually high total traded volume, not buyer-versus-seller volume. Momentum uses the MACD (12, 26, 9) histogram, shown as bars around zero; green is positive and red is negative, with brighter shades showing momentum strengthening. The yellow and purple signal lines are hidden."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
