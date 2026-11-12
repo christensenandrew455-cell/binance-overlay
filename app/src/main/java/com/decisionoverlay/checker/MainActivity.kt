@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
         }
-        setStatus("Reading 100 one-minute candles. Price EMA 7; volume and momentum EMA 3. Outlier checks update every 5 seconds.")
+        setStatus("Fetching 150 one-minute candles to warm up EMA 99; displaying the latest 60. Price EMA 7, volume EMA 2, and raw candle momentum.")
         requestAndLaunchService(symbol, false)
     }
 
@@ -86,20 +86,20 @@ class MainActivity : AppCompatActivity() {
         val metrics = snapshot.metrics
         findViewById<TextView>(R.id.symbolHeading).text =
             snapshot.symbol + " • " + fmtPrice(metrics.currentPrice)
-        findViewById<IndicatorLineChartView>(R.id.priceChart).setSeries("PRICE • EMA 7", snapshot.priceEmaSeries, android.graphics.Color.parseColor("#55D6BE"))
-        findViewById<IndicatorLineChartView>(R.id.volumeChart).setSeries("VOLUME • EMA 3", snapshot.volumeEmaSeries, android.graphics.Color.parseColor("#6EA8FE"))
-        findViewById<IndicatorLineChartView>(R.id.momentumChart).setSeries("MOMENTUM • EMA 3", snapshot.momentumEmaSeries, android.graphics.Color.parseColor("#F5B95F"))
-        findViewById<TextView>(R.id.priceValue).text = "Price EMA 7: ${fmtPrice(metrics.ema7Price)}"
-        findViewById<TextView>(R.id.volumeValue).text = "Volume EMA 3: ${fmtNum(metrics.ema3Volume)}"
-        findViewById<TextView>(R.id.momentumValue).text = "Momentum EMA 3: ${fmtNum(metrics.ema3Momentum)}"
-        findViewById<TextView>(R.id.outlierText).text = "OUTLIERS  •  Price: ${anomalyLabel(metrics.priceAnomaly)}  |  Volume: ${anomalyLabel(metrics.volumeAnomaly)}  |  Momentum: ${anomalyLabel(metrics.momentumAnomaly)}"
+        findViewById<IndicatorLineChartView>(R.id.priceChart).setSeries("PRICE • EMA 7 + EMA 99", snapshot.priceEmaSeries, android.graphics.Color.parseColor("#55D6BE"), snapshot.priceEma99Series, android.graphics.Color.parseColor("#C28BFA"))
+        findViewById<IndicatorLineChartView>(R.id.volumeChart).setSeries("VOLUME • EMA 2", snapshot.volumeEmaSeries, android.graphics.Color.parseColor("#6EA8FE"))
+        findViewById<IndicatorLineChartView>(R.id.momentumChart).setSeries("MOMENTUM • RAW 1-MIN CHANGE", snapshot.momentumSeries, android.graphics.Color.parseColor("#F5B95F"))
+        findViewById<TextView>(R.id.priceValue).text = "Price EMA 7: ${fmtPrice(metrics.ema7Price)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}"
+        findViewById<TextView>(R.id.volumeValue).text = "Volume EMA 2: ${fmtNum(metrics.ema2Volume)}"
+        findViewById<TextView>(R.id.momentumValue).text = "Momentum (latest candle): ${fmtNum(metrics.currentMomentum)}"
+        findViewById<TextView>(R.id.outlierText).text = "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
         findViewById<TextView>(R.id.overallStatus).text = when {
             metrics.priceAnomaly == true || metrics.volumeAnomaly == true || metrics.momentumAnomaly == true -> "UNUSUAL MOVEMENT DETECTED"
             metrics.candleCount < 15 -> "COLLECTING CANDLES"
             else -> "WITHIN NORMAL RANGE"
         }
         findViewById<TextView>(R.id.reasonText).text =
-            "Price EMA 7 and volume/momentum EMA 3 are calculated locally from Binance.US 1-minute candles. Outliers are flagged when the newest smoothed value is more than 2 standard deviations from the previous 14 values."
+            "EMA 7 and EMA 99 are calculated locally from candle closing prices. Volume uses EMA 2. Momentum is the raw close-to-close change for each one-minute candle, with no smoothing. Trend is UP when price is above a rising EMA 99, DOWN when below a falling EMA 99, otherwise NEUTRAL."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
