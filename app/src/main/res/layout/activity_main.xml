@@ -57,7 +57,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="Price EMA 7: —  •  EMA 99: —"
+            android:text="EMA 7: —  •  EMA 99: —  •  15-minute target: —"
             android:textColor="#55D6BE"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -73,7 +73,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="Volume EMA 2: —"
+            android:text="Volume baseline: —  •  Unusual spikes highlighted"
             android:textColor="#6EA8FE"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -89,7 +89,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="Momentum (latest candle): —"
+            android:text="Momentum: green above zero • red below zero"
             android:textColor="#F5B95F"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -162,7 +162,7 @@
             android:layout_marginTop="12dp"
             android:padding="13dp"
             android:background="#202B3E"
-            android:text="The price chart overlays EMA 7 and EMA 99. Volume is EMA 2. Momentum shows the raw change from each one-minute candle."
+            android:text="Price: locally calculated EMA 7 and EMA 99. Target: last completed 15-minute checkpoint close. Volume: baseline with unusually large spikes. Momentum: green above zero, red below zero, with larger peaks labeled."
             android:textColor="@color/text"
             android:textSize="12sp"
             android:lineSpacingExtra="3dp"/>
