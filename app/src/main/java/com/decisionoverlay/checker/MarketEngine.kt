@@ -98,15 +98,11 @@ class MarketEngine(
         val closes = data.map { it.close }
         val volumes = data.map { it.volume }
         val momentum = closes.zipWithNext { previous, current -> current - previous }
-        val priceMoves = closes.zipWithNext { previous, current ->
-            if (previous != 0.0) (current - previous) / previous * 100.0 else 0.0
-        }
 
-        // All three series are calculated locally from raw 1-minute candle values.
+        // EMA 7 is calculated from raw candle values locally, not fetched from an indicator API.
         val priceEmaSeries = Indicators.emaSeriesFromFirst(closes, 7)
         val volumeEmaSeries = Indicators.emaSeriesFromFirst(volumes, 7)
         val momentumEmaSeries = Indicators.emaSeriesFromFirst(momentum, 7)
-        val priceMoveEmaSeries = Indicators.emaSeriesFromFirst(priceMoves, 7)
 
         val latest = data.lastOrNull()
         val metrics = MetricSnapshot(
@@ -116,7 +112,7 @@ class MarketEngine(
             ema7Volume = volumeEmaSeries.lastOrNull(),
             currentMomentum = momentum.lastOrNull(),
             ema7Momentum = momentumEmaSeries.lastOrNull(),
-            priceAnomaly = isOutlier(priceMoveEmaSeries),
+            priceAnomaly = isOutlier(priceEmaSeries),
             volumeAnomaly = isOutlier(volumeEmaSeries),
             momentumAnomaly = isOutlier(momentumEmaSeries),
             candleCount = data.size,
