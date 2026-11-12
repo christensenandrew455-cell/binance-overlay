@@ -217,11 +217,15 @@ class IndicatorLineChartView @JvmOverloads constructor(
             drawWaiting(canvas, left, top, bottom)
             return
         }
-        val maxAbs = max(values.maxOf { abs(it) }, 0.000001)
-        // Leave headroom like an exchange MACD panel instead of stretching every move
-        // to the full chart height.
-        val bound = maxAbs * 2.8
-        val zeroY = yFor(0.0, top, bottom, -bound, bound)
+        // Exchange-style autoscaling: include zero, then scale to the actual positive
+        // and negative histogram extremes independently. This lets zero move up/down
+        // according to the current MACD distribution instead of forcing it to center.
+        val rawLow = minOf(0.0, values.minOrNull() ?: 0.0)
+        val rawHigh = maxOf(0.0, values.maxOrNull() ?: 0.0)
+        val spread = max(rawHigh - rawLow, 0.000001)
+        val low = rawLow - spread * 0.12
+        val high = rawHigh + spread * 0.12
+        val zeroY = yFor(0.0, top, bottom, low, high)
         val baselinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(210, 190, 198, 210)
             strokeWidth = 1.2f * density
@@ -233,7 +237,7 @@ class IndicatorLineChartView @JvmOverloads constructor(
         val barWidth = (slotWidth * 0.62f).coerceAtLeast(2f * density)
         values.forEachIndexed { index, value ->
             val x = left + slotWidth * (index + 0.5f)
-            val valueY = yFor(value, top, bottom, -bound, bound)
+            val valueY = yFor(value, top, bottom, low, high)
             val previous = values.getOrNull(index - 1) ?: value
             val rising = value > previous
             val color = when {
@@ -252,7 +256,7 @@ class IndicatorLineChartView @JvmOverloads constructor(
             canvas.drawRoundRect(rect, 0.8f * density, 0.8f * density, markerPaint)
         }
         peakTextPaint.color = titlePaint.color
-        canvas.drawText("MACD HISTOGRAM  •  12 / 26 / 9", left, top + 11f * density, peakTextPaint)
+        canvas.drawText("MACD HISTOGRAM  •  12 / 26 / 9  •  ${fmtNum(values.last())}", left, top + 11f * density, peakTextPaint)
     }
 
     private fun drawMajorPeaks(canvas: Canvas, points: List<Pair<Float, Float>>, top: Float, bottom: Float) {
