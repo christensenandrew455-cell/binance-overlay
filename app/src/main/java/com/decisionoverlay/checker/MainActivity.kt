@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
         }
         setStatus("Fetching 150 one-minute candles to warm up EMA 99; displaying the latest 60. Target resets on each 15-minute candle close.")
-        requestAndLaunchService(symbol, false)
+        requestAndLaunchService(symbol)
     }
 
     private fun readSymbol(): String? {
