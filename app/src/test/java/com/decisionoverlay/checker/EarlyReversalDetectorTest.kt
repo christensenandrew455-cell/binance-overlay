@@ -24,7 +24,7 @@ class EarlyReversalDetectorTest {
 
         val result = EarlyReversalDetector.evaluate(data, histogram, ema, 90.0)
 
-        assertEquals("DOWN CONFIRMED", result.label)
+        assertEquals("EARLY DOWN TREND", result.label)
         assertEquals("ABOVE TARGET", result.targetPosition)
     }
 
@@ -35,7 +35,7 @@ class EarlyReversalDetectorTest {
 
         val result = EarlyReversalDetector.evaluate(data, histogram, ema, 110.0)
 
-        assertEquals("UP CONFIRMED", result.label)
+        assertEquals("EARLY UP TREND", result.label)
         assertEquals("BELOW TARGET", result.targetPosition)
     }
 }
