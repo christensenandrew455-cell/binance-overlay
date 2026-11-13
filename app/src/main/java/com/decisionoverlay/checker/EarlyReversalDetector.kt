@@ -10,7 +10,7 @@ data class EarlySignalResult(
 object EarlyReversalDetector {
     fun evaluate(candles: List<Candle>, momentum: List<Double>, ema7: List<Double>, targetPrice: Double?): EarlySignalResult {
         // Include the currently forming 1-minute candle so early warnings can update between closes.
-        val indexes = candles.indices.takeLast(12)
+        val indexes = candles.indices.toList().takeLast(12)
         if (indexes.size < 6 || momentum.size != candles.size || ema7.size != candles.size) {
             return EarlySignalResult("WAIT • COLLECTING DATA", "TARGET UNKNOWN", "Waiting for at least 6 one-minute candles.")
         }
