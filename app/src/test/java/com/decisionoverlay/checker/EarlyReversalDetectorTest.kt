@@ -20,7 +20,7 @@ class EarlyReversalDetectorTest {
     @Test fun detectsEarlyDownAboveTargetBeforeEma99TrendWouldNeedToChange() {
         val data = candles(up = false)
         val histogram = listOf(0.0, 1.0, 2.0, 3.0, 2.0, 1.0, 0.0, -1.0)
-        val ema = listOf(100.0, 100.1, 100.2, 100.3, 100.2, 100.1, 100.0, 99.9)
+        val ema = listOf(102.0, 101.9, 101.8, 101.7, 101.6, 101.5, 101.4, 101.3)
 
         val result = EarlyReversalDetector.evaluate(data, histogram, ema, 90.0)
 
