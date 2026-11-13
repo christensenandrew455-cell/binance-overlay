@@ -90,7 +90,6 @@ class OverlayPanel(
 
     fun render(snapshot: EngineSnapshot) {
         val m = snapshot.metrics
-        heading.text = "${snapshot.symbol} • TREND ${m.trend}"
         price.text = fmtPrice(m.currentPrice)
         emaPrice.text = "EMA7 ${fmtPrice(m.ema7Price)}  |  EMA99 ${fmtPrice(m.ema99Price)}"
         target.text = "15M TARGET ${fmtPrice(m.targetPrice)}  •  ${formatTime(m.targetTime)}"
