@@ -9,9 +9,10 @@ data class EarlySignalResult(
 
 object EarlyReversalDetector {
     fun evaluate(candles: List<Candle>, momentum: List<Double>, ema7: List<Double>, targetPrice: Double?): EarlySignalResult {
-        val indexes = candles.indices.filter { candles[it].closed }.takeLast(12)
+        // Include the currently forming 1-minute candle so early warnings can update between closes.
+        val indexes = candles.indices.takeLast(12)
         if (indexes.size < 6 || momentum.size != candles.size || ema7.size != candles.size) {
-            return EarlySignalResult("WAIT • COLLECTING DATA", "TARGET UNKNOWN", "Waiting for at least 6 completed one-minute candles.")
+            return EarlySignalResult("WAIT • COLLECTING DATA", "TARGET UNKNOWN", "Waiting for at least 6 one-minute candles.")
         }
 
         val lastIndex = indexes.last()
@@ -58,8 +59,8 @@ object EarlyReversalDetector {
             (if (greenVolumeConfirm) 1 else 0)
 
         val label = when {
-            downScore >= 4 && price < emaNow -> "DOWN CONFIRMED"
-            upScore >= 4 && price > emaNow -> "UP CONFIRMED"
+            last.closed && downScore >= 4 && price < emaNow -> "DOWN CONFIRMED"
+            last.closed && upScore >= 4 && price > emaNow -> "UP CONFIRMED"
             downScore >= 3 && histFalling -> "EARLY DOWN"
             upScore >= 3 && histRising -> "EARLY UP"
             else -> "WAIT • NO EARLY REVERSAL"
@@ -68,7 +69,7 @@ object EarlyReversalDetector {
         val evidence = buildList {
             add("MACD histogram: " + (if (histRising) "turning up" else if (histFalling) "turning down" else "no clear turn"))
             add("EMA 7: " + (if (emaTurningUp) "rising" else if (emaTurningDown) "falling" else "flat"))
-            add("Last 3 completed candles: $upCandles up / $downCandles down")
+            add("Last 3 candles (latest may still be forming): $upCandles up / $downCandles down")
             add("Volume: " + (if (volumeConfirm) "elevated" else "normal"))
             add("Early scores: UP $upScore/5 • DOWN $downScore/5")
         }.joinToString(" | ")
