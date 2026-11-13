@@ -18,13 +18,13 @@ import kotlinx.coroutines.cancel
 class OverlayService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var engine: MarketEngine
-    private var panel: OverlayPanel? = null
     private var engineStarted = false
+    private var lastAlertDirection: String? = null
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
-        engine = MarketEngine(scope, { snapshot -> render(snapshot) })
+        createChannels()
+        engine = MarketEngine(scope) { snapshot -> render(snapshot) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -33,11 +33,10 @@ class OverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startInForeground("Starting Binance.US market monitor")
+        startInForeground("Monitoring active • reversal alerts enabled")
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
-        if (intent?.getBooleanExtra(EXTRA_SHOW_PANEL, false) == true) ensurePanel()
         if (!engineStarted) {
             engineStarted = true
             engine.start(symbol)
@@ -47,14 +46,7 @@ class OverlayService : Service() {
         return START_STICKY
     }
 
-    private fun hidePanel() {
-        val old = panel
-        panel = null
-        try { old?.detach() } catch (_: Exception) {}
-    }
-
     override fun onDestroy() {
-        hidePanel()
         if (engineStarted) try { engine.stop() } catch (_: Exception) {}
         scope.cancel()
         super.onDestroy()
@@ -62,51 +54,72 @@ class OverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun ensurePanel() {
-        if (panel != null) return
-        val manager = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
-        panel = OverlayPanel(this, manager) { hidePanel() }
-        panel?.attach()
+    private fun render(snapshot: EngineSnapshot) {
+        val signal = snapshot.metrics.earlySignal
+        val direction = when {
+            signal.startsWith("EARLY DOWN") || signal.startsWith("DOWN CONFIRMED") -> "DOWN"
+            signal.startsWith("EARLY UP") || signal.startsWith("UP CONFIRMED") -> "UP"
+            else -> null
+        }
+
+        // Notify once when a new directional signal begins; don't repeat every 5 seconds.
+        if (direction == null) {
+            lastAlertDirection = null
+        } else if (direction != lastAlertDirection) {
+            lastAlertDirection = direction
+            sendReversalAlert(snapshot, direction)
+        }
+
+        // Keep the required foreground-service notification quiet and free of trend calls.
+        getSystemService(NotificationManager::class.java).notify(
+            FOREGROUND_NOTIFICATION_ID,
+            buildForegroundNotification("Monitoring ${snapshot.symbol} • reversal alerts enabled"),
+        )
     }
 
-    private fun render(snapshot: EngineSnapshot) {
-        panel?.render(snapshot)
+    private fun sendReversalAlert(snapshot: EngineSnapshot, direction: String) {
         val m = snapshot.metrics
-        val flags = listOfNotNull(
-            if (m.priceAnomaly == true) "price" else null,
-            if (m.volumeAnomaly == true) "volume" else null,
-            if (m.momentumAnomaly == true) "momentum" else null,
-        )
-        val status = if (flags.isEmpty()) "No unusual movement" else "Unusual: " + flags.joinToString(", ")
-        getSystemService(NotificationManager::class.java).notify(
-            NOTIFICATION_ID,
-            buildNotification("${snapshot.symbol} • TREND ${m.trend} • EMA99 ${fmtPrice(m.ema99Price)}"),
-        )
+        val title = if (direction == "DOWN") "EARLY DOWN • ${snapshot.symbol}" else "EARLY UP • ${snapshot.symbol}"
+        val detail = "${m.targetPosition} • Price ${fmtPrice(m.currentPrice)} • Target ${fmtPrice(m.targetPrice)}"
+        val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title)
+            .setContentText(detail)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. Possible reversal detected from changing momentum, EMA slope, candles and volume."))
+            .setContentIntent(openAppPendingIntent())
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, notification)
     }
 
     private fun startInForeground(text: String) {
-        val notification = buildNotification(text)
+        val notification = buildForegroundNotification(text)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            startForeground(FOREGROUND_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(FOREGROUND_NOTIFICATION_ID, notification)
         }
     }
 
-    private fun buildNotification(text: String): Notification {
-        val open = PendingIntent.getActivity(
+    private fun openAppPendingIntent(): PendingIntent =
+        PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+
+    private fun buildForegroundNotification(text: String): Notification {
         val stop = PendingIntent.getService(
             this, 2, Intent(this, OverlayService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Binance.US market monitor")
+            .setContentTitle("BTC reversal monitor")
             .setContentText(text)
-            .setContentIntent(open)
+            .setContentIntent(openAppPendingIntent())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -114,23 +127,32 @@ class OverlayService : Service() {
             .build()
     }
 
-    private fun createChannel() {
+    private fun createChannels() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "EMA market monitor", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(FOREGROUND_CHANNEL_ID, "Background monitoring", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "Quiet notification while market monitoring runs." },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(ALERT_CHANNEL_ID, "Reversal alerts", NotificationManager.IMPORTANCE_HIGH)
+                .apply {
+                    description = "Sound and vibration when an early upward or downward reversal is detected."
+                    enableVibration(true)
+                },
         )
     }
 
     companion object {
         const val EXTRA_SYMBOL = "symbol"
-        const val EXTRA_SHOW_PANEL = "show_panel"
         const val ACTION_STOP = "com.decisionoverlay.checker.STOP"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         const val KEY_TARGET = "target_price"
         const val KEY_STRICTNESS = "strictness_level"
-        private const val CHANNEL_ID = "ema_market_monitor"
-        private const val NOTIFICATION_ID = 42
+        private const val FOREGROUND_CHANNEL_ID = "market_monitor_background"
+        private const val ALERT_CHANNEL_ID = "market_reversal_alerts"
+        private const val FOREGROUND_NOTIFICATION_ID = 42
+        private const val ALERT_NOTIFICATION_ID = 43
     }
 }
