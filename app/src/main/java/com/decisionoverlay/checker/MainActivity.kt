@@ -3,10 +3,8 @@ package com.decisionoverlay.checker
 import android.Manifest
 import android.content.Intent
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -25,12 +23,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var engine: MarketEngine
     private var checksStarted = false
     private var pendingSymbol: String? = null
-    private var pendingShowOverlay = false
 
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val symbol = pendingSymbol
         pendingSymbol = null
-        if (granted && symbol != null) launchService(symbol, pendingShowOverlay)
+        if (granted && symbol != null) launchService(symbol)
         else if (symbol != null) setStatus("Notification permission is needed to keep the background monitor running.")
     }
 
@@ -40,7 +37,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         findViewById<EditText>(R.id.symbolInput).setText(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT"))
         findViewById<Button>(R.id.startCheckButton).setOnClickListener { startChecks() }
-        findViewById<Button>(R.id.startButton).setOnClickListener { startOverlay() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
             stopService(Intent(this, OverlayService::class.java))
             if (checksStarted) {
@@ -108,49 +104,30 @@ class MainActivity : AppCompatActivity() {
             "Each box = one 1-minute candle. Green = candle closed up; red = candle closed down. Taller boxes = unusually high total volume."
         findViewById<TextView>(R.id.momentumValue).text =
             "MACD histogram (12, 26, 9). Bars above zero are positive; bars below zero are negative. Brighter bars show momentum strengthening; muted bars show it easing."
-        findViewById<TextView>(R.id.outlierText).text =
-            "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
-        findViewById<TextView>(R.id.overallStatus).text = when {
-            metrics.candleCount < 100 -> "WARMING UP EMA 99 • ${metrics.earlySignal}"
-            else -> "${metrics.earlySignal} • ${metrics.targetPosition}"
-        }
         findViewById<TextView>(R.id.reasonText).text =
-            "EARLY REVERSAL CHECK: ${metrics.signalDetail}\n\nEMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume boxes are colored by candle direction (green close above open, red close below open); box height highlights unusually high total traded volume, not buyer-versus-seller volume. Momentum uses the MACD (12, 26, 9) histogram, shown as bars around zero; green is positive and red is negative, with brighter shades showing momentum strengthening. The yellow and purple signal lines are hidden."
+            "Reversal alerts watch changes in MACD histogram momentum, EMA 7 slope, recent candle direction and volume. Alerts are sent once when a new upward or downward signal begins. These are early-warning signals, not guarantees."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
     }
 
-    private fun startOverlay() {
-        val symbol = readSymbol() ?: return
-        if (!Settings.canDrawOverlays(this)) {
-            setStatus("Android needs permission for the floating monitor. Opening permission settings.")
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            return
-        }
-        requestAndLaunchService(symbol, true)
-    }
-
-    private fun requestAndLaunchService(symbol: String, showOverlay: Boolean) {
+    private fun requestAndLaunchService(symbol: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             pendingSymbol = symbol
-            pendingShowOverlay = showOverlay
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
-        launchService(symbol, showOverlay)
+        launchService(symbol)
     }
 
-    private fun launchService(symbol: String, showOverlay: Boolean) {
+    private fun launchService(symbol) {
         prefs.edit().putString(OverlayService.KEY_SYMBOL, symbol).apply()
         val intent = Intent(this, OverlayService::class.java)
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
-            .putExtra(OverlayService.EXTRA_SHOW_PANEL, showOverlay)
         ContextCompat.startForegroundService(this, intent)
-        setStatus(if (showOverlay) "Floating monitor running for $symbol (EMA 7 / EMA 99, 15-minute target, volume spikes, colored momentum)."
-        else "Monitor running for $symbol (EMA 7 / EMA 99, 15-minute target, volume spikes, colored momentum).")
+        setStatus("Monitoring $symbol in the background. You will receive a notification when an early reversal signal is detected.")
     }
 
     private fun setStatus(message: String) {
