@@ -128,6 +128,7 @@ class MarketEngine(
         }
         val trend = overallTrend(closes, priceEma99)
         val displayedMomentum = momentum.takeLast(60)
+        val earlySignal = EarlyReversalDetector.evaluate(data, momentum, priceEma7, target?.close)
 
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
@@ -147,6 +148,9 @@ class MarketEngine(
             updatedAt = updatedAt,
             feedDetail = feedDetail,
             lastError = lastError,
+            earlySignal = earlySignal.label,
+            targetPosition = earlySignal.targetPosition,
+            signalDetail = earlySignal.detail,
         )
         onUpdate(
             EngineSnapshot(
