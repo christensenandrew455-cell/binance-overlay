@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         launchService(symbol)
     }
 
-    private fun launchService(symbol) {
+    private fun launchService(symbol: String) {
         prefs.edit().putString(OverlayService.KEY_SYMBOL, symbol).apply()
         val intent = Intent(this, OverlayService::class.java)
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
