@@ -33,7 +33,7 @@ class OverlayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startInForeground("Monitoring active • reversal alerts enabled")
+        startInForeground("Monitoring active • early trend alerts enabled")
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
@@ -57,8 +57,8 @@ class OverlayService : Service() {
     private fun render(snapshot: EngineSnapshot) {
         val signal = snapshot.metrics.earlySignal
         val direction = when {
-            signal.startsWith("EARLY DOWN") || signal.startsWith("DOWN CONFIRMED") -> "DOWN"
-            signal.startsWith("EARLY UP") || signal.startsWith("UP CONFIRMED") -> "UP"
+            signal == "EARLY DOWN TREND" -> "DOWN"
+            signal == "EARLY UP TREND" -> "UP"
             else -> null
         }
 
@@ -67,25 +67,25 @@ class OverlayService : Service() {
             lastAlertDirection = null
         } else if (direction != lastAlertDirection) {
             lastAlertDirection = direction
-            sendReversalAlert(snapshot, direction)
+            sendTrendAlert(snapshot, direction)
         }
 
         // Keep the required foreground-service notification quiet and free of trend calls.
         getSystemService(NotificationManager::class.java).notify(
             FOREGROUND_NOTIFICATION_ID,
-            buildForegroundNotification("Monitoring ${snapshot.symbol} • reversal alerts enabled"),
+            buildForegroundNotification("Monitoring ${snapshot.symbol} • early trend alerts enabled"),
         )
     }
 
-    private fun sendReversalAlert(snapshot: EngineSnapshot, direction: String) {
+    private fun sendTrendAlert(snapshot: EngineSnapshot, direction: String) {
         val m = snapshot.metrics
-        val title = if (direction == "DOWN") "EARLY DOWN • ${snapshot.symbol}" else "EARLY UP • ${snapshot.symbol}"
+        val title = if (direction == "DOWN") "EARLY DOWN TREND • ${snapshot.symbol}" else "EARLY UP TREND • ${snapshot.symbol}"
         val detail = "${m.targetPosition} • Price ${fmtPrice(m.currentPrice)} • Target ${fmtPrice(m.targetPrice)}"
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title)
             .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. Possible reversal detected from changing momentum, EMA slope, candles and volume."))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. Early trend warning from changing MACD histogram momentum, EMA 7 slope, candle direction and volume. This is a developing signal, not a guarantee."))
             .setContentIntent(openAppPendingIntent())
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -117,7 +117,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("BTC reversal monitor")
+            .setContentTitle("BTC early trend monitor")
             .setContentText(text)
             .setContentIntent(openAppPendingIntent())
             .setOngoing(true)
@@ -134,9 +134,9 @@ class OverlayService : Service() {
                 .apply { description = "Quiet notification while market monitoring runs." },
         )
         manager.createNotificationChannel(
-            NotificationChannel(ALERT_CHANNEL_ID, "Reversal alerts", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(ALERT_CHANNEL_ID, "Early trend alerts", NotificationManager.IMPORTANCE_HIGH)
                 .apply {
-                    description = "Sound and vibration when an early upward or downward reversal is detected."
+                    description = "Sound and vibration for early downward trends above target and early upward trends below target."
                     enableVibration(true)
                 },
         )
