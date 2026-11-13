@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.momentumValue).text =
             "MACD histogram (12, 26, 9). Bars above zero are positive; bars below zero are negative. Brighter bars show momentum strengthening; muted bars show it easing."
         findViewById<TextView>(R.id.reasonText).text =
-            "Reversal alerts watch changes in MACD histogram momentum, EMA 7 slope, recent candle direction and volume. Alerts are sent once when a new upward or downward signal begins. These are early-warning signals, not guarantees."
+            "Trend alerts are target-aware: EARLY DOWN TREND only when price is above the 15-minute target, and EARLY UP TREND only when price is below it. The alert looks for a developing MACD histogram slope change with independent confirmation from EMA 7, candles or volume. Signals are early warnings, not guarantees."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
@@ -127,7 +127,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, OverlayService::class.java)
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
         ContextCompat.startForegroundService(this, intent)
-        setStatus("Monitoring $symbol in the background. You will receive a notification when an early reversal signal is detected.")
+        setStatus("Monitoring $symbol in the background. You will receive a notification for an early target-matched trend signal.")
     }
 
     private fun setStatus(message: String) {
