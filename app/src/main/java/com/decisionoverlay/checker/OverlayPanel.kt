@@ -94,6 +94,7 @@ class OverlayPanel(
         price.text = fmtPrice(m.currentPrice)
         emaPrice.text = "EMA7 ${fmtPrice(m.ema7Price)}  |  EMA99 ${fmtPrice(m.ema99Price)}"
         target.text = "15M TARGET ${fmtPrice(m.targetPrice)}  •  ${formatTime(m.targetTime)}"
+        heading.text = "${snapshot.symbol} • ${m.earlySignal} ${m.targetPosition}"
         emaVolume.text = "VOLUME EMA2 ${fmtNum(m.ema2Volume)}"
         emaMomentum.text = "MOMENTUM ${fmtNum(m.currentMomentum)}"
         emaMomentum.setTextColor(if ((m.currentMomentum ?: 0.0) >= 0.0) GREEN else RED)
