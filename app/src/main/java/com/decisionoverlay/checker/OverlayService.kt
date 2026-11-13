@@ -151,7 +151,7 @@ class OverlayService : Service() {
         const val KEY_TARGET = "target_price"
         const val KEY_STRICTNESS = "strictness_level"
         private const val FOREGROUND_CHANNEL_ID = "market_monitor_background"
-        private const val ALERT_CHANNEL_ID = "market_reversal_alerts"
+        private const val ALERT_CHANNEL_ID = "market_early_trend_alerts"
         private const val FOREGROUND_NOTIFICATION_ID = 42
         private const val ALERT_NOTIFICATION_ID = 43
     }
