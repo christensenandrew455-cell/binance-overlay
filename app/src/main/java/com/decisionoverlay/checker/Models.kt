@@ -31,6 +31,9 @@ data class MetricSnapshot(
     val updatedAt: Long?,
     val feedDetail: String,
     val lastError: String?,
+    val earlySignal: String,
+    val targetPosition: String,
+    val signalDetail: String,
 )
 
 data class EngineSnapshot(
