@@ -111,11 +111,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.outlierText).text =
             "OVERALL TREND: ${metrics.trend}  •  Showing ${metrics.displayedCandleCount} latest candles"
         findViewById<TextView>(R.id.overallStatus).text = when {
-            metrics.candleCount < 100 -> "WARMING UP EMA 99"
-            else -> "OVERALL TREND: ${metrics.trend}"
+            metrics.candleCount < 100 -> "WARMING UP EMA 99 • ${metrics.earlySignal}"
+            else -> "${metrics.earlySignal} • ${metrics.targetPosition}"
         }
         findViewById<TextView>(R.id.reasonText).text =
-            "EMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume boxes are colored by candle direction (green close above open, red close below open); box height highlights unusually high total traded volume, not buyer-versus-seller volume. Momentum uses the MACD (12, 26, 9) histogram, shown as bars around zero; green is positive and red is negative, with brighter shades showing momentum strengthening. The yellow and purple signal lines are hidden."
+            "EARLY REVERSAL CHECK: ${metrics.signalDetail}\\n\\nEMA 7 and EMA 99 are calculated locally from candle closes. The target is the close of the last completed 1-minute candle ending at :00, :15, :30 or :45; it stays unchanged until the next checkpoint. Volume boxes are colored by candle direction (green close above open, red close below open); box height highlights unusually high total traded volume, not buyer-versus-seller volume. Momentum uses the MACD (12, 26, 9) histogram, shown as bars around zero; green is positive and red is negative, with brighter shades showing momentum strengthening. The yellow and purple signal lines are hidden."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
