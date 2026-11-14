@@ -181,7 +181,7 @@ object EarlyReversalDetector {
             add("Projected expiry price: " + String.format(java.util.Locale.US, "$%,.2f", projectedExpiryPrice))
             add("Projected result: $forecastSide")
             if (orderBook != null) {
-                add("5-second weighted near-book average: bids " +
+                add((if (orderBook.smoothingWindowSeconds > 0) "${orderBook.smoothingWindowSeconds}-second" else "Live") + " smoothed near-book average: bids " +
                     String.format(java.util.Locale.US, "$%,.0f", orderBook.nearBidNotional) +
                     " • asks " + String.format(java.util.Locale.US, "$%,.0f", orderBook.nearAskNotional))
                 add("Order book imbalance: " +
