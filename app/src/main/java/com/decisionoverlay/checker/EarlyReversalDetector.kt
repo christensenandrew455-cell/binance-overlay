@@ -82,7 +82,7 @@ object EarlyReversalDetector {
         val momentumStrength = (abs(momentum.last()) / momentumScale).coerceIn(0.75, 1.20)
         val momentumAgrees = (direction > 0 && momentum.last() >= 0.0) ||
             (direction < 0 && momentum.last() <= 0.0)
-        val momentumFactor = if (momentumAgrees) momentumStrength else 0.80
+        val momentumFactor = if (momentumAgrees) max(1.0, momentumStrength) else 0.80
 
         // A pullback consumes part of the preceding impulse; volume and momentum adjust
         // the expected next leg without allowing either indicator to invent direction.
@@ -106,8 +106,8 @@ object EarlyReversalDetector {
         val label = when {
             likelyToReach && direction > 0 -> "EARLY UP TREND"
             likelyToReach && direction < 0 -> "EARLY DOWN TREND"
-            pointsTowardTarget && direction > 0 -> "WAIT • UP TREND, MOVE MAY BE TOO SMALL"
-            pointsTowardTarget && direction < 0 -> "WAIT • DOWN TREND, MOVE MAY BE TOO SMALL"
+            pointsTowardTarget && direction > 0 -> "WAIT • UP TREND, TARGET TOO FAR"
+            pointsTowardTarget && direction < 0 -> "WAIT • DOWN TREND, TARGET TOO FAR"
             distance > 0.0 -> "WAIT • BELOW TARGET"
             distance < 0.0 -> "WAIT • ABOVE TARGET"
             else -> "WAIT • AT TARGET"
