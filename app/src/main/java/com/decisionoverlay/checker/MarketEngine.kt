@@ -22,6 +22,7 @@ class MarketEngine(
     private val started = AtomicBoolean(false)
     private val logs = ArrayDeque<String>()
     private var candles = emptyList<Candle>()
+    @Volatile private var orderBook: OrderBookSnapshot? = null
 
     @Volatile
     var symbol = "BTCUSDT"
@@ -94,6 +95,12 @@ class MarketEngine(
             // Warm up EMA 99 with 150 candles, but only graph the newest 60.
             val result = client.fetchKlines(symbol, "1m", 150)
             candles = result.candles.sortedBy { it.openTime }.takeLast(150)
+            try {
+                orderBook = client.fetchOrderBook(symbol, 100)
+            } catch (bookError: Exception) {
+                orderBook = null
+                log("ORDER BOOK UNAVAILABLE: " + (bookError.message ?: bookError.javaClass.simpleName))
+            }
             updatedAt = System.currentTimeMillis()
             lastError = null
             feedDetail = "Connected to Binance.US via ${result.host} • $source"
@@ -140,7 +147,13 @@ class MarketEngine(
         }
         val trend = overallTrend(closes, priceEma99)
         val displayedMomentum = momentum.takeLast(60)
-        val earlySignal = EarlyReversalDetector.evaluate(data, momentum, priceEma, target?.close, emaPeriod = emaPeriod)
+        val marketEndTime = target?.closeTime?.plus(1L)?.plus(FIFTEEN_MINUTES_MS)
+        val earlySignal = EarlyReversalDetector.evaluate(
+            data, momentum, priceEma, target?.close,
+            emaPeriod = emaPeriod,
+            marketEndTimeMs = marketEndTime,
+            orderBook = orderBook,
+        )
 
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
