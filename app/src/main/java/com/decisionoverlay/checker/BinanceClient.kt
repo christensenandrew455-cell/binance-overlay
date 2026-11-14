@@ -119,8 +119,9 @@ class BinanceClient(private val http: OkHttpClient) {
             val low = kline.getString(3).toDouble()
             val close = kline.getString(4).toDouble()
             val volume = kline.getString(5).toDouble()
+            val takerBuyVolume = if (kline.length() > 9) kline.getString(9).toDouble() else 0.0
             if (!open.isFinite() || !high.isFinite() || !low.isFinite() ||
-                !close.isFinite() || !volume.isFinite()
+                !close.isFinite() || !volume.isFinite() || !takerBuyVolume.isFinite()
             ) continue
 
             val closeTime = kline.getLong(6)
