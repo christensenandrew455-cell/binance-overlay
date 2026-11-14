@@ -23,6 +23,7 @@ class MarketEngine(
     private val logs = ArrayDeque<String>()
     private var candles = emptyList<Candle>()
     @Volatile private var orderBook: OrderBookSnapshot? = null
+    private val orderBookHistory = ArrayDeque<OrderBookSnapshot>()
 
     @Volatile
     var symbol = "BTCUSDT"
@@ -60,6 +61,8 @@ class MarketEngine(
         }
         symbol = next
         candles = emptyList()
+        orderBookHistory.clear()
+        orderBook = null
         updatedAt = null
         lastError = null
         feedDetail = "Loading $next 1-minute candles"
@@ -96,7 +99,13 @@ class MarketEngine(
             val result = client.fetchKlines(symbol, "1m", 150)
             candles = result.candles.sortedBy { it.openTime }.takeLast(150)
             try {
-                orderBook = client.fetchOrderBook(symbol, 100)
+                val latestBook = client.fetchOrderBook(symbol, 100)
+                orderBook = latestBook
+                synchronized(orderBookHistory) {
+                    orderBookHistory.addLast(latestBook)
+                    // 24 samples at the five-second polling interval = roughly two minutes.
+                    while (orderBookHistory.size > 24) orderBookHistory.removeFirst()
+                }
             } catch (bookError: Exception) {
                 orderBook = null
                 log("ORDER BOOK UNAVAILABLE: " + (bookError.message ?: bookError.javaClass.simpleName))
@@ -153,6 +162,7 @@ class MarketEngine(
             emaPeriod = emaPeriod,
             marketEndTimeMs = marketEndTime,
             orderBook = orderBook,
+            orderBookHistory = synchronized(orderBookHistory) { orderBookHistory.toList() },
         )
 
         val metrics = MetricSnapshot(
