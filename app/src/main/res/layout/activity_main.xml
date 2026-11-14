@@ -105,21 +105,53 @@
             android:textColor="#F5B95F"
             android:textSize="13sp"
             android:textStyle="bold"/>
-        <EditText
-            android:id="@+id/symbolInput"
+        <TextView
             android:layout_width="match_parent"
-            android:layout_height="50dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
+            android:text="CRYPTO MARKET"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+        <Spinner
+            android:id="@+id/cryptoSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="7dp"
             android:background="#252F42"
-            android:hint="BTCUSDT"
-            android:importantForAutofill="no"
-            android:inputType="textCapCharacters"
-            android:paddingStart="13dp"
-            android:paddingEnd="13dp"
-            android:singleLine="true"
-            android:textColor="@color/text"
-            android:textColorHint="@color/muted"
-            android:textSize="15sp"/>
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:spinnerMode="dropdown"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="17dp"
+            android:text="SHORT-TERM PRICE EMA"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/emaValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="PRICE EMA: 3"
+            android:textColor="#55D6BE"
+            android:textSize="16sp"
+            android:textStyle="bold"/>
+        <SeekBar
+            android:id="@+id/emaSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:max="9"
+            android:progress="2"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="EMA 1 = fastest response     •     EMA 10 = smoother"
+            android:textColor="@color/muted"
+            android:textSize="11sp"/>
         <Button
             android:id="@+id/startCheckButton"
             android:layout_width="match_parent"
