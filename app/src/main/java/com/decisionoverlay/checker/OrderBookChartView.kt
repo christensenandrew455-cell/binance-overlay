@@ -55,7 +55,7 @@ class OrderBookChartView @JvmOverloads constructor(
         val top = 27f * density
         val bottom = height - 12f * density
         canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 11f * density, 11f * density, card)
-        canvas.drawText("5-SECOND AVERAGE • NEAR-PRICE LIQUIDITY", left, 17f * density, titlePaint)
+        canvas.drawText("SMOOTHED • NEAR-PRICE LIQUIDITY", left, 17f * density, titlePaint)
         if (right <= left || bottom <= top || bids.size < 2 || asks.size < 2) {
             canvas.drawText("Collecting live order-book samples…", left, (top + bottom) / 2f, titlePaint)
             return
