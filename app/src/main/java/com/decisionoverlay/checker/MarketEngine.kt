@@ -4,6 +4,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
+import okhttp3.WebSocket
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,6 +25,11 @@ class MarketEngine(
     private var candles = emptyList<Candle>()
     @Volatile private var orderBook: OrderBookSnapshot? = null
     private val orderBookHistory = ArrayDeque<OrderBookSnapshot>()
+    private val rawOrderBookSamples = ArrayDeque<OrderBookSnapshot>()
+    @Volatile private var orderBookSocket: WebSocket? = null
+    @Volatile private var lastOrderBookStreamAtMs = 0L
+    private var lastBookWindowAtMs = 0L
+    private var orderBookReconnectJob: Job? = null
 
     @Volatile
     var symbol = "BTCUSDT"
@@ -45,6 +51,7 @@ class MarketEngine(
         }
         symbol = normalize(raw) ?: "BTCUSDT"
         log("Started Binance.US 1-minute monitor for $symbol")
+        connectOrderBookStream()
         fetchJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 mutex.withLock { fetchAndPublish("AUTO") }
@@ -61,12 +68,16 @@ class MarketEngine(
         }
         symbol = next
         candles = emptyList()
-        orderBookHistory.clear()
+        synchronized(orderBookHistory) { orderBookHistory.clear() }
+        synchronized(rawOrderBookSamples) { rawOrderBookSamples.clear() }
         orderBook = null
+        lastOrderBookStreamAtMs = 0L
+        lastBookWindowAtMs = 0L
         updatedAt = null
         lastError = null
         feedDetail = "Loading $next 1-minute candles"
         log("Symbol changed to $next")
+        connectOrderBookStream()
         refreshNow()
     }
 
@@ -88,9 +99,84 @@ class MarketEngine(
     fun stop() {
         fetchJob?.cancel()
         fetchJob = null
+        orderBookReconnectJob?.cancel()
+        orderBookReconnectJob = null
+        orderBookSocket?.cancel()
+        orderBookSocket = null
         started.set(false)
         http.dispatcher.executorService.shutdown()
         http.connectionPool.evictAll()
+    }
+
+    /**
+     * Binance.US sends a fresh top-10 depth snapshot about every 100 ms.
+     * We retain those fast updates but only publish a rolling five-second average.
+     */
+    private fun connectOrderBookStream() {
+        if (!started.get()) return
+        val streamSymbol = symbol
+        orderBookSocket?.cancel()
+        orderBookSocket = client.openOrderBookStream(
+            streamSymbol,
+            onSnapshot = { sample ->
+                if (!started.get() || symbol != streamSymbol) return@openOrderBookStream
+                lastOrderBookStreamAtMs = sample.capturedAtMs
+                synchronized(rawOrderBookSamples) {
+                    rawOrderBookSamples.addLast(sample)
+                    val cutoff = sample.capturedAtMs - ORDER_BOOK_WINDOW_MS
+                    while (rawOrderBookSamples.isNotEmpty() &&
+                        rawOrderBookSamples.first().capturedAtMs < cutoff
+                    ) rawOrderBookSamples.removeFirst()
+
+                    if (lastBookWindowAtMs == 0L ||
+                        sample.capturedAtMs - lastBookWindowAtMs >= ORDER_BOOK_WINDOW_MS
+                    ) {
+                        val averaged = averageOrderBook(rawOrderBookSamples.toList())
+                        if (averaged != null) {
+                            orderBook = averaged
+                            synchronized(orderBookHistory) {
+                                orderBookHistory.addLast(averaged)
+                                while (orderBookHistory.size > 24) orderBookHistory.removeFirst()
+                            }
+                            lastBookWindowAtMs = sample.capturedAtMs
+                        }
+                    }
+                }
+            },
+            onDisconnected = {
+                if (started.get() && symbol == streamSymbol) {
+                    log("Order book stream disconnected; reconnecting")
+                    orderBookSocket = null
+                    orderBookReconnectJob?.cancel()
+                    orderBookReconnectJob = scope.launch(Dispatchers.IO) {
+                        delay(3_000L)
+                        if (started.get() && symbol == streamSymbol) connectOrderBookStream()
+                    }
+                }
+            },
+        )
+        log("Connected to live $streamSymbol top-10 order book stream (100 ms updates)")
+    }
+
+    private fun averageOrderBook(samples: List<OrderBookSnapshot>): OrderBookSnapshot? {
+        if (samples.isEmpty()) return null
+        val count = samples.size.toDouble()
+        val bidNear = samples.sumOf { it.nearBidNotional } / count
+        val askNear = samples.sumOf { it.nearAskNotional } / count
+        val totalNear = bidNear + askNear
+        return OrderBookSnapshot(
+            bidVolume = samples.sumOf { it.bidVolume } / count,
+            askVolume = samples.sumOf { it.askVolume } / count,
+            bestBid = samples.sumOf { it.bestBid } / count,
+            bestAsk = samples.sumOf { it.bestAsk } / count,
+            imbalance = if (totalNear > 0.0) (bidNear - askNear) / totalNear else 0.0,
+            spread = samples.sumOf { it.spread } / count,
+            capturedAtMs = samples.last().capturedAtMs,
+            bidNotional = samples.sumOf { it.bidNotional } / count,
+            askNotional = samples.sumOf { it.askNotional } / count,
+            nearBidNotional = bidNear,
+            nearAskNotional = askNear,
+        )
     }
 
     private fun fetchAndPublish(source: String) {
@@ -98,21 +184,26 @@ class MarketEngine(
             // Warm up EMA 99 with 150 candles, but only graph the newest 60.
             val result = client.fetchKlines(symbol, "1m", 150)
             candles = result.candles.sortedBy { it.openTime }.takeLast(150)
-            try {
-                val latestBook = client.fetchOrderBook(symbol, 100)
-                orderBook = latestBook
-                synchronized(orderBookHistory) {
-                    orderBookHistory.addLast(latestBook)
-                    // 24 samples at the five-second polling interval = roughly two minutes.
-                    while (orderBookHistory.size > 24) orderBookHistory.removeFirst()
+
+            // REST is only a fallback while the live depth stream is starting or disconnected.
+            // It is deliberately not mixed into the five-second stream averages.
+            if (lastOrderBookStreamAtMs == 0L ||
+                System.currentTimeMillis() - lastOrderBookStreamAtMs > ORDER_BOOK_STALE_MS
+            ) {
+                try {
+                    orderBook = client.fetchOrderBook(symbol, 100)
+                    log("Order book using REST fallback snapshot")
+                } catch (bookError: Exception) {
+                    log("ORDER BOOK UNAVAILABLE: " +
+                        (bookError.message ?: bookError.javaClass.simpleName))
                 }
-            } catch (bookError: Exception) {
-                orderBook = null
-                log("ORDER BOOK UNAVAILABLE: " + (bookError.message ?: bookError.javaClass.simpleName))
             }
             updatedAt = System.currentTimeMillis()
             lastError = null
-            feedDetail = "Connected to Binance.US via ${result.host} • $source"
+            feedDetail = "Connected to Binance.US • $source • live order book: " +
+                if (lastOrderBookStreamAtMs > 0L &&
+                    System.currentTimeMillis() - lastOrderBookStreamAtMs <= ORDER_BOOK_STALE_MS
+                ) "100 ms stream / 5 s average" else "REST fallback"
             log("Fetched ${candles.size} one-minute candles; displaying latest 60")
             result.notes.forEach { log("Fallback: $it") }
         } catch (error: Exception) {
@@ -128,7 +219,6 @@ class MarketEngine(
         val closes = data.map { it.close }
         val volumes = data.map { it.volume }
         // Binance-style MACD histogram: 2 x (DIF - signal), with DIF = EMA12 - EMA26.
-        // Display only histogram bars, not either signal line.
         val macdFast = Indicators.emaSeriesFromFirst(closes, 12)
         val macdSlow = Indicators.emaSeriesFromFirst(closes, 26)
         val macdDif = macdFast.zip(macdSlow) { fast, slow -> fast - slow }
@@ -149,8 +239,6 @@ class MarketEngine(
             }
         }
         val latest = data.lastOrNull()
-        // A checkpoint is the close of the 1-minute candle ending exactly at :00/:15/:30/:45.
-        // If launched mid-interval, this deliberately keeps the previous checkpoint target.
         val target = data.lastOrNull { candle ->
             candle.closed && (candle.closeTime + 1L) % FIFTEEN_MINUTES_MS == 0L
         }
@@ -242,6 +330,8 @@ class MarketEngine(
 
     companion object {
         private const val FIFTEEN_MINUTES_MS = 15L * 60L * 1000L
+        private const val ORDER_BOOK_WINDOW_MS = 5_000L
+        private const val ORDER_BOOK_STALE_MS = 8_000L
         private val SYMBOL = Regex("^[A-Z0-9]{5,20}$")
     }
 }
