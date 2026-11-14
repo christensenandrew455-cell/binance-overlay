@@ -97,8 +97,10 @@ object EarlyReversalDetector {
         }
         val direction = if (absorptionDirection != 0) absorptionDirection else currentLeg.direction
         val sameDirection = legs.filter { it.direction == direction }.takeLast(3)
-        val historicalLegSize = if (sameDirection.isEmpty()) currentLeg.move
-            else sameDirection.map { it.move }.average()
+        val reversalMove = abs(last.close - previous.close).coerceAtLeast(lastRange * 0.10)
+        val historicalLegSize = if (sameDirection.isEmpty()) {
+            if (absorptionDirection != 0) reversalMove else currentLeg.move
+        } else sameDirection.map { it.move }.average()
         val historicalLegSpeed = if (sameDirection.isEmpty()) 0.0
             else sameDirection.map { it.move / it.minutes.coerceAtLeast(1.0) }.average()
         val priorLegs = legs.dropLast(1).filter { it.direction != direction }.takeLast(3)
@@ -126,8 +128,9 @@ object EarlyReversalDetector {
         // the expected next leg without allowing either indicator to invent direction.
         val continuationFactor = (1.0 - min(0.35, pullbackRatio * 0.25)).coerceIn(0.65, 1.0)
         val projectedMove = historicalLegSize * continuationFactor * volumeFactor * momentumFactor
-        val projectedSpeed = max(currentLeg.move / currentLeg.minutes.coerceAtLeast(1.0),
-            historicalLegSpeed) * volumeFactor * momentumFactor
+        val activeLegSpeed = if (absorptionDirection != 0 && currentLeg.direction != direction)
+            reversalMove else currentLeg.move / currentLeg.minutes.coerceAtLeast(1.0)
+        val projectedSpeed = max(activeLegSpeed, historicalLegSpeed) * volumeFactor * momentumFactor
         val distanceToTarget = abs(distance)
         val activeBookImbalance = orderBook?.imbalance ?: 0.0
         val bookFactor = (1.0 + activeBookImbalance * 0.20).coerceIn(0.80, 1.20)
