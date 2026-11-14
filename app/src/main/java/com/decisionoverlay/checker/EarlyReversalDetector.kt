@@ -99,6 +99,7 @@ object EarlyReversalDetector {
         val projectedSpeedWithBook = projectedSpeed * bookFactor
         val projectedExpiryPrice = price + direction * projectedSpeedWithBook * minutesRemaining
         val forecastSide = when { projectedExpiryPrice > targetPrice -> "ABOVE TARGET"; projectedExpiryPrice < targetPrice -> "BELOW TARGET"; else -> "AT TARGET" }
+        val minutesToTarget = if (projectedSpeedWithBook > 0.0) distanceToTarget / projectedSpeedWithBook else Double.POSITIVE_INFINITY
         val likelyToFinishUp = projectedExpiryPrice > targetPrice
         val likelyToFinishDown = projectedExpiryPrice < targetPrice
         val likelyToReach = (direction > 0 && likelyToFinishUp) || (direction < 0 && likelyToFinishDown)
