@@ -39,6 +39,9 @@ class OverlayService : Service() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
+        val emaPeriod = intent?.getIntExtra(EXTRA_EMA_PERIOD, prefs.getInt(KEY_EMA_PERIOD, 3))
+            ?: prefs.getInt(KEY_EMA_PERIOD, 3)
+        engine.updateEmaPeriod(emaPeriod)
         if (!engineStarted) {
             engineStarted = true
             engine.start(symbol)
@@ -88,7 +91,7 @@ class OverlayService : Service() {
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title)
             .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. Early trend warning from changing MACD histogram momentum, EMA 7 slope, candle direction and volume. This is a developing signal, not a guarantee."))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. Early trend warning using actual price velocity, EMA ${m.emaPeriod}, and MACD histogram context. This is a developing signal, not a guarantee."))
             .setContentIntent(openAppPendingIntent())
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -120,7 +123,7 @@ class OverlayService : Service() {
         )
         return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("BTC early trend monitor")
+            .setContentTitle("Crypto early trend monitor")
             .setContentText(text)
             .setContentIntent(openAppPendingIntent())
             .setOngoing(true)
@@ -147,9 +150,11 @@ class OverlayService : Service() {
 
     companion object {
         const val EXTRA_SYMBOL = "symbol"
+        const val EXTRA_EMA_PERIOD = "ema_period"
         const val ACTION_STOP = "com.decisionoverlay.checker.STOP"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
+        const val KEY_EMA_PERIOD = "ema_period"
         const val KEY_MONITORING_ACTIVE = "monitoring_active"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         const val KEY_TARGET = "target_price"
