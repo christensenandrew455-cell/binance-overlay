@@ -27,6 +27,10 @@ class MarketEngine(
     var symbol = "BTCUSDT"
         private set
 
+    @Volatile
+    var emaPeriod: Int = 3
+        private set
+
     private var lastError: String? = null
     private var feedDetail = "Waiting for Binance.US 1-minute candles"
     private var updatedAt: Long? = null
@@ -59,6 +63,14 @@ class MarketEngine(
         lastError = null
         feedDetail = "Loading $next 1-minute candles"
         log("Symbol changed to $next")
+        refreshNow()
+    }
+
+    fun updateEmaPeriod(period: Int) {
+        val next = period.coerceIn(1, 10)
+        if (next == emaPeriod) return
+        emaPeriod = next
+        log("Price EMA changed to EMA $next")
         refreshNow()
     }
 
@@ -106,7 +118,7 @@ class MarketEngine(
         val macdDif = macdFast.zip(macdSlow) { fast, slow -> fast - slow }
         val macdSignal = Indicators.emaSeriesFromFirst(macdDif, 9)
         val momentum = macdDif.zip(macdSignal) { dif, signal -> 2.0 * (dif - signal) }
-        val priceEma7 = Indicators.emaSeriesFromFirst(closes, 7)
+        val priceEma = Indicators.emaSeriesFromFirst(closes, emaPeriod)
         val priceEma99 = Indicators.emaSeriesFromFirst(closes, 99)
         val volumeEma2 = Indicators.emaSeriesFromFirst(volumes, 2)
         val volumeBaseline = rollingAverage(volumes, 14)
@@ -128,11 +140,12 @@ class MarketEngine(
         }
         val trend = overallTrend(closes, priceEma99)
         val displayedMomentum = momentum.takeLast(60)
-        val earlySignal = EarlyReversalDetector.evaluate(data, momentum, priceEma7, target?.close)
+        val earlySignal = EarlyReversalDetector.evaluate(data, momentum, priceEma, target?.close)
 
         val metrics = MetricSnapshot(
             currentPrice = latest?.close,
-            ema7Price = priceEma7.lastOrNull(),
+            emaPrice = priceEma.lastOrNull(),
+            emaPeriod = emaPeriod,
             ema99Price = priceEma99.lastOrNull(),
             trend = trend,
             currentVolume = latest?.volume,
@@ -140,7 +153,7 @@ class MarketEngine(
             currentMomentum = momentum.lastOrNull(),
             targetPrice = target?.close,
             targetTime = target?.closeTime?.plus(1L),
-            priceAnomaly = isOutlier(priceEma7),
+            priceAnomaly = isOutlier(priceEma),
             volumeAnomaly = isOutlier(volumeEma2),
             momentumAnomaly = isOutlier(displayedMomentum),
             candleCount = data.size,
@@ -157,7 +170,7 @@ class MarketEngine(
                 symbol = symbol,
                 metrics = metrics,
                 logText = logs.joinToString("\n"),
-                priceEmaSeries = priceEma7.takeLast(60),
+                priceEmaSeries = priceEma.takeLast(60),
                 priceEma99Series = priceEma99.takeLast(60),
                 volumeBaselineSeries = volumeBaseline.takeLast(60),
                 volumeSpikeSeries = volumeSpikes.takeLast(60),
