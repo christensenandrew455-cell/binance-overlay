@@ -38,6 +38,18 @@
             android:textColor="@color/muted"
             android:textSize="14sp"/>
         <TextView
+            android:id="@+id/decisionText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:padding="16dp"
+            android:background="#202B3E"
+            android:text="CURRENT DECISION: WAIT\\nWaiting for market data…"
+            android:textColor="@color/text"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:lineSpacingExtra="4dp"/>
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
