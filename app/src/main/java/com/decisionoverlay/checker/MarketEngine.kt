@@ -122,7 +122,7 @@ class MarketEngine(
 
     /**
      * Binance.US sends a fresh top-10 depth snapshot about every 100 ms.
-     * We retain those fast updates but only publish a rolling five-second average.
+     * We retain those fast updates and publish a configurable 15/30/45/60-second average every five seconds.
      */
     private fun connectOrderBookStream() {
         if (!started.get()) return
@@ -188,6 +188,7 @@ class MarketEngine(
             askNotional = samples.sumOf { it.askNotional } / count,
             nearBidNotional = bidNear,
             nearAskNotional = askNear,
+            smoothingWindowSeconds = orderBookWindowSeconds,
         )
     }
 
