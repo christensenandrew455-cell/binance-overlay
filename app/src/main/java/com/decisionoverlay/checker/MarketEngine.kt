@@ -136,7 +136,7 @@ class MarketEngine(
                             orderBook = averaged
                             synchronized(orderBookHistory) {
                                 orderBookHistory.addLast(averaged)
-                                while (orderBookHistory.size > 24) orderBookHistory.removeFirst()
+                                while (orderBookHistory.size > 60) orderBookHistory.removeFirst()
                             }
                             lastBookWindowAtMs = sample.capturedAtMs
                         }
@@ -288,6 +288,8 @@ class MarketEngine(
                 volumeSeries = volumes.takeLast(60),
                 volumeUpSeries = data.takeLast(60).map { it.close >= it.open },
                 momentumSeries = displayedMomentum,
+                orderBookBidSeries = synchronized(orderBookHistory) { orderBookHistory.map { it.nearBidNotional } }.takeLast(60),
+                orderBookAskSeries = synchronized(orderBookHistory) { orderBookHistory.map { it.nearAskNotional } }.takeLast(60),
             )
         )
     }
