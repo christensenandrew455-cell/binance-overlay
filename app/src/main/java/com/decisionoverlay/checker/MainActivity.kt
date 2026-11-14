@@ -3,6 +3,7 @@ package com.decisionoverlay.checker
 import android.Manifest
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.startCheckButton).setOnClickListener { startChecks() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
             stopService(Intent(this, OverlayService::class.java))
+            prefs.edit().putBoolean(OverlayService.KEY_MONITORING_ACTIVE, false).apply()
             if (checksStarted) {
                 engine.stop()
                 checksStarted = false
@@ -50,6 +52,33 @@ class MainActivity : AppCompatActivity() {
             if (checksStarted) engine.refreshNow() else setStatus("Press START MONITORING first.")
         }
         engine = MarketEngine(screenScope, { snapshot -> runOnUiThread { render(snapshot) } })
+        syncWithBackgroundMonitor()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncWithBackgroundMonitor()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        syncWithBackgroundMonitor()
+    }
+
+    private fun syncWithBackgroundMonitor() {
+        val active = prefs.getBoolean(OverlayService.KEY_MONITORING_ACTIVE, false)
+        if (!active) return
+        val symbol = prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
+        findViewById<EditText>(R.id.symbolInput).setText(symbol)
+        if (!checksStarted) {
+            checksStarted = true
+            engine.start(symbol)
+        } else if (engine.symbol != symbol) {
+            engine.updateSymbol(symbol)
+        }
+        findViewById<Button>(R.id.startCheckButton).text = "MONITORING • RUNNING"
+        setStatus("Background monitoring is already active for $symbol.")
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig) }
@@ -82,6 +111,18 @@ class MainActivity : AppCompatActivity() {
         val metrics = snapshot.metrics
         findViewById<TextView>(R.id.symbolHeading).text =
             snapshot.symbol + " • " + fmtPrice(metrics.currentPrice)
+        val decisionView = findViewById<TextView>(R.id.decisionText)
+        val decision = when (metrics.earlySignal) {
+            "EARLY UP TREND" -> "UP"
+            "EARLY DOWN TREND" -> "DOWN"
+            else -> "WAIT"
+        }
+        decisionView.text = "CURRENT DECISION: $decision\\n${metrics.earlySignal}"
+        decisionView.setTextColor(when (decision) {
+            "UP" -> Color.rgb(65, 210, 145)
+            "DOWN" -> Color.rgb(255, 95, 95)
+            else -> Color.rgb(190, 198, 212)
+        })
         findViewById<IndicatorLineChartView>(R.id.priceChart).setPriceSeries(
             "PRICE • EMA 7 / EMA 99 / 15M TARGET",
             snapshot.priceEmaSeries,
