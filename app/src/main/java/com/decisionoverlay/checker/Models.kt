@@ -11,6 +11,8 @@ data class Candle(
     val volume: Double,
     val closeTime: Long,
     val closed: Boolean,
+    /** Binance taker-buy base-asset volume for this candle. */
+    val takerBuyVolume: Double = 0.0,
 )
 
 data class MetricSnapshot(
