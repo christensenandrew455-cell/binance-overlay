@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private var checksStarted = false
     private var pendingSymbol: String? = null
     private var selectedEmaPeriod = 3
+    private var selectedOrderBookWindowSeconds = 15
 
     private data class CryptoAsset(val name: String, val symbol: String) {
         val label: String get() = "$name ($symbol)"
@@ -64,6 +65,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         selectedEmaPeriod = prefs.getInt(OverlayService.KEY_EMA_PERIOD, 3).coerceIn(1, 10)
+        selectedOrderBookWindowSeconds = prefs.getInt(OverlayService.KEY_ORDER_BOOK_WINDOW_SECONDS, 15).coerceIn(15, 60)
+            .let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
         val cryptoSpinner = findViewById<Spinner>(R.id.cryptoSpinner)
         cryptoSpinner.adapter = ArrayAdapter(
             this,
@@ -97,6 +100,29 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        val orderBookSlider = findViewById<SeekBar>(R.id.orderBookWindowSlider)
+        val orderBookOptions = listOf(15, 30, 45, 60)
+        orderBookSlider.max = 3
+        orderBookSlider.progress = orderBookOptions.indexOf(selectedOrderBookWindowSeconds).coerceAtLeast(0)
+        updateOrderBookWindowLabel()
+        orderBookSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                selectedOrderBookWindowSeconds = orderBookOptions[progress.coerceIn(0, 3)]
+                updateOrderBookWindowLabel()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                prefs.edit().putInt(OverlayService.KEY_ORDER_BOOK_WINDOW_SECONDS, selectedOrderBookWindowSeconds).apply()
+                if (checksStarted) engine.updateOrderBookWindow(selectedOrderBookWindowSeconds)
+                if (prefs.getBoolean(OverlayService.KEY_MONITORING_ACTIVE, false)) {
+                    val serviceIntent = Intent(this@MainActivity, OverlayService::class.java)
+                        .putExtra(OverlayService.EXTRA_SYMBOL, selectedSymbol())
+                        .putExtra(OverlayService.EXTRA_EMA_PERIOD, selectedEmaPeriod)
+                    ContextCompat.startForegroundService(this@MainActivity, serviceIntent)
+                }
+            }
+        })
+
         findViewById<Button>(R.id.startCheckButton).setOnClickListener { startChecks() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
             stopService(Intent(this, OverlayService::class.java))
@@ -113,6 +139,7 @@ class MainActivity : AppCompatActivity() {
         }
         engine = MarketEngine(screenScope, { snapshot -> runOnUiThread { render(snapshot) } })
         engine.updateEmaPeriod(selectedEmaPeriod)
+        engine.updateOrderBookWindow(selectedOrderBookWindowSeconds)
         syncWithBackgroundMonitor()
     }
 
@@ -132,16 +159,23 @@ class MainActivity : AppCompatActivity() {
         if (!active) return
         val symbol = prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
         selectedEmaPeriod = prefs.getInt(OverlayService.KEY_EMA_PERIOD, 3).coerceIn(1, 10)
+        selectedOrderBookWindowSeconds = prefs.getInt(OverlayService.KEY_ORDER_BOOK_WINDOW_SECONDS, 15).coerceIn(15, 60)
+            .let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
+        findViewById<SeekBar>(R.id.orderBookWindowSlider).progress =
+            listOf(15, 30, 45, 60).indexOf(selectedOrderBookWindowSeconds).coerceAtLeast(0)
+        updateOrderBookWindowLabel()
         findViewById<SeekBar>(R.id.emaSlider).progress = selectedEmaPeriod - 1
         updateEmaLabel()
         setSelectedSymbol(symbol)
         if (!checksStarted) {
             checksStarted = true
             engine.updateEmaPeriod(selectedEmaPeriod)
+            engine.updateOrderBookWindow(selectedOrderBookWindowSeconds)
             engine.start(symbol)
         } else {
             if (engine.symbol != symbol) engine.updateSymbol(symbol)
             engine.updateEmaPeriod(selectedEmaPeriod)
+            engine.updateOrderBookWindow(selectedOrderBookWindowSeconds)
         }
         findViewById<Button>(R.id.startCheckButton).text = "MONITORING • RUNNING"
         setStatus("Background monitoring is already active for $symbol using EMA $selectedEmaPeriod.")
@@ -155,10 +189,12 @@ class MainActivity : AppCompatActivity() {
         prefs.edit()
             .putString(OverlayService.KEY_SYMBOL, symbol)
             .putInt(OverlayService.KEY_EMA_PERIOD, selectedEmaPeriod)
+            .putInt(OverlayService.KEY_ORDER_BOOK_WINDOW_SECONDS, selectedOrderBookWindowSeconds)
             .apply()
         if (!checksStarted) {
             checksStarted = true
             engine.updateEmaPeriod(selectedEmaPeriod)
+            engine.updateOrderBookWindow(selectedOrderBookWindowSeconds)
             engine.start(symbol)
             findViewById<Button>(R.id.startCheckButton).text = "MONITORING • RUNNING"
         } else {
@@ -177,6 +213,11 @@ class MainActivity : AppCompatActivity() {
     private fun setSelectedSymbol(symbol: String) {
         val index = assets.indexOfFirst { it.symbol == symbol }.let { if (it >= 0) it else 0 }
         findViewById<Spinner>(R.id.cryptoSpinner).setSelection(index)
+    }
+
+    private fun updateOrderBookWindowLabel() {
+        val label = if (selectedOrderBookWindowSeconds == 60) "1 MINUTE" else "$selectedOrderBookWindowSeconds SECONDS"
+        findViewById<TextView>(R.id.orderBookWindowValue).text = "ORDER BOOK: $label"
     }
 
     private fun updateEmaLabel() {
@@ -222,7 +263,7 @@ class MainActivity : AppCompatActivity() {
         val averageBids = snapshot.orderBookBidSeries.lastOrNull()
         val averageAsks = snapshot.orderBookAskSeries.lastOrNull()
         findViewById<TextView>(R.id.orderBookValue).text =
-            "5-second weighted average • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
+            " ${selectedOrderBookWindowSeconds}-second smoothed average • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
         findViewById<TextView>(R.id.priceValue).text =
             "EMA ${metrics.emaPeriod}: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
         findViewById<TextView>(R.id.volumeValue).text =
