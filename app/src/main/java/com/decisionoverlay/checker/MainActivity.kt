@@ -222,7 +222,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.momentumValue).text =
             "MACD histogram (12, 26, 9). Bars above zero are positive; bars below zero are negative. Brighter bars show momentum strengthening; muted bars show it easing."
         findViewById<TextView>(R.id.reasonText).text =
-            "Trend alerts use actual BTC/crypto price and estimated price movement toward the 15-minute target. EMA ${metrics.emaPeriod} is the adjustable short-term reference; EMA 99 remains the longer-term reference. Signals are early warnings, not guarantees."
+            "Trend alerts use live price, time remaining, trend-leg size, taker buying/selling volume, and changing near-book liquidity. No final-five-minute wait gate. EMA ${metrics.emaPeriod} is supporting context; EMA 99 remains the longer-term reference. Signals are estimates, not guarantees.\n\n${metrics.signalDetail}"
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
