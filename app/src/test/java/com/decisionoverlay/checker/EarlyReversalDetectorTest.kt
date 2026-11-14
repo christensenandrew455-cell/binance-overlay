@@ -87,6 +87,30 @@ class EarlyReversalDetectorTest {
     }
 
     @Test
+    fun neverShowsUpTrendWhenPriceIsAboveTarget() {
+        val data = candles(up = true)
+        val result = EarlyReversalDetector.evaluate(
+            data, List(8) { it.toDouble() }, List(8) { 100.0 },
+            102.0, nowMs = 10L * 60L * 1000L,
+        )
+
+        assertEquals("ABOVE TARGET", result.targetPosition)
+        org.junit.Assert.assertFalse(result.label.contains("UP TREND"))
+    }
+
+    @Test
+    fun neverShowsDownTrendWhenPriceIsBelowTarget() {
+        val data = candles(up = false)
+        val result = EarlyReversalDetector.evaluate(
+            data, List(8) { -it.toDouble() }, List(8) { 100.0 },
+            90.0, nowMs = 10L * 60L * 1000L,
+        )
+
+        assertEquals("BELOW TARGET", result.targetPosition)
+        org.junit.Assert.assertFalse(result.label.contains("DOWN TREND"))
+    }
+
+    @Test
     fun waitsWhenRecentTrendCannotReachTargetBeforeMarketCloses() {
         val data = candles(up = false)
         val histogram = List(8) { it.toDouble() }
@@ -94,7 +118,7 @@ class EarlyReversalDetectorTest {
 
         val result = EarlyReversalDetector.evaluate(data, histogram, ema, 80.0, nowMs = 10L * 60L * 1000L)
 
-        assertEquals("EARLY UP BIAS", result.label)
+        assertEquals("WAIT • DOWN SETUP NOT CONFIRMED", result.label)
         assertEquals("ABOVE TARGET", result.targetPosition)
     }
 }
