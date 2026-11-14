@@ -29,6 +29,7 @@ class MarketEngine(
     @Volatile private var orderBookSocket: WebSocket? = null
     @Volatile private var lastOrderBookStreamAtMs = 0L
     private var lastBookWindowAtMs = 0L
+    @Volatile private var orderBookWindowSeconds = 15
     private var orderBookReconnectJob: Job? = null
 
     @Volatile
@@ -81,6 +82,17 @@ class MarketEngine(
         refreshNow()
     }
 
+    fun updateOrderBookWindow(seconds: Int) {
+        val next = seconds.coerceIn(15, 60).let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
+        if (next == orderBookWindowSeconds) return
+        orderBookWindowSeconds = next
+        synchronized(rawOrderBookSamples) { rawOrderBookSamples.clear() }
+        synchronized(orderBookHistory) { orderBookHistory.clear() }
+        lastBookWindowAtMs = 0L
+        log("Order book smoothing window changed to ${next}s")
+        publish()
+    }
+
     fun updateEmaPeriod(period: Int) {
         val next = period.coerceIn(1, 10)
         if (next == emaPeriod) return
@@ -123,13 +135,13 @@ class MarketEngine(
                 lastOrderBookStreamAtMs = sample.capturedAtMs
                 synchronized(rawOrderBookSamples) {
                     rawOrderBookSamples.addLast(sample)
-                    val cutoff = sample.capturedAtMs - ORDER_BOOK_WINDOW_MS
+                    val cutoff = sample.capturedAtMs - orderBookWindowSeconds * 1_000L
                     while (rawOrderBookSamples.isNotEmpty() &&
                         rawOrderBookSamples.first().capturedAtMs < cutoff
                     ) rawOrderBookSamples.removeFirst()
 
                     if (lastBookWindowAtMs == 0L ||
-                        sample.capturedAtMs - lastBookWindowAtMs >= ORDER_BOOK_WINDOW_MS
+                        sample.capturedAtMs - lastBookWindowAtMs >= ORDER_BOOK_SAMPLE_INTERVAL_MS
                     ) {
                         val averaged = averageOrderBook(rawOrderBookSamples.toList())
                         if (averaged != null) {
@@ -332,7 +344,7 @@ class MarketEngine(
 
     companion object {
         private const val FIFTEEN_MINUTES_MS = 15L * 60L * 1000L
-        private const val ORDER_BOOK_WINDOW_MS = 5_000L
+        private const val ORDER_BOOK_SAMPLE_INTERVAL_MS = 5_000L
         private const val ORDER_BOOK_STALE_MS = 8_000L
         private val SYMBOL = Regex("^[A-Z0-9]{5,20}$")
     }
