@@ -69,21 +69,40 @@ class BinanceClient(private val http: OkHttpClient) {
                 val json = org.json.JSONObject(body)
                 val bids = json.getJSONArray("bids")
                 val asks = json.getJSONArray("asks")
-                fun total(levels: JSONArray): Double {
-                    var sum = 0.0
-                    for (i in 0 until levels.length()) sum += levels.getJSONArray(i).getString(1).toDouble()
-                    return sum
+                fun depth(levels: JSONArray, count: Int): Pair<Double, Double> {
+                    var quantity = 0.0
+                    var notional = 0.0
+                    for (i in 0 until minOf(count, levels.length())) {
+                        val level = levels.getJSONArray(i)
+                        val price = level.getString(0).toDouble()
+                        val size = level.getString(1).toDouble()
+                        quantity += size
+                        notional += price * size
+                    }
+                    return quantity to notional
                 }
                 if (bids.length() == 0 || asks.length() == 0) throw IllegalStateException("Empty order book")
-                val bidVolume = total(bids)
-                val askVolume = total(asks)
-                val total = bidVolume + askVolume
+                // Focus on the nearest 10 levels. Distant depth is less relevant to an
+                // immediate 1-15 minute move and can overwhelm the actionable top of book.
+                val bidDepth = depth(bids, 10)
+                val askDepth = depth(asks, 10)
+                val nearBidDepth = depth(bids, 5)
+                val nearAskDepth = depth(asks, 5)
+                val nearTotal = nearBidDepth.second + nearAskDepth.second
                 val bestBid = bids.getJSONArray(0).getString(0).toDouble()
                 val bestAsk = asks.getJSONArray(0).getString(0).toDouble()
                 return OrderBookSnapshot(
-                    bidVolume, askVolume, bestBid, bestAsk,
-                    if (total > 0.0) (bidVolume - askVolume) / total else 0.0,
-                    bestAsk - bestBid,
+                    bidVolume = bidDepth.first,
+                    askVolume = askDepth.first,
+                    bestBid = bestBid,
+                    bestAsk = bestAsk,
+                    imbalance = if (nearTotal > 0.0) (nearBidDepth.second - nearAskDepth.second) / nearTotal else 0.0,
+                    spread = bestAsk - bestBid,
+                    capturedAtMs = System.currentTimeMillis(),
+                    bidNotional = bidDepth.second,
+                    askNotional = askDepth.second,
+                    nearBidNotional = nearBidDepth.second,
+                    nearAskNotional = nearAskDepth.second,
                 )
             }
     }
@@ -114,6 +133,7 @@ class BinanceClient(private val http: OkHttpClient) {
                 volume = volume,
                 closeTime = closeTime,
                 closed = closeTime < now,
+                takerBuyVolume = takerBuyVolume,
             )
         }
 
@@ -137,6 +157,11 @@ data class OrderBookSnapshot(
     val bestAsk: Double,
     val imbalance: Double,
     val spread: Double,
+    val capturedAtMs: Long = System.currentTimeMillis(),
+    val bidNotional: Double = 0.0,
+    val askNotional: Double = 0.0,
+    val nearBidNotional: Double = 0.0,
+    val nearAskNotional: Double = 0.0,
 )
 
 data class KlineFetch(
