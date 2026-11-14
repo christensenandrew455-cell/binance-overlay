@@ -13,8 +13,20 @@ object EarlyReversalDetector {
         momentum: List<Double>,
         ema7: List<Double>,
         targetPrice: Double?,
+        nowMs: Long = System.currentTimeMillis(),
     ): EarlySignalResult {
-        // Use the live 1-minute candle so warnings can appear before candle close.
+        // Only evaluate during the final five minutes of each 15-minute market.
+        // Epoch-aligned 15-minute windows match the Binance candle boundaries.
+        val elapsedInMarket = nowMs % FIFTEEN_MINUTES_MS
+        if (elapsedInMarket < FINAL_FIVE_MINUTES_START_MS) {
+            return EarlySignalResult(
+                "WAIT • FINAL 5 MINUTES ONLY",
+                "WAITING",
+                "No directional signals until the market has 5 minutes remaining.",
+            )
+        }
+
+        // Use the live 1-minute candle's actual traded price, not EMA 7, for target position.
         val indexes = candles.indices.toList().takeLast(12)
         if (indexes.size < 6 || momentum.size != candles.size || ema7.size != candles.size) {
             return EarlySignalResult("WAIT • COLLECTING DATA", "TARGET UNKNOWN", "Waiting for at least 6 one-minute candles.")
@@ -88,4 +100,7 @@ object EarlyReversalDetector {
 
         return EarlySignalResult(label, targetPosition, evidence)
     }
+
+    private const val FIFTEEN_MINUTES_MS = 15L * 60L * 1000L
+    private const val FINAL_FIVE_MINUTES_START_MS = 10L * 60L * 1000L
 }
