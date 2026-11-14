@@ -27,6 +27,7 @@ object EarlyReversalDetector {
         emaPeriod: Int = 3,
         marketEndTimeMs: Long? = null,
         orderBook: OrderBookSnapshot? = null,
+        orderBookHistory: List<OrderBookSnapshot> = emptyList(),
         nowMs: Long = System.currentTimeMillis(),
     ): EarlySignalResult {
         if (candles.size < 6 || momentum.size != candles.size || priceEma.size != candles.size) {
@@ -60,11 +61,46 @@ object EarlyReversalDetector {
                 "Waiting for a measurable directional price move.")
         }
 
-        val direction = currentLeg.direction
+        // Detect panic flow being absorbed instead of treating every small counter-move as noise.
+        // Binance kline taker-buy volume lets us estimate aggressive selling/buying; retained
+        // order-book samples show whether nearby liquidity is replenishing or disappearing.
+        val recentFlow = candles.takeLast(3)
+        val flowVolume = recentFlow.sumOf { it.volume }
+        val takerBuy = recentFlow.sumOf { it.takerBuyVolume.coerceIn(0.0, it.volume) }
+        val takerSell = (flowVolume - takerBuy).coerceAtLeast(0.0)
+        val sellShare = if (flowVolume > 0.0) takerSell / flowVolume else 0.5
+        val buyShare = if (flowVolume > 0.0) takerBuy / flowVolume else 0.5
+        val bookSamples = orderBookHistory.takeLast(6)
+        val firstBook = bookSamples.firstOrNull()
+        val lastBook = orderBook ?: bookSamples.lastOrNull()
+        val bidDepthChange = if (firstBook != null && firstBook.nearBidNotional > 0.0 && lastBook != null)
+            lastBook.nearBidNotional / firstBook.nearBidNotional else 1.0
+        val askDepthChange = if (firstBook != null && firstBook.nearAskNotional > 0.0 && lastBook != null)
+            lastBook.nearAskNotional / firstBook.nearAskNotional else 1.0
+        val bookImbalance = lastBook?.imbalance ?: 0.0
+        val last = candles.last()
+        val previous = candles[candles.lastIndex - 1]
+        val lastRange = (last.high - last.low).coerceAtLeast(0.0)
+        val closeInRange = if (lastRange > 0.0) (last.close - last.low) / lastRange else 0.5
+        val sellPressure = sellShare >= 0.56
+        val buyPressure = buyShare >= 0.56
+        val bidsAbsorbing = bidDepthChange >= 0.98 && bookImbalance >= 0.02
+        val asksAbsorbing = askDepthChange >= 0.98 && bookImbalance <= -0.02
+        val sellerExhaustion = sellPressure && bidsAbsorbing &&
+            (last.close >= previous.close || closeInRange >= 0.68 || last.low >= previous.low)
+        val buyerExhaustion = buyPressure && asksAbsorbing &&
+            (last.close <= previous.close || closeInRange <= 0.32 || last.high <= previous.high)
+        val absorptionDirection = when {
+            sellerExhaustion -> 1
+            buyerExhaustion -> -1
+            else -> 0
+        }
+        val direction = if (absorptionDirection != 0) absorptionDirection else currentLeg.direction
         val sameDirection = legs.filter { it.direction == direction }.takeLast(3)
         val historicalLegSize = if (sameDirection.isEmpty()) currentLeg.move
             else sameDirection.map { it.move }.average()
-        val historicalLegSpeed = sameDirection.map { it.move / it.minutes.coerceAtLeast(1.0) }.average()
+        val historicalLegSpeed = if (sameDirection.isEmpty()) 0.0
+            else sameDirection.map { it.move / it.minutes.coerceAtLeast(1.0) }.average()
         val priorLegs = legs.dropLast(1).filter { it.direction != direction }.takeLast(3)
         val pullbackAverage = priorLegs.map { it.move }.averageOrZero()
         val pullbackRatio = if (historicalLegSize > 0.0 && priorLegs.isNotEmpty())
@@ -93,9 +129,9 @@ object EarlyReversalDetector {
         val projectedSpeed = max(currentLeg.move / currentLeg.minutes.coerceAtLeast(1.0),
             historicalLegSpeed) * volumeFactor * momentumFactor
         val distanceToTarget = abs(distance)
-        val bookImbalance = orderBook?.imbalance ?: 0.0
-        val bookFactor = (1.0 + bookImbalance * 0.20).coerceIn(0.80, 1.20)
-        val alignedBook = (direction > 0 && bookImbalance > 0.05) || (direction < 0 && bookImbalance < -0.05)
+        val activeBookImbalance = orderBook?.imbalance ?: 0.0
+        val bookFactor = (1.0 + activeBookImbalance * 0.20).coerceIn(0.80, 1.20)
+        val alignedBook = (direction > 0 && activeBookImbalance > 0.05) || (direction < 0 && activeBookImbalance < -0.05)
         val projectedSpeedWithBook = projectedSpeed * bookFactor
         val projectedExpiryPrice = price + direction * projectedSpeedWithBook * minutesRemaining
         val forecastSide = when { projectedExpiryPrice > targetPrice -> "ABOVE TARGET"; projectedExpiryPrice < targetPrice -> "BELOW TARGET"; else -> "AT TARGET" }
@@ -123,13 +159,17 @@ object EarlyReversalDetector {
                 " (" + String.format(java.util.Locale.US, "%.0f%%", pullbackRatio * 100.0) + " of leg)")
             add("Volume: " + String.format(java.util.Locale.US, "%.2fx", volumeRatio) +
                 " • momentum " + if (momentumAgrees) "supports" else "opposes")
+            add("Aggressive flow: " + String.format(java.util.Locale.US, "%.0f%% sells / %.0f%% buys", sellShare * 100.0, buyShare * 100.0))
+            add("Near-book depth change: bids " + String.format(java.util.Locale.US, "%+.1f%%", (bidDepthChange - 1.0) * 100.0) +
+                " • asks " + String.format(java.util.Locale.US, "%+.1f%%", (askDepthChange - 1.0) * 100.0))
+            add(if (sellerExhaustion) "PANIC SELL ABSORPTION • bids holding while sellers hit" else if (buyerExhaustion) "PANIC BUY ABSORPTION • asks holding while buyers lift" else "Absorption: not confirmed")
             add("Projected next move: " + String.format(java.util.Locale.US, "$%.2f", projectedMove))
             add("Distance needed: " + String.format(java.util.Locale.US, "$%.2f", distanceToTarget))
             add("Estimated time to target: " + String.format(java.util.Locale.US, "%.1f min", minutesToTarget))
             add("Time remaining: " + String.format(java.util.Locale.US, "%.1f min", minutesRemaining))
             add("Projected expiry price: " + String.format(java.util.Locale.US, "$%,.2f", projectedExpiryPrice))
             add("Projected result: $forecastSide")
-            add(if (orderBook != null) "Order book imbalance: " + String.format(java.util.Locale.US, "%.1f%%", bookImbalance * 100.0) + if (alignedBook) " • supports trend" else " • not confirming trend" else "Order book: unavailable")
+            add(if (orderBook != null) "Order book imbalance: " + String.format(java.util.Locale.US, "%.1f%%", activeBookImbalance * 100.0) + if (alignedBook) " • supports trend" else " • not confirming trend" else "Order book: unavailable")
             add("EMA $emaPeriod: $emaTrend")
         }.joinToString(" | ")
         return EarlySignalResult(label, targetPosition, evidence)
