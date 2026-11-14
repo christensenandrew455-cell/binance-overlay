@@ -124,6 +124,36 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="15dp"
+            android:text="ORDER BOOK SMOOTHING WINDOW"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+        <TextView
+            android:id="@+id/orderBookWindowValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="ORDER BOOK: 15 SECONDS"
+            android:textColor="#55D6BE"
+            android:textSize="16sp"
+            android:textStyle="bold"/>
+        <SeekBar
+            android:id="@+id/orderBookWindowSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:max="3"
+            android:progress="0"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="15s     •     30s     •     45s     •     1 min"
+            android:textColor="@color/muted"
+            android:textSize="11sp"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:text="CRYPTO MARKET"
             android:textColor="@color/muted"
