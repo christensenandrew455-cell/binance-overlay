@@ -50,6 +50,9 @@ data class EngineSnapshot(
     val volumeSeries: List<Double> = emptyList(),
     val volumeUpSeries: List<Boolean> = emptyList(),
     val momentumSeries: List<Double> = emptyList(),
+    /** Five-second rolling averages of proximity-weighted top-10 bid/ask notional. */
+    val orderBookBidSeries: List<Double> = emptyList(),
+    val orderBookAskSeries: List<Double> = emptyList(),
 )
 
 fun fmtNum(value: Double?): String {
