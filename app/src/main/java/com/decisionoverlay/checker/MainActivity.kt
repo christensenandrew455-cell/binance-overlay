@@ -6,8 +6,11 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
-import android.widget.EditText
+import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -24,6 +27,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var engine: MarketEngine
     private var checksStarted = false
     private var pendingSymbol: String? = null
+    private var selectedEmaPeriod = 3
+
+    private data class CryptoAsset(val name: String, val symbol: String) {
+        val label: String get() = "$name ($symbol)"
+    }
+
+    // Curated major, established assets with USDT spot pairs listed by Binance.US.
+    private val assets = listOf(
+        CryptoAsset("Bitcoin", "BTCUSDT"),
+        CryptoAsset("Ethereum", "ETHUSDT"),
+        CryptoAsset("Solana", "SOLUSDT"),
+        CryptoAsset("XRP", "XRPUSDT"),
+        CryptoAsset("BNB", "BNBUSDT"),
+        CryptoAsset("Dogecoin", "DOGEUSDT"),
+        CryptoAsset("Cardano", "ADAUSDT"),
+        CryptoAsset("Chainlink", "LINKUSDT"),
+        CryptoAsset("Avalanche", "AVAXUSDT"),
+        CryptoAsset("Litecoin", "LTCUSDT"),
+        CryptoAsset("Bitcoin Cash", "BCHUSDT"),
+        CryptoAsset("Sui", "SUIUSDT"),
+        CryptoAsset("Hedera", "HBARUSDT"),
+        CryptoAsset("Polkadot", "DOTUSDT"),
+    )
 
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val symbol = pendingSymbol
@@ -36,7 +62,41 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         setContentView(R.layout.activity_main)
-        findViewById<EditText>(R.id.symbolInput).setText(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT"))
+
+        selectedEmaPeriod = prefs.getInt(OverlayService.KEY_EMA_PERIOD, 3).coerceIn(1, 10)
+        val cryptoSpinner = findViewById<Spinner>(R.id.cryptoSpinner)
+        cryptoSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            assets.map { it.label },
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        setSelectedSymbol(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT")
+
+        val emaSlider = findViewById<SeekBar>(R.id.emaSlider)
+        emaSlider.max = 9
+        emaSlider.progress = selectedEmaPeriod - 1
+        updateEmaLabel()
+        emaSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                selectedEmaPeriod = (progress + 1).coerceIn(1, 10)
+                updateEmaLabel()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                prefs.edit().putInt(OverlayService.KEY_EMA_PERIOD, selectedEmaPeriod).apply()
+                if (checksStarted) engine.updateEmaPeriod(selectedEmaPeriod)
+                if (prefs.getBoolean(OverlayService.KEY_MONITORING_ACTIVE, false)) {
+                    val symbol = selectedSymbol()
+                    val serviceIntent = Intent(this@MainActivity, OverlayService::class.java)
+                        .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
+                        .putExtra(OverlayService.EXTRA_EMA_PERIOD, selectedEmaPeriod)
+                    ContextCompat.startForegroundService(this@MainActivity, serviceIntent)
+                }
+            }
+        })
+
         findViewById<Button>(R.id.startCheckButton).setOnClickListener { startChecks() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
             stopService(Intent(this, OverlayService::class.java))
@@ -52,6 +112,7 @@ class MainActivity : AppCompatActivity() {
             if (checksStarted) engine.refreshNow() else setStatus("Press START MONITORING first.")
         }
         engine = MarketEngine(screenScope, { snapshot -> runOnUiThread { render(snapshot) } })
+        engine.updateEmaPeriod(selectedEmaPeriod)
         syncWithBackgroundMonitor()
     }
 
@@ -70,41 +131,56 @@ class MainActivity : AppCompatActivity() {
         val active = prefs.getBoolean(OverlayService.KEY_MONITORING_ACTIVE, false)
         if (!active) return
         val symbol = prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
-        findViewById<EditText>(R.id.symbolInput).setText(symbol)
+        selectedEmaPeriod = prefs.getInt(OverlayService.KEY_EMA_PERIOD, 3).coerceIn(1, 10)
+        findViewById<SeekBar>(R.id.emaSlider).progress = selectedEmaPeriod - 1
+        updateEmaLabel()
+        setSelectedSymbol(symbol)
         if (!checksStarted) {
             checksStarted = true
+            engine.updateEmaPeriod(selectedEmaPeriod)
             engine.start(symbol)
-        } else if (engine.symbol != symbol) {
-            engine.updateSymbol(symbol)
+        } else {
+            if (engine.symbol != symbol) engine.updateSymbol(symbol)
+            engine.updateEmaPeriod(selectedEmaPeriod)
         }
         findViewById<Button>(R.id.startCheckButton).text = "MONITORING • RUNNING"
-        setStatus("Background monitoring is already active for $symbol.")
+        setStatus("Background monitoring is already active for $symbol using EMA $selectedEmaPeriod.")
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig) }
     override fun onDestroy() { engine.stop(); screenScope.cancel(); super.onDestroy() }
 
     private fun startChecks() {
-        val symbol = readSymbol() ?: return
-        prefs.edit().putString(OverlayService.KEY_SYMBOL, symbol).apply()
+        val symbol = selectedSymbol()
+        prefs.edit()
+            .putString(OverlayService.KEY_SYMBOL, symbol)
+            .putInt(OverlayService.KEY_EMA_PERIOD, selectedEmaPeriod)
+            .apply()
         if (!checksStarted) {
             checksStarted = true
+            engine.updateEmaPeriod(selectedEmaPeriod)
             engine.start(symbol)
             findViewById<Button>(R.id.startCheckButton).text = "MONITORING • RUNNING"
         } else {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
+            engine.updateEmaPeriod(selectedEmaPeriod)
         }
-        setStatus("Fetching 150 one-minute candles to warm up EMA 99; displaying the latest 60. Target resets on each 15-minute candle close.")
+        setStatus("Fetching 150 one-minute candles for $symbol to warm up EMA 99. Price EMA $selectedEmaPeriod is selected. Target resets on each 15-minute candle close.")
         requestAndLaunchService(symbol)
     }
 
-    private fun readSymbol(): String? {
-        val symbol = findViewById<EditText>(R.id.symbolInput).text?.toString()?.trim()?.uppercase().orEmpty()
-        if (!symbol.matches(Regex("^[A-Z0-9]{5,20}$"))) {
-            setStatus("Enter a Binance.US spot symbol, e.g. BTCUSDT.")
-            return null
-        }
-        return symbol
+    private fun selectedSymbol(): String {
+        val index = findViewById<Spinner>(R.id.cryptoSpinner).selectedItemPosition
+        return assets.getOrElse(index) { assets.first() }.symbol
+    }
+
+    private fun setSelectedSymbol(symbol: String) {
+        val index = assets.indexOfFirst { it.symbol == symbol }.let { if (it >= 0) it else 0 }
+        findViewById<Spinner>(R.id.cryptoSpinner).setSelection(index)
+    }
+
+    private fun updateEmaLabel() {
+        findViewById<TextView>(R.id.emaValue).text = "PRICE EMA: $selectedEmaPeriod"
     }
 
     private fun render(snapshot: EngineSnapshot) {
@@ -117,14 +193,14 @@ class MainActivity : AppCompatActivity() {
             "EARLY DOWN TREND" -> "DOWN"
             else -> "WAIT"
         }
-        decisionView.text = "CURRENT DECISION: $decision\\n${metrics.earlySignal}"
+        decisionView.text = "CURRENT DECISION: $decision\n${metrics.earlySignal}"
         decisionView.setTextColor(when (decision) {
             "UP" -> Color.rgb(65, 210, 145)
             "DOWN" -> Color.rgb(255, 95, 95)
             else -> Color.rgb(190, 198, 212)
         })
         findViewById<IndicatorLineChartView>(R.id.priceChart).setPriceSeries(
-            "PRICE • EMA 7 / EMA 99 / 15M TARGET",
+            "PRICE • EMA ${metrics.emaPeriod} / EMA 99 / 15M TARGET",
             snapshot.priceEmaSeries,
             snapshot.priceEma99Series,
             metrics.targetPrice,
@@ -140,13 +216,13 @@ class MainActivity : AppCompatActivity() {
             snapshot.momentumSeries,
         )
         findViewById<TextView>(R.id.priceValue).text =
-            "EMA 7: ${fmtPrice(metrics.ema7Price)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
+            "EMA ${metrics.emaPeriod}: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
         findViewById<TextView>(R.id.volumeValue).text =
             "Each box = one 1-minute candle. Green = candle closed up; red = candle closed down. Taller boxes = unusually high total volume."
         findViewById<TextView>(R.id.momentumValue).text =
             "MACD histogram (12, 26, 9). Bars above zero are positive; bars below zero are negative. Brighter bars show momentum strengthening; muted bars show it easing."
         findViewById<TextView>(R.id.reasonText).text =
-            "Trend alerts are target-aware: EARLY DOWN TREND only when price is above the 15-minute target, and EARLY UP TREND only when price is below it. The alert looks for a developing MACD histogram slope change with independent confirmation from EMA 7, candles or volume. Signals are early warnings, not guarantees."
+            "Trend alerts use actual BTC/crypto price and estimated price movement toward the 15-minute target. EMA ${metrics.emaPeriod} is the adjustable short-term reference; EMA 99 remains the longer-term reference. Signals are early warnings, not guarantees."
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
@@ -164,11 +240,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchService(symbol: String) {
-        prefs.edit().putString(OverlayService.KEY_SYMBOL, symbol).apply()
+        prefs.edit()
+            .putString(OverlayService.KEY_SYMBOL, symbol)
+            .putInt(OverlayService.KEY_EMA_PERIOD, selectedEmaPeriod)
+            .apply()
         val intent = Intent(this, OverlayService::class.java)
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
+            .putExtra(OverlayService.EXTRA_EMA_PERIOD, selectedEmaPeriod)
         ContextCompat.startForegroundService(this, intent)
-        setStatus("Monitoring $symbol in the background. You will receive a notification for an early target-matched trend signal.")
+        setStatus("Monitoring $symbol with EMA $selectedEmaPeriod in the background. You will receive a notification for an early target-matched trend signal.")
     }
 
     private fun setStatus(message: String) {
