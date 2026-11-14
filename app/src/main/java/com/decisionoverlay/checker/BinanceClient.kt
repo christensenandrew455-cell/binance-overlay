@@ -188,6 +188,7 @@ data class OrderBookSnapshot(
     val askNotional: Double = 0.0,
     val nearBidNotional: Double = 0.0,
     val nearAskNotional: Double = 0.0,
+    val smoothingWindowSeconds: Int = 0,
 )
 
 data class KlineFetch(
