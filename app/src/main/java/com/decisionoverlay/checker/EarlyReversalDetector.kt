@@ -180,7 +180,14 @@ object EarlyReversalDetector {
             add("Time remaining: " + String.format(java.util.Locale.US, "%.1f min", minutesRemaining))
             add("Projected expiry price: " + String.format(java.util.Locale.US, "$%,.2f", projectedExpiryPrice))
             add("Projected result: $forecastSide")
-            add(if (orderBook != null) "Order book imbalance: " + String.format(java.util.Locale.US, "%.1f%%", activeBookImbalance * 100.0) + if (alignedBook) " • supports trend" else " • not confirming trend" else "Order book: unavailable")
+            if (orderBook != null) {
+                add("5-second weighted near-book average: bids " +
+                    String.format(java.util.Locale.US, "$%,.0f", orderBook.nearBidNotional) +
+                    " • asks " + String.format(java.util.Locale.US, "$%,.0f", orderBook.nearAskNotional))
+                add("Order book imbalance: " +
+                    String.format(java.util.Locale.US, "%.1f%%", activeBookImbalance * 100.0) +
+                    if (alignedBook) " • supports trend" else " • not confirming trend")
+            } else add("Order book: unavailable")
             add("EMA $emaPeriod: $emaTrend")
         }.joinToString(" | ")
         return EarlySignalResult(label, targetPosition, evidence)
