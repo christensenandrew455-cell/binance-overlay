@@ -41,7 +41,10 @@ class OverlayService : Service() {
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
         val emaPeriod = intent?.getIntExtra(EXTRA_EMA_PERIOD, prefs.getInt(KEY_EMA_PERIOD, 3))
             ?: prefs.getInt(KEY_EMA_PERIOD, 3)
+        val orderBookWindow = prefs.getInt(KEY_ORDER_BOOK_WINDOW_SECONDS, 15)
+            .coerceIn(15, 60).let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
         engine.updateEmaPeriod(emaPeriod)
+        engine.updateOrderBookWindow(orderBookWindow)
         if (!engineStarted) {
             engineStarted = true
             engine.start(symbol)
@@ -155,6 +158,7 @@ class OverlayService : Service() {
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
         const val KEY_EMA_PERIOD = "ema_period"
+        const val KEY_ORDER_BOOK_WINDOW_SECONDS = "order_book_window_seconds"
         const val KEY_MONITORING_ACTIVE = "monitoring_active"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         const val KEY_TARGET = "target_price"
