@@ -25,14 +25,10 @@ object EarlyReversalDetector {
         priceEma: List<Double>,
         targetPrice: Double?,
         emaPeriod: Int = 3,
+        marketEndTimeMs: Long? = null,
+        orderBook: OrderBookSnapshot? = null,
         nowMs: Long = System.currentTimeMillis(),
     ): EarlySignalResult {
-        val elapsedInMarket = nowMs % FIFTEEN_MINUTES_MS
-        val remainingMs = FIFTEEN_MINUTES_MS - elapsedInMarket
-        if (remainingMs > FINAL_FIVE_MINUTES_MS || remainingMs <= 0L) {
-            return EarlySignalResult("WAIT • FINAL 5 MINUTES ONLY", "WAITING",
-                "Directional signals unlock with 5 minutes remaining.")
-        }
         if (candles.size < 6 || momentum.size != candles.size || priceEma.size != candles.size) {
             return EarlySignalResult("WAIT • COLLECTING DATA", "TARGET UNKNOWN",
                 "Waiting for at least 6 one-minute candles.")
@@ -50,6 +46,12 @@ object EarlyReversalDetector {
             distance < 0.0 -> "ABOVE TARGET"
             distance > 0.0 -> "BELOW TARGET"
             else -> "AT TARGET"
+        }
+        val endTime = marketEndTimeMs ?: ((nowMs / FIFTEEN_MINUTES_MS) + 1L) * FIFTEEN_MINUTES_MS
+        val minutesRemaining = ((endTime - nowMs).coerceAtLeast(0L)) / 60_000.0
+        if (minutesRemaining <= 0.0) {
+            return EarlySignalResult("WAIT • NEXT MARKET TARGET", targetPosition,
+                "The current 15-minute target window has ended.")
         }
         val legs = buildLegs(candles)
         val currentLeg = legs.lastOrNull()
@@ -91,26 +93,24 @@ object EarlyReversalDetector {
         val projectedSpeed = max(currentLeg.move / currentLeg.minutes.coerceAtLeast(1.0),
             historicalLegSpeed) * volumeFactor * momentumFactor
         val distanceToTarget = abs(distance)
-        val minutesToTarget = if (projectedSpeed > 0.0) distanceToTarget / projectedSpeed
-            else Double.POSITIVE_INFINITY
-        val minutesRemaining = remainingMs / 60_000.0
-        val pointsTowardTarget = (distance > 0.0 && direction > 0) ||
-            (distance < 0.0 && direction < 0)
-        val likelyToReach = pointsTowardTarget &&
-            distanceToTarget <= projectedMove &&
-            minutesToTarget <= minutesRemaining
-
+        val bookImbalance = orderBook?.imbalance ?: 0.0
+        val bookFactor = (1.0 + bookImbalance * 0.20).coerceIn(0.80, 1.20)
+        val alignedBook = (direction > 0 && bookImbalance > 0.05) || (direction < 0 && bookImbalance < -0.05)
+        val projectedSpeedWithBook = projectedSpeed * bookFactor
+        val projectedExpiryPrice = price + direction * projectedSpeedWithBook * minutesRemaining
+        val forecastSide = when { projectedExpiryPrice > targetPrice -> "ABOVE TARGET"; projectedExpiryPrice < targetPrice -> "BELOW TARGET"; else -> "AT TARGET" }
+        val likelyToFinishUp = projectedExpiryPrice > targetPrice
+        val likelyToFinishDown = projectedExpiryPrice < targetPrice
+        val likelyToReach = (direction > 0 && likelyToFinishUp) || (direction < 0 && likelyToFinishDown)
         val emaNow = priceEma[lastIndex]
         val emaPrevious = priceEma[lastIndex - 1]
         val emaTrend = if (emaNow > emaPrevious) "rising" else if (emaNow < emaPrevious) "falling" else "flat"
         val label = when {
             likelyToReach && direction > 0 -> "EARLY UP TREND"
             likelyToReach && direction < 0 -> "EARLY DOWN TREND"
-            pointsTowardTarget && direction > 0 -> "WAIT • UP TREND, TARGET TOO FAR"
-            pointsTowardTarget && direction < 0 -> "WAIT • DOWN TREND, TARGET TOO FAR"
-            distance > 0.0 -> "WAIT • BELOW TARGET"
-            distance < 0.0 -> "WAIT • ABOVE TARGET"
-            else -> "WAIT • AT TARGET"
+            likelyToFinishUp -> "EARLY UP BIAS"
+            likelyToFinishDown -> "EARLY DOWN BIAS"
+            else -> "WAIT • TARGET NEAR PROJECTED PRICE"
         }
         val directionText = if (direction > 0) "UP" else "DOWN"
         val evidence = buildList {
@@ -124,8 +124,11 @@ object EarlyReversalDetector {
                 " • momentum " + if (momentumAgrees) "supports" else "opposes")
             add("Projected next move: " + String.format(java.util.Locale.US, "$%.2f", projectedMove))
             add("Distance needed: " + String.format(java.util.Locale.US, "$%.2f", distanceToTarget))
-            add("Estimated time: " + String.format(java.util.Locale.US, "%.1f min", minutesToTarget))
+            add("Estimated time to target: " + String.format(java.util.Locale.US, "%.1f min", minutesToTarget))
             add("Time remaining: " + String.format(java.util.Locale.US, "%.1f min", minutesRemaining))
+            add("Projected expiry price: " + String.format(java.util.Locale.US, "$%,.2f", projectedExpiryPrice))
+            add("Projected result: $forecastSide")
+            add(if (orderBook != null) "Order book imbalance: " + String.format(java.util.Locale.US, "%.1f%%", bookImbalance * 100.0) + if (alignedBook) " • supports trend" else " • not confirming trend" else "Order book: unavailable")
             add("EMA $emaPeriod: $emaTrend")
         }.joinToString(" | ")
         return EarlySignalResult(label, targetPosition, evidence)
@@ -166,5 +169,4 @@ object EarlyReversalDetector {
     private fun List<Double>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
 
     private const val FIFTEEN_MINUTES_MS = 15L * 60L * 1000L
-    private const val FINAL_FIVE_MINUTES_MS = 5L * 60L * 1000L
 }
