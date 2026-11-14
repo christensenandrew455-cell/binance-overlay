@@ -29,10 +29,12 @@ class OverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_MONITORING_ACTIVE, false).apply()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_MONITORING_ACTIVE, true).apply()
         startInForeground("Monitoring active • early trend alerts enabled")
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
@@ -47,6 +49,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_MONITORING_ACTIVE, false).apply()
         if (engineStarted) try { engine.stop() } catch (_: Exception) {}
         scope.cancel()
         super.onDestroy()
@@ -106,7 +109,7 @@ class OverlayService : Service() {
 
     private fun openAppPendingIntent(): PendingIntent =
         PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
@@ -147,6 +150,7 @@ class OverlayService : Service() {
         const val ACTION_STOP = "com.decisionoverlay.checker.STOP"
         const val PREFS = "overlay_prefs"
         const val KEY_SYMBOL = "symbol"
+        const val KEY_MONITORING_ACTIVE = "monitoring_active"
         const val KEY_DNT_THRESHOLD = "dnt_threshold"
         const val KEY_TARGET = "target_price"
         const val KEY_STRICTNESS = "strictness_level"
