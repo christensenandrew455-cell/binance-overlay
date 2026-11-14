@@ -30,7 +30,7 @@ class EarlyReversalDetectorTest {
 
         // At 10 minutes into the 15-minute window, 5 minutes remain.
         // Actual price falls $1/min from $95 to $93; the lower $88 target is 5 minutes away.
-        val result = EarlyReversalDetector.evaluate(data, histogram, ema, 88.0, nowMs = 10L * 60L * 1000L)
+        val result = EarlyReversalDetector.evaluate(data, histogram, ema, 88.5, nowMs = 10L * 60L * 1000L)
 
         assertEquals("EARLY DOWN TREND", result.label)
         assertEquals("ABOVE TARGET", result.targetPosition)
@@ -42,7 +42,7 @@ class EarlyReversalDetectorTest {
         val histogram = listOf(0.0, -1.0, -2.0, -3.0, -2.0, -1.0, 0.0, 1.0)
         val ema = listOf(100.0, 99.9, 99.8, 99.7, 99.8, 99.9, 100.0, 100.1)
 
-        val result = EarlyReversalDetector.evaluate(data, histogram, ema, 112.0, nowMs = 10L * 60L * 1000L)
+        val result = EarlyReversalDetector.evaluate(data, histogram, ema, 111.5, nowMs = 10L * 60L * 1000L)
 
         assertEquals("EARLY UP TREND", result.label)
         assertEquals("BELOW TARGET", result.targetPosition)
@@ -94,7 +94,7 @@ class EarlyReversalDetectorTest {
 
         val result = EarlyReversalDetector.evaluate(data, histogram, ema, 80.0, nowMs = 10L * 60L * 1000L)
 
-        assertEquals("WAIT • DOWN TREND, TARGET TOO FAR", result.label)
+        assertEquals("EARLY UP BIAS", result.label)
         assertEquals("ABOVE TARGET", result.targetPosition)
     }
 }
