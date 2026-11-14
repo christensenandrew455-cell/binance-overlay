@@ -145,12 +145,20 @@ object EarlyReversalDetector {
         val emaNow = priceEma[lastIndex]
         val emaPrevious = priceEma[lastIndex - 1]
         val emaTrend = if (emaNow > emaPrevious) "rising" else if (emaNow < emaPrevious) "falling" else "flat"
-        val label = when {
-            likelyToReach && direction > 0 -> "EARLY UP TREND"
-            likelyToReach && direction < 0 -> "EARLY DOWN TREND"
-            likelyToFinishUp -> "EARLY UP BIAS"
-            likelyToFinishDown -> "EARLY DOWN BIAS"
-            else -> "WAIT • TARGET NEAR PROJECTED PRICE"
+        // The target position controls which direction is allowed. Never show an UP
+        // trend while price is above target, or a DOWN trend while price is below target.
+        // A counter-direction absorption signal is useful evidence, but it is not a valid
+        // trade setup until price action turns toward the target.
+        val label = when (targetPosition) {
+            "ABOVE TARGET" -> when {
+                direction < 0 && likelyToFinishDown -> "EARLY DOWN TREND"
+                else -> "WAIT • DOWN SETUP NOT CONFIRMED"
+            }
+            "BELOW TARGET" -> when {
+                direction > 0 && likelyToFinishUp -> "EARLY UP TREND"
+                else -> "WAIT • UP SETUP NOT CONFIRMED"
+            }
+            else -> "WAIT • PRICE AT TARGET"
         }
         val directionText = if (direction > 0) "UP" else "DOWN"
         val evidence = buildList {
