@@ -91,7 +91,7 @@ class OverlayService : Service() {
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title)
             .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. Early trend warning using actual price velocity, EMA ${m.emaPeriod}, and MACD histogram context. This is a developing signal, not a guarantee."))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$detail. ${m.signalDetail.take(900)}. Early warning only; order-book liquidity can change or be cancelled."))
             .setContentIntent(openAppPendingIntent())
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
