@@ -56,6 +56,38 @@ class BinanceClient(private val http: OkHttpClient) {
         throw IllegalStateException(notes.joinToString(" | ").ifBlank { "All Binance public REST hosts failed" })
     }
 
+    fun fetchOrderBook(symbol: String, limit: Int = 100): OrderBookSnapshot {
+        val url = "${activeRestHost}/api/v3/depth?symbol=$symbol&limit=$limit"
+        val request = Request.Builder().url(url)
+            .header("Accept", "application/json")
+            .header("User-Agent", "DecisionOverlay/1.1")
+            .build()
+        http.newCall(request).also { it.timeout().timeout(8, TimeUnit.SECONDS) }
+            .execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw IllegalStateException("Order book HTTP ${response.code}")
+                val json = org.json.JSONObject(body)
+                val bids = json.getJSONArray("bids")
+                val asks = json.getJSONArray("asks")
+                fun total(levels: JSONArray): Double {
+                    var sum = 0.0
+                    for (i in 0 until levels.length()) sum += levels.getJSONArray(i).getString(1).toDouble()
+                    return sum
+                }
+                if (bids.length() == 0 || asks.length() == 0) throw IllegalStateException("Empty order book")
+                val bidVolume = total(bids)
+                val askVolume = total(asks)
+                val total = bidVolume + askVolume
+                val bestBid = bids.getJSONArray(0).getString(0).toDouble()
+                val bestAsk = asks.getJSONArray(0).getString(0).toDouble()
+                return OrderBookSnapshot(
+                    bidVolume, askVolume, bestBid, bestAsk,
+                    if (total > 0.0) (bidVolume - askVolume) / total else 0.0,
+                    bestAsk - bestBid,
+                )
+            }
+    }
+
     private fun parseKlines(body: String): List<Candle> {
         val array = JSONArray(body)
         val now = System.currentTimeMillis()
@@ -97,6 +129,15 @@ class BinanceClient(private val http: OkHttpClient) {
         )
     }
 }
+
+data class OrderBookSnapshot(
+    val bidVolume: Double,
+    val askVolume: Double,
+    val bestBid: Double,
+    val bestAsk: Double,
+    val imbalance: Double,
+    val spread: Double,
+)
 
 data class KlineFetch(
     val candles: List<Candle>,
