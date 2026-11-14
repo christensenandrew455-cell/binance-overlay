@@ -15,7 +15,8 @@ data class Candle(
 
 data class MetricSnapshot(
     val currentPrice: Double?,
-    val ema7Price: Double?,
+    val emaPrice: Double?,
+    val emaPeriod: Int,
     val ema99Price: Double?,
     val trend: String,
     val currentVolume: Double?,
