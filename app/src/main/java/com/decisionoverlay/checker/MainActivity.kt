@@ -215,6 +215,14 @@ class MainActivity : AppCompatActivity() {
             "MOMENTUM • MACD HISTOGRAM • GREEN / RED",
             snapshot.momentumSeries,
         )
+        findViewById<OrderBookChartView>(R.id.orderBookChart).setSeries(
+            snapshot.orderBookBidSeries,
+            snapshot.orderBookAskSeries,
+        )
+        val averageBids = snapshot.orderBookBidSeries.lastOrNull()
+        val averageAsks = snapshot.orderBookAskSeries.lastOrNull()
+        findViewById<TextView>(R.id.orderBookValue).text =
+            "5-second weighted average • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
         findViewById<TextView>(R.id.priceValue).text =
             "EMA ${metrics.emaPeriod}: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
         findViewById<TextView>(R.id.volumeValue).text =
