@@ -103,7 +103,7 @@ class EarlyReversalDetectorTest {
         val data = candles(up = false)
         val result = EarlyReversalDetector.evaluate(
             data, List(8) { -it.toDouble() }, List(8) { 100.0 },
-            90.0, nowMs = 10L * 60L * 1000L,
+            95.0, nowMs = 10L * 60L * 1000L,
         )
 
         assertEquals("BELOW TARGET", result.targetPosition)
