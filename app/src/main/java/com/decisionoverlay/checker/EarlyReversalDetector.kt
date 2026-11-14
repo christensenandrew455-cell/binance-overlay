@@ -11,8 +11,9 @@ object EarlyReversalDetector {
     fun evaluate(
         candles: List<Candle>,
         momentum: List<Double>,
-        ema7: List<Double>,
+        priceEma: List<Double>,
         targetPrice: Double?,
+        emaPeriod: Int = 3,
         nowMs: Long = System.currentTimeMillis(),
     ): EarlySignalResult {
         val elapsedInMarket = nowMs % FIFTEEN_MINUTES_MS
@@ -25,7 +26,7 @@ object EarlyReversalDetector {
             )
         }
 
-        if (candles.size < 6 || momentum.size != candles.size || ema7.size != candles.size) {
+        if (candles.size < 6 || momentum.size != candles.size || priceEma.size != candles.size) {
             return EarlySignalResult("WAIT • COLLECTING DATA", "TARGET UNKNOWN", "Waiting for at least 6 one-minute candles.")
         }
 
@@ -60,8 +61,8 @@ object EarlyReversalDetector {
 
         val momentumNow = momentum[lastIndex]
         val momentumPrevious = momentum[lastIndex - 1]
-        val emaNow = ema7[lastIndex]
-        val emaPrevious = ema7[lastIndex - 1]
+        val emaNow = priceEma[lastIndex]
+        val emaPrevious = priceEma[lastIndex - 1]
         val histogramRising = momentumNow > momentumPrevious
         val histogramFalling = momentumNow < momentumPrevious
         val emaRising = emaNow > emaPrevious
@@ -88,7 +89,7 @@ object EarlyReversalDetector {
             add("Price trend: " + (if (pricePerMinute > 0.0) "UP" else if (pricePerMinute < 0.0) "DOWN" else "FLAT") + " • $rateText")
             add("Estimated time: $etaText")
             add("Time remaining: " + String.format(java.util.Locale.US, "%.1f min", minutesRemaining))
-            add("EMA 7: " + (if (emaRising) "rising" else if (emaFalling) "falling" else "flat") + " • MACD histogram: " + (if (histogramRising) "rising" else if (histogramFalling) "falling" else "flat"))
+            add("EMA $emaPeriod: " + (if (emaRising) "rising" else if (emaFalling) "falling" else "flat") + " • MACD histogram: " + (if (histogramRising) "rising" else if (histogramFalling) "falling" else "flat"))
         }.joinToString(" | ")
 
         return EarlySignalResult(label, targetPosition, evidence)
