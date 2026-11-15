@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -50,6 +51,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
     private lateinit var runButton: Button
+    private lateinit var startTimeInput: EditText
+    private lateinit var endTimeInput: EditText
     private lateinit var status: TextView
     private lateinit var resultsBox: LinearLayout
     private lateinit var chartSlot: LinearLayout
@@ -71,6 +74,21 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             "8 coins • 100 time windows each • 15-minute tests\nOnly tests from 11:00 PM through 10:00 AM local time (overnight). Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
             14f, 0xFFB9C7D8.toInt()
         )
+        val timeLabel = label("TEST WINDOW (24-HOUR LOCAL TIME)", 15f, 0xFFFFFFFF.toInt(), true)
+        startTimeInput = EditText(this).apply {
+            setSingleLine(true)
+            setText("23:00")
+            hint = "Start, e.g. 23:00"
+            setTextColor(0xFFFFFFFF.toInt())
+            setHintTextColor(0xFFB9C7D8.toInt())
+        }
+        endTimeInput = EditText(this).apply {
+            setSingleLine(true)
+            setText("10:00")
+            hint = "End, e.g. 10:00"
+            setTextColor(0xFFFFFFFF.toInt())
+            setHintTextColor(0xFFB9C7D8.toInt())
+        }
         runButton = Button(this).apply {
             text = "CHECK ACCURACY"
             setOnClickListener { startTest() }
@@ -80,6 +98,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(title)
         content.addView(description)
+        content.addView(timeLabel)
+        content.addView(startTimeInput)
+        content.addView(endTimeInput)
         content.addView(runButton)
         content.addView(status)
         content.addView(chartSlot)
@@ -96,6 +117,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
 
     private fun startTest() {
         if (running) return
+        val startMinutes = parseTime(startTimeInput.text.toString())
+        val endMinutes = parseTime(endTimeInput.text.toString())
+        if (startMinutes == null || endMinutes == null || startMinutes == endMinutes) {
+            status.text = "Enter valid, different times in 24-hour HH:mm format, for example 23:00 and 10:00."
+            return
+        }
         val anchor = latestCompletedQuarterHour()
         if (anchor <= 0L) {
             status.text = "Could not determine the latest completed 15-minute mark. Try again."
@@ -108,7 +135,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         chartSlot.removeAllViews()
         Thread {
             try {
-                val all = symbols.map { symbol -> fetchCoin(symbol, anchor) }
+                val all = symbols.map { symbol -> fetchCoin(symbol, anchor, startMinutes, endMinutes) }
                 runOnUiThread {
                     showResults(all, anchor)
                     running = false
@@ -124,11 +151,10 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun fetchCoin(symbol: String, anchor: Long): CoinResult {
+    private fun fetchCoin(symbol: String, anchor: Long, startMinutes: Int, endMinutes: Int): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
-        // Pull up to 7 days to collect 100 eligible 15-minute windows
-        // inside the user's 11:00 PM–10:00 AM overnight local-time trading window.
+        // Pull up to 7 days to collect 100 eligible windows in the user-entered local-time range.
         val firstOpen = anchor - 7L * 24L * 60L * minute
         val lastOpen = anchor - minute
         val prices = HashMap<Long, Double>()
@@ -197,10 +223,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             calendar.timeInMillis = candidate
             val hour = calendar.get(Calendar.HOUR_OF_DAY)
             val minuteOfHour = calendar.get(Calendar.MINUTE)
-            // A section starts on a 15-minute boundary from 11:00 PM through
-            // 9:45 AM; its 15-minute result must finish no later than 10:00 AM.
-            val inAllowedWindow = (hour == 23 || hour in 0..9) &&
-                minuteOfHour in listOf(0, 15, 30, 45)
+            val candidateMinutes = hour * 60 + minuteOfHour
+            val duration = (endMinutes - startMinutes + 1440) % 1440
+            val offset = (candidateMinutes - startMinutes + 1440) % 1440
+            // The entire 15-minute result must fit inside the selected time range.
+            val inAllowedWindow = minuteOfHour in listOf(0, 15, 30, 45) &&
+                offset < duration && offset + 15 <= duration
             if (inAllowedWindow) {
                 val target = prices[candidate - minute]
                 val minutePrice = prices[candidate]
@@ -232,7 +260,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         if (sections.size < 100) {
             throw IllegalStateException(
                 "Only found " + sections.size + " eligible time windows for " + symbol +
-                    " in the last 7 days between 11:00 PM and 10:00 AM. Need 100."
+                    " in the last 7 days inside the selected time window. Need 100."
             )
         }
         return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
@@ -309,6 +337,14 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                 .append(mark).append("\n")
         }
         return out.toString()
+    }
+
+    private fun parseTime(value: String): Int? {
+        val match = Regex("^(\\d{1,2}):(\\d{2})$").matchEntire(value.trim()) ?: return null
+        val hour = match.groupValues[1].toIntOrNull() ?: return null
+        val minute = match.groupValues[2].toIntOrNull() ?: return null
+        if (hour !in 0..23 || minute !in 0..59) return null
+        return hour * 60 + minute
     }
 
     private fun latestCompletedQuarterHour(): Long {
