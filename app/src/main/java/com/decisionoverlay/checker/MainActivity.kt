@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
         setContentView(R.layout.activity_main)
 
-        selectedEmaPeriod = prefs.getInt(OverlayService.KEY_EMA_PERIOD, 3).coerceIn(1, 10)
+        selectedEmaPeriod = 3
         selectedOrderBookWindowSeconds = prefs.getInt(OverlayService.KEY_ORDER_BOOK_WINDOW_SECONDS, 15).coerceIn(15, 60)
             .let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
         val cryptoSpinner = findViewById<Spinner>(R.id.cryptoSpinner)
@@ -75,30 +75,8 @@ class MainActivity : AppCompatActivity() {
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         setSelectedSymbol(prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT")
 
-        val emaSlider = findViewById<SeekBar>(R.id.emaSlider)
-        emaSlider.max = 9
-        emaSlider.progress = selectedEmaPeriod - 1
+        selectedEmaPeriod = 3
         updateEmaLabel()
-        emaSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                selectedEmaPeriod = (progress + 1).coerceIn(1, 10)
-                updateEmaLabel()
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                prefs.edit().putInt(OverlayService.KEY_EMA_PERIOD, selectedEmaPeriod).apply()
-                if (checksStarted) engine.updateEmaPeriod(selectedEmaPeriod)
-                if (prefs.getBoolean(OverlayService.KEY_MONITORING_ACTIVE, false)) {
-                    val symbol = selectedSymbol()
-                    val serviceIntent = Intent(this@MainActivity, OverlayService::class.java)
-                        .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
-                        .putExtra(OverlayService.EXTRA_EMA_PERIOD, selectedEmaPeriod)
-                    ContextCompat.startForegroundService(this@MainActivity, serviceIntent)
-                }
-            }
-        })
 
         val orderBookSlider = findViewById<SeekBar>(R.id.orderBookWindowSlider)
         val orderBookOptions = listOf(15, 30, 45, 60)
@@ -164,7 +142,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<SeekBar>(R.id.orderBookWindowSlider).progress =
             listOf(15, 30, 45, 60).indexOf(selectedOrderBookWindowSeconds).coerceAtLeast(0)
         updateOrderBookWindowLabel()
-        findViewById<SeekBar>(R.id.emaSlider).progress = selectedEmaPeriod - 1
         updateEmaLabel()
         setSelectedSymbol(symbol)
         if (!checksStarted) {
@@ -201,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             if (symbol != engine.symbol) engine.updateSymbol(symbol) else engine.refreshNow()
             engine.updateEmaPeriod(selectedEmaPeriod)
         }
-        setStatus("Fetching 150 one-minute candles for $symbol to warm up EMA 99. Price EMA $selectedEmaPeriod is selected. Target resets on each 15-minute candle close.")
+        setStatus("Fetching 150 one-minute and 150 five-minute candles for $symbol. EMA 3/99 are fixed on both timeframes. Target resets on each 15-minute candle close.")
         requestAndLaunchService(symbol)
     }
 
@@ -221,7 +198,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateEmaLabel() {
-        findViewById<TextView>(R.id.emaValue).text = "PRICE EMA: $selectedEmaPeriod"
+        findViewById<TextView>(R.id.emaValue).text = "FIXED EMA: 3 + EMA 99 (1M & 5M)"
     }
 
     private fun render(snapshot: EngineSnapshot) {
@@ -241,7 +218,7 @@ class MainActivity : AppCompatActivity() {
             else -> Color.rgb(190, 198, 212)
         })
         findViewById<IndicatorLineChartView>(R.id.priceChart).setPriceSeries(
-            "PRICE • EMA ${metrics.emaPeriod} / EMA 99 / 15M TARGET",
+            "1M PRICE • EMA 3 / EMA 99 / 15M TARGET",
             snapshot.priceEmaSeries,
             snapshot.priceEma99Series,
             metrics.targetPrice,
@@ -273,13 +250,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.orderBookValue).text =
             "${collectionLabel} • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
         findViewById<TextView>(R.id.priceValue).text =
-            "EMA ${metrics.emaPeriod}: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
+            "1M EMA 3: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n5M EMA 3: ${fmtPrice(metrics.fiveMinuteEma3)}  •  EMA 99: ${fmtPrice(metrics.fiveMinuteEma99)} (${metrics.fiveMinuteTrend})\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)} • Distance: ${fmtPrice(metrics.distanceToTarget)}"
         findViewById<TextView>(R.id.volumeValue).text =
             "Each box = one 1-minute candle. Green = candle closed up; red = candle closed down. Taller boxes = unusually high total volume."
         findViewById<TextView>(R.id.momentumValue).text =
             "MACD histogram (12, 26, 9). Bars above zero are positive; bars below zero are negative. Brighter bars show momentum strengthening; muted bars show it easing."
         findViewById<TextView>(R.id.reasonText).text =
-            "Trend alerts use live price, time remaining, trend-leg size, taker buying/selling volume, and changing near-book liquidity. No final-five-minute wait gate. EMA ${metrics.emaPeriod} is supporting context; EMA 99 remains the longer-term reference. Signals are estimates, not guarantees.\n\n${metrics.signalDetail}"
+            "Trend alerts use live price, time remaining, trend-leg size, taker buying/selling volume, and changing near-book liquidity. No final-five-minute wait gate. EMA 3/99 are calculated separately on 1m and 5m candles. 5m structure confirms 1m entries; RSI, ADX and divergence filter weak setups. Entry requires a pullback/retest and confirmation close. Signals are estimates, not guarantees.\n\n${metrics.signalDetail}"
         findViewById<TextView>(R.id.problemsText).text =
             if (metrics.lastError.isNullOrBlank()) metrics.feedDetail else metrics.feedDetail + "\n" + metrics.lastError
         findViewById<TextView>(R.id.logText).text = snapshot.logText.ifBlank { "Waiting for first Binance.US update…" }
@@ -305,7 +282,7 @@ class MainActivity : AppCompatActivity() {
             .putExtra(OverlayService.EXTRA_SYMBOL, symbol)
             .putExtra(OverlayService.EXTRA_EMA_PERIOD, selectedEmaPeriod)
         ContextCompat.startForegroundService(this, intent)
-        setStatus("Monitoring $symbol with EMA $selectedEmaPeriod in the background. You will receive a notification for an early target-matched trend signal.")
+        setStatus("Monitoring $symbol with 1m + 5m EMA 3/99 confirmation. You will receive a notification for an early target-matched trend signal.")
     }
 
     private fun setStatus(message: String) {
