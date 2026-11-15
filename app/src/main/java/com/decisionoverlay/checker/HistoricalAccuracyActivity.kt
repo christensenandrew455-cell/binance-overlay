@@ -68,7 +68,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "8 coins • 100 time windows each • 15-minute tests\nOnly tests from 10:00 AM through 11:00 PM local time. Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
+            "8 coins • 100 time windows each • 15-minute tests\nOnly tests from 11:00 PM through 10:00 AM local time (overnight). Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
             14f, 0xFFB9C7D8.toInt()
         )
         runButton = Button(this).apply {
@@ -128,7 +128,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val minute = 60_000L
         val quarter = 15L * minute
         // Pull up to 7 days to collect 100 eligible 15-minute windows
-        // inside the user's 10:00 AM–11:00 PM local-time trading window.
+        // inside the user's 11:00 PM–10:00 AM overnight local-time trading window.
         val firstOpen = anchor - 7L * 24L * 60L * minute
         val lastOpen = anchor - minute
         val prices = HashMap<Long, Double>()
@@ -197,9 +197,10 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             calendar.timeInMillis = candidate
             val hour = calendar.get(Calendar.HOUR_OF_DAY)
             val minuteOfHour = calendar.get(Calendar.MINUTE)
-            // A section starts on a 15-minute boundary between 10:00 AM and
-            // 10:45 PM; its 15-minute result must finish no later than 11:00 PM.
-            val inAllowedWindow = hour in 10..22 && minuteOfHour in listOf(0, 15, 30, 45)
+            // A section starts on a 15-minute boundary from 11:00 PM through
+            // 9:45 AM; its 15-minute result must finish no later than 10:00 AM.
+            val inAllowedWindow = (hour == 23 || hour in 0..9) &&
+                minuteOfHour in listOf(0, 15, 30, 45)
             if (inAllowedWindow) {
                 val target = prices[candidate - minute]
                 val minutePrice = prices[candidate]
@@ -231,7 +232,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         if (sections.size < 100) {
             throw IllegalStateException(
                 "Only found " + sections.size + " eligible time windows for " + symbol +
-                    " in the last 7 days between 10:00 AM and 11:00 PM. Need 100."
+                    " in the last 7 days between 11:00 PM and 10:00 AM. Need 100."
             )
         }
         return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
