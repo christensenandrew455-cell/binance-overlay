@@ -68,7 +68,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "7 coins • 100 sections each • 1,500 minutes of history\nTarget: each 15-minute mark from 2:00 PM yesterday through 4:45 PM today. Final comparison ends at 5:00 PM today.",
+            "7 coins • 100 scored sections each • 15-minute tests\nOnly tests from 10:00 AM through 11:00 PM local time. Flat or tied sections are skipped and the test goes further back to find 100 directional results.",
             14f, 0xFFB9C7D8.toInt()
         )
         runButton = Button(this).apply {
@@ -96,9 +96,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
 
     private fun startTest() {
         if (running) return
-        val anchor = todayAtFivePm()
-        if (System.currentTimeMillis() < anchor + 5_000L) {
-            status.text = "The final price is the 5:00 PM close. Please run the test after 5:00 PM so Binance has published that candle."
+        val anchor = latestCompletedQuarterHour()
+        if (anchor <= 0L) {
+            status.text = "Could not determine the latest completed 15-minute mark. Try again."
             return
         }
         running = true
@@ -127,8 +127,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun fetchCoin(symbol: String, anchor: Long): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
-        val earliestTarget = anchor - 100L * quarter
-        val firstOpen = earliestTarget - minute
+        // Pull up to 7 days so skipped flat/tied windows can be replaced by older
+        // eligible windows while still collecting 100 directional scored sections.
+        val firstOpen = anchor - 7L * 24L * 60L * minute
         val lastOpen = anchor - minute
         val prices = HashMap<Long, Double>()
         var cursor = firstOpen
@@ -189,31 +190,49 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val sections = ArrayList<SectionResult>(100)
         var correct = 0
         var incorrect = 0
-        var neutral = 0
-        for (i in 0 until 100) {
-            val targetTime = anchor - (i + 1L) * quarter
-            val target = prices[targetTime - minute]
-                ?: throw IllegalStateException("Missing target close for " + symbol + " section " + (i + 1))
-            val minutePrice = prices[targetTime]
-                ?: throw IllegalStateException("Missing +1 minute close for " + symbol + " section " + (i + 1))
-            val finishPrice = prices[targetTime + 14L * minute]
-                ?: throw IllegalStateException("Missing +15 minute close for " + symbol + " section " + (i + 1))
-            val prediction = direction(minutePrice, target)
-            val actual = direction(finishPrice, target)
-            // Score every section. FLAT is a real third outcome, not an excluded sample.
-            // A prediction is correct only when UP/DOWN/FLAT matches the actual result.
-            val isNeutral = prediction == "FLAT" || actual == "FLAT"
-            val isCorrect = prediction == actual
-            if (isNeutral) neutral++
-            if (isCorrect) correct++ else incorrect++
-            sections.add(
-                SectionResult(
-                    i + 1, targetTime, target, minutePrice, finishPrice,
-                    prediction, actual, isCorrect
-                )
+        var skippedFlat = 0
+        var candidate = anchor - quarter
+        val calendar = Calendar.getInstance()
+        while (candidate >= firstOpen + minute && sections.size < 100) {
+            calendar.timeInMillis = candidate
+            val hour = calendar.get(Calendar.HOUR_OF_DAY)
+            val minuteOfHour = calendar.get(Calendar.MINUTE)
+            // A section starts on a 15-minute boundary between 10:00 AM and
+            // 10:45 PM; its 15-minute result must finish no later than 11:00 PM.
+            val inAllowedWindow = hour in 10..22 && minuteOfHour in listOf(0, 15, 30, 45)
+            if (inAllowedWindow) {
+                val target = prices[candidate - minute]
+                val minutePrice = prices[candidate]
+                val finishPrice = prices[candidate + 14L * minute]
+                if (target != null && minutePrice != null && finishPrice != null) {
+                    val prediction = direction(minutePrice, target)
+                    val actual = direction(finishPrice, target)
+                    // Flat prediction or flat actual outcome is not a scored trade.
+                    // Skip it and continue farther back until 100 directional tests exist.
+                    if (prediction == "FLAT" || actual == "FLAT") {
+                        skippedFlat++
+                    } else {
+                        val isCorrect = prediction == actual
+                        if (isCorrect) correct++ else incorrect++
+                        sections.add(
+                            SectionResult(
+                                sections.size + 1, candidate, target, minutePrice, finishPrice,
+                                prediction, actual, isCorrect
+                            )
+                        )
+                    }
+                }
+            }
+            candidate -= quarter
+        }
+        if (sections.size < 100) {
+            throw IllegalStateException(
+                "Only found " + sections.size + " directional sections for " + symbol +
+                    " in the last 7 days between 10:00 AM and 11:00 PM. Need 100. " +
+                    "Skipped flat/tied: " + skippedFlat + "."
             )
         }
-        return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, neutral)
+        return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, skippedFlat)
     }
 
     private fun direction(price: Double, target: Double): String = when {
@@ -227,11 +246,11 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val totalIncorrect = results.sumOf { it.incorrect }
         val totalScored = results.sumOf { it.sections.size }
         val overall = if (totalScored == 0) 0.0 else totalCorrect * 100.0 / totalScored
-        status.text = "Completed • 700 sections checked • Anchor: " +
+        status.text = "Completed • 700 directional sections checked • Anchor: " +
             SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date(anchor)) +
             "\nOverall accuracy: " + String.format(Locale.US, "%.1f%%", overall) +
             " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect out of " +
-            totalScored + "; flat-involved sections: " + results.sumOf { it.neutral } + ")"
+            totalScored + "; skipped flat/tied: " + results.sumOf { it.neutral } + ")"
 
         chartSlot.addView(label("ACCURACY BY COIN", 18f, 0xFFFFFFFF.toInt(), true))
         chartSlot.addView(AccuracyBarChart(this, results), LinearLayout.LayoutParams(-1, 240))
@@ -249,8 +268,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             )
             val counts = label(
                 coin.correct.toString() + " correct • " + coin.incorrect.toString() +
-                    " incorrect • " + coin.neutral.toString() + " flat-involved • " +
-                    coin.sections.size.toString() + " total",
+                    " incorrect • " + coin.neutral.toString() + " flat/tied skipped • 100 scored",
                 13f, 0xFFB9C7D8.toInt()
             )
             val detailButton = Button(this).apply { text = "SHOW 100 SECTION RESULTS" }
@@ -286,13 +304,13 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         return out.toString()
     }
 
-    private fun todayAtFivePm(): Long {
-        val calendar = Calendar.getInstance()
-        calendar.set(Calendar.HOUR_OF_DAY, 17)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        calendar.set(Calendar.MILLISECOND, 0)
-        return calendar.timeInMillis
+    private fun latestCompletedQuarterHour(): Long {
+        val now = Calendar.getInstance()
+        now.set(Calendar.SECOND, 0)
+        now.set(Calendar.MILLISECOND, 0)
+        val minute = now.get(Calendar.MINUTE)
+        now.set(Calendar.MINUTE, (minute / 15) * 15)
+        return now.timeInMillis
     }
 
     private fun label(textValue: String, size: Float, color: Int, bold: Boolean = false): TextView =
