@@ -37,6 +37,10 @@ data class MetricSnapshot(
     val earlySignal: String,
     val targetPosition: String,
     val signalDetail: String,
+    val distanceToTarget: Double? = null,
+    val fiveMinuteTrend: String = "NEUTRAL",
+    val fiveMinuteEma3: Double? = null,
+    val fiveMinuteEma99: Double? = null,
 )
 
 data class EngineSnapshot(
@@ -55,6 +59,8 @@ data class EngineSnapshot(
     val orderBookAskSeries: List<Double> = emptyList(),
     val orderBookWindowSeconds: Int = 15,
     val orderBookCollectionElapsedSeconds: Int = 0,
+    val fiveMinuteEma3Series: List<Double> = emptyList(),
+    val fiveMinuteEma99Series: List<Double> = emptyList(),
 )
 
 fun fmtNum(value: Double?): String {
