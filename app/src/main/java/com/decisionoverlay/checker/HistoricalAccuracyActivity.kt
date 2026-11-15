@@ -71,7 +71,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "8 coins • 100 time windows each • 15-minute tests\nChoose your own start and end times below (24-hour local time). Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
+            "8 coins • Goal: 100+ time windows per coin • 15-minute tests\nThe test collects every eligible window it can find in the last 7 days for your selected times. 100 is a goal, not a limit. Flat/tied sections are reported separately and are not scored.",
             14f, 0xFFB9C7D8.toInt()
         )
         val timeLabel = label("TEST WINDOW (24-HOUR LOCAL TIME)", 15f, 0xFFFFFFFF.toInt(), true)
@@ -213,13 +213,13 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             }
         }
 
-        val sections = ArrayList<SectionResult>(100)
+        val sections = ArrayList<SectionResult>()
         var correct = 0
         var incorrect = 0
         var flatInvolved = 0
         var candidate = anchor - quarter
         val calendar = Calendar.getInstance()
-        while (candidate >= firstOpen + minute && sections.size < 100) {
+        while (candidate >= firstOpen + minute) {
             calendar.timeInMillis = candidate
             val hour = calendar.get(Calendar.HOUR_OF_DAY)
             val minuteOfHour = calendar.get(Calendar.MINUTE)
@@ -257,12 +257,6 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             }
             candidate -= quarter
         }
-        if (sections.size < 100) {
-            throw IllegalStateException(
-                "Only found " + sections.size + " eligible time windows for " + symbol +
-                    " in the last 7 days inside the selected time window. Need 100."
-            )
-        }
         return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
     }
 
@@ -275,13 +269,15 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun showResults(results: List<CoinResult>, anchor: Long) {
         val totalCorrect = results.sumOf { it.correct }
         val totalIncorrect = results.sumOf { it.incorrect }
-        val totalScored = results.sumOf { it.sections.size }
+        val totalScored = results.sumOf { it.scored }
         val overall = if (totalScored == 0) 0.0 else totalCorrect * 100.0 / totalScored
-        status.text = "Completed • 800 time windows checked • Anchor: " +
+        val totalWindows = results.sumOf { it.sections.size }
+        status.text = "Completed • " + totalWindows + " total windows checked across " +
+            results.size + " coins • Anchor: " +
             SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date(anchor)) +
-            "\nOverall accuracy: " + String.format(Locale.US, "%.1f%%", overall) +
-            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect directional predictions; " +
-            results.sumOf { it.neutral } + " flat-involved windows out of " + totalScored + ")"
+            "\nOverall directional accuracy: " + String.format(Locale.US, "%.1f%%", overall) +
+            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect; " +
+            results.sumOf { it.neutral } + " flat/tied not scored; " + totalScored + " scored)"
 
         chartSlot.addView(label("ACCURACY BY COIN", 18f, 0xFFFFFFFF.toInt(), true))
         chartSlot.addView(AccuracyBarChart(this, results), LinearLayout.LayoutParams(-1, 240))
@@ -299,16 +295,17 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             )
             val counts = label(
                 coin.correct.toString() + " correct • " + coin.incorrect.toString() +
-                    " incorrect • " + coin.neutral.toString() + " flat-involved • 100 windows",
+                    " incorrect • " + coin.neutral.toString() + " flat/tied not scored • " +
+                    coin.sections.size + " total windows",
                 13f, 0xFFB9C7D8.toInt()
             )
-            val detailButton = Button(this).apply { text = "SHOW 100 SECTION RESULTS" }
+            val detailButton = Button(this).apply { text = "SHOW " + coin.sections.size + " SECTION RESULTS" }
             val detail = label(sectionDetails(coin), 12f, 0xFFD4DCE6.toInt())
             detail.visibility = View.GONE
             detailButton.setOnClickListener {
                 val opening = detail.visibility != View.VISIBLE
                 detail.visibility = if (opening) View.VISIBLE else View.GONE
-                detailButton.text = if (opening) "HIDE SECTION RESULTS" else "SHOW 100 SECTION RESULTS"
+                detailButton.text = if (opening) "HIDE SECTION RESULTS" else "SHOW " + coin.sections.size + " SECTION RESULTS"
             }
             panel.addView(heading)
             panel.addView(counts)
