@@ -39,8 +39,7 @@ class OverlayService : Service() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val symbol = intent?.getStringExtra(EXTRA_SYMBOL)
             ?: prefs.getString(KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
-        val emaPeriod = intent?.getIntExtra(EXTRA_EMA_PERIOD, prefs.getInt(KEY_EMA_PERIOD, 3))
-            ?: prefs.getInt(KEY_EMA_PERIOD, 3)
+        val emaPeriod = 3
         val orderBookWindow = prefs.getInt(KEY_ORDER_BOOK_WINDOW_SECONDS, 15)
             .coerceIn(15, 60).let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
         engine.updateEmaPeriod(emaPeriod)
