@@ -313,7 +313,7 @@ class MarketEngine(
             earlySignal = earlySignal.label,
             targetPosition = earlySignal.targetPosition,
             signalDetail = earlySignal.detail,
-            distanceToTarget = target?.close?.minus(latest?.close ?: target.close),
+            distanceToTarget = target?.close?.let { targetValue -> targetValue - (latest?.close ?: targetValue) },
             fiveMinuteTrend = fiveTrend,
             fiveMinuteEma3 = fiveEma3.lastOrNull(),
             fiveMinuteEma99 = fiveEma99.lastOrNull(),
