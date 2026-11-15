@@ -69,7 +69,7 @@
             android:paddingStart="4dp"
             android:paddingTop="4dp"
             android:paddingBottom="10dp"
-            android:text="EMA 7: —  •  EMA 99: —  •  15-minute target: —"
+            android:text="1m EMA 3/99 • 5m EMA 3/99 • 15-minute target: —"
             android:textColor="#55D6BE"
             android:textSize="13sp"
             android:textStyle="bold"/>
@@ -172,32 +172,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="17dp"
-            android:text="SHORT-TERM PRICE EMA"
+            android:text="FIXED EMA SETTINGS: EMA 3 + EMA 99 ON BOTH 1M AND 5M"
             android:textColor="@color/muted"
             android:textSize="11sp"
             android:textStyle="bold"/>
-        <TextView
-            android:id="@+id/emaValue"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
-            android:text="PRICE EMA: 3"
-            android:textColor="#55D6BE"
-            android:textSize="16sp"
-            android:textStyle="bold"/>
-        <SeekBar
-            android:id="@+id/emaSlider"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:max="9"
-            android:progress="2"/>
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="EMA 1 = fastest response     •     EMA 10 = smoother"
-            android:textColor="@color/muted"
-            android:textSize="11sp"/>
         <Button
             android:id="@+id/startCheckButton"
             android:layout_width="match_parent"
