@@ -25,8 +25,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nextAlert: TextView
     private lateinit var stateText: TextView
 
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        refresh()
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) enableAlerts() else refresh()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,6 +78,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        val active = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(ACTIVE, false)
+        if (active && (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms())) {
+            scheduleNext(this)
+        }
         refresh()
     }
 
@@ -90,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         }
         val alarmManager = getSystemService(AlarmManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(ACTIVE, true).apply()
             startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
             return
         }
