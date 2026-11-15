@@ -23,6 +23,7 @@ class MarketEngine(
     private val started = AtomicBoolean(false)
     private val logs = ArrayDeque<String>()
     private var candles = emptyList<Candle>()
+    private var fiveMinuteCandles = emptyList<Candle>()
     @Volatile private var orderBook: OrderBookSnapshot? = null
     private val orderBookHistory = ArrayDeque<OrderBookSnapshot>()
     private val rawOrderBookSamples = ArrayDeque<OrderBookSnapshot>()
@@ -69,6 +70,7 @@ class MarketEngine(
         }
         symbol = next
         candles = emptyList()
+        fiveMinuteCandles = emptyList()
         synchronized(orderBookHistory) { orderBookHistory.clear() }
         synchronized(rawOrderBookSamples) { rawOrderBookSamples.clear() }
         orderBook = null
@@ -95,7 +97,7 @@ class MarketEngine(
     }
 
     fun updateEmaPeriod(period: Int) {
-        val next = period.coerceIn(1, 10)
+        val next = 3
         if (next == emaPeriod) return
         emaPeriod = next
         log("Price EMA changed to EMA $next")
@@ -216,7 +218,9 @@ class MarketEngine(
         try {
             // Warm up EMA 99 with 150 candles, but only graph the newest 60.
             val result = client.fetchKlines(symbol, "1m", 150)
+            val fiveMinuteResult = client.fetchKlines(symbol, "5m", 150)
             candles = result.candles.sortedBy { it.openTime }.takeLast(150)
+            fiveMinuteCandles = fiveMinuteResult.candles.sortedBy { it.openTime }.takeLast(150)
 
             // Never substitute a one-off REST snapshot for a completed timed batch.
             // If the stream is stale, clear the reading and wait for a fresh full window.
@@ -232,7 +236,8 @@ class MarketEngine(
                 if (lastOrderBookStreamAtMs > 0L &&
                     System.currentTimeMillis() - lastOrderBookStreamAtMs <= ORDER_BOOK_STALE_MS
                 ) "100 ms stream / timed ${orderBookWindowSeconds}s batches" else "waiting for live depth stream"
-            log("Fetched ${candles.size} one-minute candles; displaying latest 60")
+            log("Fetched ${candles.size} one-minute + ${fiveMinuteCandles.size} five-minute candles; EMA 3/99 calculated independently")
+            fiveMinuteResult.notes.forEach { log("5m fallback: $it") }
             result.notes.forEach { log("Fallback: $it") }
         } catch (error: Exception) {
             lastError = error.message ?: error.javaClass.simpleName
@@ -252,8 +257,12 @@ class MarketEngine(
         val macdDif = macdFast.zip(macdSlow) { fast, slow -> fast - slow }
         val macdSignal = Indicators.emaSeriesFromFirst(macdDif, 9)
         val momentum = macdDif.zip(macdSignal) { dif, signal -> 2.0 * (dif - signal) }
-        val priceEma = Indicators.emaSeriesFromFirst(closes, emaPeriod)
+        val priceEma = Indicators.emaSeriesFromFirst(closes, 3)
         val priceEma99 = Indicators.emaSeriesFromFirst(closes, 99)
+        val fiveCloses = fiveMinuteCandles.map { it.close }
+        val fiveEma3 = Indicators.emaSeriesFromFirst(fiveCloses, 3)
+        val fiveEma99 = Indicators.emaSeriesFromFirst(fiveCloses, 99)
+        val fiveTrend = overallTrend(fiveCloses, fiveEma99)
         val volumeEma2 = Indicators.emaSeriesFromFirst(volumes, 2)
         val volumeBaseline = rollingAverage(volumes, 14)
         val volumeSpikes = volumes.mapIndexed { index, volume ->
@@ -275,7 +284,8 @@ class MarketEngine(
         val marketEndTime = target?.closeTime?.plus(1L)?.plus(FIFTEEN_MINUTES_MS)
         val earlySignal = EarlyReversalDetector.evaluate(
             data, momentum, priceEma, target?.close,
-            emaPeriod = emaPeriod,
+            emaPeriod = 3,
+            fiveMinuteCandles = fiveMinuteCandles,
             marketEndTimeMs = marketEndTime,
             orderBook = orderBook,
             orderBookHistory = synchronized(orderBookHistory) { orderBookHistory.toList() },
@@ -303,6 +313,10 @@ class MarketEngine(
             earlySignal = earlySignal.label,
             targetPosition = earlySignal.targetPosition,
             signalDetail = earlySignal.detail,
+            distanceToTarget = target?.close?.minus(latest?.close ?: target.close),
+            fiveMinuteTrend = fiveTrend,
+            fiveMinuteEma3 = fiveEma3.lastOrNull(),
+            fiveMinuteEma99 = fiveEma99.lastOrNull(),
         )
         onUpdate(
             EngineSnapshot(
@@ -319,6 +333,8 @@ class MarketEngine(
                 orderBookBidSeries = synchronized(orderBookHistory) { orderBookHistory.map { it.nearBidNotional } }.takeLast(60),
                 orderBookAskSeries = synchronized(orderBookHistory) { orderBookHistory.map { it.nearAskNotional } }.takeLast(60),
                 orderBookWindowSeconds = orderBookWindowSeconds,
+                fiveMinuteEma3Series = fiveEma3.takeLast(60),
+                fiveMinuteEma99Series = fiveEma99.takeLast(60),
                 orderBookCollectionElapsedSeconds = if (bookWindowStartedAtMs > 0L)
                     ((System.currentTimeMillis() - bookWindowStartedAtMs) / 1_000L).toInt().coerceIn(0, orderBookWindowSeconds)
                 else 0,
