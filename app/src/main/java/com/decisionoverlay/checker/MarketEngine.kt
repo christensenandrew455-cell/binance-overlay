@@ -148,7 +148,9 @@ class MarketEngine(
                         val requiredMs = orderBookWindowSeconds * 1_000L
                         if (elapsedMs >= requiredMs) {
                             // Publish only after a complete selected-duration collection.
-                            val completedBatch = rawOrderBookSamples.toList()
+                            // The boundary snapshot starts the next batch, so exclude it
+                            // from this completed interval to avoid double-counting it.
+                            val completedBatch = rawOrderBookSamples.dropLast(1).toList()
                             val averaged = averageOrderBook(completedBatch)
                             if (averaged != null && completedBatch.size >= MIN_ORDER_BOOK_SAMPLES) {
                                 orderBook = averaged
