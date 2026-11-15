@@ -28,7 +28,7 @@ class MarketEngine(
     private val rawOrderBookSamples = ArrayDeque<OrderBookSnapshot>()
     @Volatile private var orderBookSocket: WebSocket? = null
     @Volatile private var lastOrderBookStreamAtMs = 0L
-    private var lastBookWindowAtMs = 0L
+    private var bookWindowStartedAtMs = 0L
     @Volatile private var orderBookWindowSeconds = 15
     private var orderBookReconnectJob: Job? = null
 
@@ -73,7 +73,7 @@ class MarketEngine(
         synchronized(rawOrderBookSamples) { rawOrderBookSamples.clear() }
         orderBook = null
         lastOrderBookStreamAtMs = 0L
-        lastBookWindowAtMs = 0L
+        bookWindowStartedAtMs = 0L
         updatedAt = null
         lastError = null
         feedDetail = "Loading $next 1-minute candles"
@@ -122,7 +122,8 @@ class MarketEngine(
 
     /**
      * Binance.US sends a fresh top-10 depth snapshot about every 100 ms.
-     * We retain those fast updates and publish a configurable 15/30/45/60-second average every five seconds.
+     * Each output is a non-overlapping batch: collect continuously for the selected
+     * 15/30/45/60 seconds, then publish one average and start the next full batch.
      */
     private fun connectOrderBookStream() {
         if (!started.get()) return
@@ -134,30 +135,46 @@ class MarketEngine(
                 if (!started.get() || symbol != streamSymbol) return@openOrderBookStream
                 lastOrderBookStreamAtMs = sample.capturedAtMs
                 synchronized(rawOrderBookSamples) {
-                    rawOrderBookSamples.addLast(sample)
-                    val cutoff = sample.capturedAtMs - orderBookWindowSeconds * 1_000L
-                    while (rawOrderBookSamples.isNotEmpty() &&
-                        rawOrderBookSamples.first().capturedAtMs < cutoff
-                    ) rawOrderBookSamples.removeFirst()
-
-                    if (lastBookWindowAtMs == 0L ||
-                        sample.capturedAtMs - lastBookWindowAtMs >= ORDER_BOOK_SAMPLE_INTERVAL_MS
-                    ) {
-                        val averaged = averageOrderBook(rawOrderBookSamples.toList())
-                        if (averaged != null) {
-                            orderBook = averaged
-                            synchronized(orderBookHistory) {
-                                orderBookHistory.addLast(averaged)
-                                while (orderBookHistory.size > 60) orderBookHistory.removeFirst()
+                    // Start a fresh batch on the first live depth snapshot after start,
+                    // a setting change, or a reconnect.
+                    if (bookWindowStartedAtMs == 0L) {
+                        rawOrderBookSamples.clear()
+                        rawOrderBookSamples.addLast(sample)
+                        bookWindowStartedAtMs = sample.capturedAtMs
+                    } else {
+                        rawOrderBookSamples.addLast(sample)
+                        val elapsedMs = sample.capturedAtMs - bookWindowStartedAtMs
+                        val requiredMs = orderBookWindowSeconds * 1_000L
+                        if (elapsedMs >= requiredMs) {
+                            // Publish only after a complete selected-duration collection.
+                            val completedBatch = rawOrderBookSamples.toList()
+                            val averaged = averageOrderBook(completedBatch)
+                            if (averaged != null && completedBatch.size >= MIN_ORDER_BOOK_SAMPLES) {
+                                orderBook = averaged
+                                synchronized(orderBookHistory) {
+                                    orderBookHistory.addLast(averaged)
+                                    while (orderBookHistory.size > 60) orderBookHistory.removeFirst()
+                                }
+                                log("Completed ${orderBookWindowSeconds}s order book batch using ${completedBatch.size} depth snapshots")
+                            } else {
+                                log("Order book batch incomplete: ${completedBatch.size} samples; waiting for next full window")
+                                orderBook = null
                             }
-                            lastBookWindowAtMs = sample.capturedAtMs
+                            // The boundary snapshot begins the next non-overlapping batch.
+                            rawOrderBookSamples.clear()
+                            rawOrderBookSamples.addLast(sample)
+                            bookWindowStartedAtMs = sample.capturedAtMs
                         }
                     }
                 }
             },
             onDisconnected = {
                 if (started.get() && symbol == streamSymbol) {
-                    log("Order book stream disconnected; reconnecting")
+                    log("Order book stream disconnected; discarding incomplete collection window and reconnecting")
+                    synchronized(rawOrderBookSamples) { rawOrderBookSamples.clear() }
+                    synchronized(orderBookHistory) { orderBookHistory.clear() }
+                    bookWindowStartedAtMs = 0L
+                    orderBook = null
                     orderBookSocket = null
                     orderBookReconnectJob?.cancel()
                     orderBookReconnectJob = scope.launch(Dispatchers.IO) {
@@ -198,25 +215,20 @@ class MarketEngine(
             val result = client.fetchKlines(symbol, "1m", 150)
             candles = result.candles.sortedBy { it.openTime }.takeLast(150)
 
-            // REST is only a fallback while the live depth stream is starting or disconnected.
-            // It is deliberately not mixed into the five-second stream averages.
+            // Never substitute a one-off REST snapshot for a completed timed batch.
+            // If the stream is stale, clear the reading and wait for a fresh full window.
             if (lastOrderBookStreamAtMs == 0L ||
                 System.currentTimeMillis() - lastOrderBookStreamAtMs > ORDER_BOOK_STALE_MS
             ) {
-                try {
-                    orderBook = client.fetchOrderBook(symbol, 100)
-                    log("Order book using REST fallback snapshot")
-                } catch (bookError: Exception) {
-                    log("ORDER BOOK UNAVAILABLE: " +
-                        (bookError.message ?: bookError.javaClass.simpleName))
-                }
+                orderBook = null
+                log("Order book stream stale; waiting for a complete ${orderBookWindowSeconds}s live collection window")
             }
             updatedAt = System.currentTimeMillis()
             lastError = null
             feedDetail = "Connected to Binance.US • $source • live order book: " +
                 if (lastOrderBookStreamAtMs > 0L &&
                     System.currentTimeMillis() - lastOrderBookStreamAtMs <= ORDER_BOOK_STALE_MS
-                ) "100 ms stream / 5 s average" else "REST fallback"
+                ) "100 ms stream / timed ${orderBookWindowSeconds}s batches" else "waiting for live depth stream"
             log("Fetched ${candles.size} one-minute candles; displaying latest 60")
             result.notes.forEach { log("Fallback: $it") }
         } catch (error: Exception) {
@@ -345,8 +357,8 @@ class MarketEngine(
 
     companion object {
         private const val FIFTEEN_MINUTES_MS = 15L * 60L * 1000L
-        private const val ORDER_BOOK_SAMPLE_INTERVAL_MS = 5_000L
         private const val ORDER_BOOK_STALE_MS = 8_000L
+        private const val MIN_ORDER_BOOK_SAMPLES = 20
         private val SYMBOL = Regex("^[A-Z0-9]{5,20}$")
     }
 }
