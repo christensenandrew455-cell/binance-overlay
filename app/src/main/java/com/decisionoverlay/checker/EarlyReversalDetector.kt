@@ -262,7 +262,8 @@ object EarlyReversalDetector {
         }
         val last = candles.last()
         val previous = candles[candles.lastIndex - 1]
-        return touched && if (direction > 0) last.close > previous.close && last.close > ema.last()
+        if (!touched) return false
+        return if (direction > 0) last.close > previous.close && last.close > ema.last()
             else last.close < previous.close && last.close < ema.last()
     }
 
