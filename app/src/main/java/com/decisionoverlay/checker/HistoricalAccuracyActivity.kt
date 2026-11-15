@@ -133,22 +133,56 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val prices = HashMap<Long, Double>()
         var cursor = firstOpen
         while (cursor <= lastOpen) {
-            val url = "https://api.binance.com/api/v3/klines?symbol=" + symbol +
+            val query = "/api/v3/klines?symbol=" + symbol +
                 "&interval=1m&startTime=" + cursor + "&endTime=" + lastOpen + "&limit=1000"
-            val request = Request.Builder().url(url).get().build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IllegalStateException(symbol + " Binance HTTP " + response.code)
-                val body = response.body?.string() ?: throw IllegalStateException("Empty Binance response for " + symbol)
-                val rows = JSONArray(body)
-                if (rows.length() == 0) throw IllegalStateException("No candles returned for " + symbol)
-                var newest = cursor
-                for (i in 0 until rows.length()) {
-                    val row = rows.getJSONArray(i)
-                    val openTime = row.getLong(0)
-                    prices[openTime] = row.getString(4).toDouble()
-                    if (openTime > newest) newest = openTime
+            val hosts = listOf("https://api.binance.us", "https://api1.binance.us", "https://api2.binance.us")
+            var parsed = false
+            val failures = ArrayList<String>()
+            for (host in hosts) {
+                val url = host + query
+                try {
+                    val request = Request.Builder().url(url).get().build()
+                    client.newCall(request).execute().use { response ->
+                        val body = response.body?.string().orEmpty()
+                        if (!response.isSuccessful) {
+                            val detail = body.take(240).ifBlank { "no response body" }
+                            failures.add(host + " returned HTTP " + response.code + ": " + detail)
+                            if (response.code in 400..499) {
+                                throw IllegalStateException(
+                                    "Binance.US rejected " + symbol + " (HTTP " + response.code + "). " +
+                                        detail + " Endpoint: " + host +
+                                        ". Verify that the pair is supported on Binance.US."
+                                )
+                            }
+                            return@use
+                        }
+                        val rows = JSONArray(body)
+                        if (rows.length() == 0) {
+                            failures.add(host + " returned an empty candle list")
+                            return@use
+                        }
+                        var newest = cursor
+                        for (i in 0 until rows.length()) {
+                            val row = rows.getJSONArray(i)
+                            val openTime = row.getLong(0)
+                            prices[openTime] = row.getString(4).toDouble()
+                            if (openTime > newest) newest = openTime
+                        }
+                        cursor = newest + minute
+                        parsed = true
+                    }
+                } catch (e: IllegalStateException) {
+                    throw e
+                } catch (e: Exception) {
+                    failures.add(host + ": " + (e.message ?: e.javaClass.simpleName))
                 }
-                cursor = newest + minute
+                if (parsed) break
+            }
+            if (!parsed) {
+                throw IllegalStateException(
+                    "Unable to download " + symbol + " candles from Binance.US. Tried api.binance.us, " +
+                        "api1.binance.us, and api2.binance.us. " + failures.joinToString(" | ")
+                )
             }
         }
 
