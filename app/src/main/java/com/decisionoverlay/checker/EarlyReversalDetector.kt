@@ -25,6 +25,7 @@ object EarlyReversalDetector {
         priceEma: List<Double>,
         targetPrice: Double?,
         emaPeriod: Int = 3,
+        fiveMinuteCandles: List<Candle> = emptyList(),
         marketEndTimeMs: Long? = null,
         orderBook: OrderBookSnapshot? = null,
         orderBookHistory: List<OrderBookSnapshot> = emptyList(),
@@ -55,6 +56,17 @@ object EarlyReversalDetector {
                 "The current 15-minute target window has ended.")
         }
         val legs = buildLegs(candles)
+        val fiveCloses = fiveMinuteCandles.map { it.close }
+        val fiveEma3 = Indicators.emaSeriesFromFirst(fiveCloses, 3).lastOrNull()
+        val fiveEma99 = Indicators.emaSeriesFromFirst(fiveCloses, 99).lastOrNull()
+        val fiveMinuteDirection = when {
+            fiveEma3 != null && fiveEma99 != null && fiveEma3 > fiveEma99 -> 1
+            fiveEma3 != null && fiveEma99 != null && fiveEma3 < fiveEma99 -> -1
+            else -> 0
+        }
+        val rsi = calculateRsi(candles.map { it.close }, 14)
+        val adx = calculateAdx(candles, 14)
+        val divergence = detectRsiDivergence(candles, calculateRsiSeries(candles.map { it.close }, 14))
         val currentLeg = legs.lastOrNull()
         if (currentLeg == null || currentLeg.move <= 0.0) {
             return EarlySignalResult("WAIT • NO CLEAR PRICE LEG", targetPosition,
@@ -122,6 +134,12 @@ object EarlyReversalDetector {
         val momentumStrength = (abs(momentum.last()) / momentumScale).coerceIn(0.75, 1.20)
         val momentumAgrees = (direction > 0 && momentum.last() >= 0.0) ||
             (direction < 0 && momentum.last() <= 0.0)
+        val fiveMinuteAgrees = fiveMinuteDirection == direction
+        val adxSupportsTrend = adx == null || adx >= 16.0
+        val rsiSupportsDirection = if (direction > 0) (rsi == null || rsi in 42.0..75.0)
+            else (rsi == null || rsi in 25.0..58.0)
+        val divergenceAgainst = (direction > 0 && divergence == "BEARISH") ||
+            (direction < 0 && divergence == "BULLISH")
         val momentumFactor = if (momentumAgrees) max(1.0, momentumStrength) else 0.80
 
         // A pullback consumes part of the preceding impulse; volume and momentum adjust
@@ -151,18 +169,28 @@ object EarlyReversalDetector {
         // trade setup until price action turns toward the target.
         val label = when (targetPosition) {
             "ABOVE TARGET" -> when {
-                direction < 0 && likelyToFinishDown -> "EARLY DOWN TREND"
-                else -> "WAIT • DOWN SETUP NOT CONFIRMED"
+                direction < 0 && likelyToFinishDown && fiveMinuteAgrees &&
+                    adxSupportsTrend && rsiSupportsDirection && !divergenceAgainst &&
+                    hasLateEntryConfirmation(candles, priceEma, -1) -> "EARLY DOWN TREND"
+                else -> "WAIT • DOWN ENTRY NOT READY"
             }
             "BELOW TARGET" -> when {
-                direction > 0 && likelyToFinishUp -> "EARLY UP TREND"
-                else -> "WAIT • UP SETUP NOT CONFIRMED"
+                direction > 0 && likelyToFinishUp && fiveMinuteAgrees &&
+                    adxSupportsTrend && rsiSupportsDirection && !divergenceAgainst &&
+                    hasLateEntryConfirmation(candles, priceEma, 1) -> "EARLY UP TREND"
+                else -> "WAIT • UP ENTRY NOT READY"
             }
             else -> "WAIT • PRICE AT TARGET"
         }
         val directionText = if (direction > 0) "UP" else "DOWN"
         val evidence = buildList {
             add("Actual price: " + String.format(java.util.Locale.US, "$%,.2f", price))
+            add("Target distance: " + (if (distance >= 0) "below by " else "above by ") +
+                String.format(java.util.Locale.US, "$%,.2f", abs(distance)))
+            add("5m EMA3/EMA99 direction: " + when (fiveMinuteDirection) { 1 -> "UP"; -1 -> "DOWN"; else -> "NEUTRAL" })
+            add("RSI(14): " + (rsi?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "warming up") +
+                " • ADX(14): " + (adx?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "warming up") +
+                " • RSI divergence: $divergence")
             add("Target: " + String.format(java.util.Locale.US, "$%,.2f", targetPrice))
             add("Current leg: $directionText " + String.format(java.util.Locale.US, "$%.2f", currentLeg.move))
             add("Typical $directionText leg: " + String.format(java.util.Locale.US, "$%.2f", historicalLegSize))
@@ -188,7 +216,9 @@ object EarlyReversalDetector {
                     String.format(java.util.Locale.US, "%.1f%%", activeBookImbalance * 100.0) +
                     if (alignedBook) " • supports trend" else " • not confirming trend")
             } else add("Order book: unavailable")
-            add("EMA $emaPeriod: $emaTrend")
+            add("EMA 3: $emaTrend • 5m confirmation=$fiveMinuteAgrees")
+            add("Entry timing: pullback/retest plus directional close required; otherwise WAIT")
+            add("ADX=$adxSupportsTrend • RSI=$rsiSupportsDirection • divergenceAgainst=$divergenceAgainst")
         }.joinToString(" | ")
         return EarlySignalResult(label, targetPosition, evidence)
     }
@@ -223,6 +253,67 @@ object EarlyReversalDetector {
         val minutes = ((candles[end].openTime - candles[start].openTime).coerceAtLeast(60_000L) / 60_000.0)
         val volume = candles.subList(start + 1, end + 1).map { it.volume }.average()
         result.add(Leg(direction, move, minutes, volume))
+    }
+
+    private fun hasLateEntryConfirmation(candles: List<Candle>, ema: List<Double>, direction: Int): Boolean {
+        if (candles.size < 4 || ema.size != candles.size) return false
+        val touched = (candles.lastIndex - 2..candles.lastIndex).any { i ->
+            abs(candles[i].close - ema[i]) <= max(candles[i].high - candles[i].low, candles[i].close * 0.00025)
+        }
+        val last = candles.last()
+        val previous = candles[candles.lastIndex - 1]
+        return touched && if (direction > 0) last.close > previous.close && last.close > ema.last()
+            else last.close < previous.close && last.close < ema.last()
+    }
+
+    private fun calculateRsiSeries(closes: List<Double>, period: Int): List<Double> {
+        if (closes.size <= period) return emptyList()
+        val out = MutableList(closes.size) { 50.0 }
+        var gains = 0.0; var losses = 0.0
+        for (i in 1..period) {
+            val change = closes[i] - closes[i - 1]
+            if (change >= 0.0) gains += change else losses -= change
+        }
+        var avgGain = gains / period; var avgLoss = losses / period
+        fun current(): Double = if (avgLoss <= 0.0) 100.0 else 100.0 - 100.0 / (1.0 + avgGain / avgLoss)
+        out[period] = current()
+        for (i in period + 1 until closes.size) {
+            val change = closes[i] - closes[i - 1]
+            avgGain = (avgGain * (period - 1) + maxOf(change, 0.0)) / period
+            avgLoss = (avgLoss * (period - 1) + maxOf(-change, 0.0)) / period
+            out[i] = current()
+        }
+        return out
+    }
+
+    private fun calculateRsi(closes: List<Double>, period: Int): Double? =
+        calculateRsiSeries(closes, period).lastOrNull()
+
+    private fun calculateAdx(candles: List<Candle>, period: Int): Double? {
+        if (candles.size < period * 2 + 1) return null
+        val dx = (candles.size - period until candles.size).mapNotNull { i ->
+            val c = candles[i]; val p = candles[i - 1]
+            val up = c.high - p.high; val down = p.low - c.low
+            val plus = if (up > down && up > 0.0) up else 0.0
+            val minus = if (down > up && down > 0.0) down else 0.0
+            val tr = maxOf(c.high - c.low, abs(c.high - p.close), abs(c.low - p.close))
+            if (tr <= 0.0) null else abs(plus - minus) / (plus + minus).coerceAtLeast(1e-12) * 100.0
+        }
+        return dx.takeIf { it.isNotEmpty() }?.average()
+    }
+
+    private fun detectRsiDivergence(candles: List<Candle>, rsi: List<Double>): String {
+        if (candles.size < 12 || rsi.size != candles.size) return "NONE"
+        val split = candles.size - 6
+        val oldLow = (candles.size - 12 until split).minByOrNull { candles[it].low } ?: return "NONE"
+        val newLow = (split until candles.size).minByOrNull { candles[it].low } ?: return "NONE"
+        val oldHigh = (candles.size - 12 until split).maxByOrNull { candles[it].high } ?: return "NONE"
+        val newHigh = (split until candles.size).maxByOrNull { candles[it].high } ?: return "NONE"
+        return when {
+            candles[newLow].low < candles[oldLow].low && rsi[newLow] > rsi[oldLow] -> "BULLISH"
+            candles[newHigh].high > candles[oldHigh].high && rsi[newHigh] < rsi[oldHigh] -> "BEARISH"
+            else -> "NONE"
+        }
     }
 
     private fun List<Double>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
