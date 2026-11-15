@@ -136,6 +136,7 @@ class MainActivity : AppCompatActivity() {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             if (!prefs.getBoolean(ACTIVE, false)) return
             val alarmManager = context.getSystemService(AlarmManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return
             val intent = Intent(context, BuyAlarmReceiver::class.java)
             val pending = PendingIntent.getBroadcast(
                 context, REQUEST_CODE, intent,
