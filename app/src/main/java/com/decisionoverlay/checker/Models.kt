@@ -53,6 +53,8 @@ data class EngineSnapshot(
     /** Five-second rolling averages of proximity-weighted top-10 bid/ask notional. */
     val orderBookBidSeries: List<Double> = emptyList(),
     val orderBookAskSeries: List<Double> = emptyList(),
+    val orderBookWindowSeconds: Int = 15,
+    val orderBookCollectionElapsedSeconds: Int = 0,
 )
 
 fun fmtNum(value: Double?): String {
