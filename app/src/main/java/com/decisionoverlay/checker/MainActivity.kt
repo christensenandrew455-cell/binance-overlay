@@ -67,11 +67,18 @@ class MainActivity : AppCompatActivity() {
                 refresh()
             }
         }
+        val accuracyTest = Button(this).apply {
+            text = "HISTORICAL ACCURACY TEST"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, HistoricalAccuracyActivity::class.java))
+            }
+        }
         root.addView(title)
         root.addView(nextAlert)
         root.addView(stateText)
         root.addView(start)
         root.addView(stop)
+        root.addView(accuracyTest)
         setContentView(root)
         refresh()
     }
