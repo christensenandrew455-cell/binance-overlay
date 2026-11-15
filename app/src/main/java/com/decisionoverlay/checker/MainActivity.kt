@@ -262,8 +262,16 @@ class MainActivity : AppCompatActivity() {
         )
         val averageBids = snapshot.orderBookBidSeries.lastOrNull()
         val averageAsks = snapshot.orderBookAskSeries.lastOrNull()
+        val windowSeconds = snapshot.orderBookWindowSeconds
+        val elapsedSeconds = snapshot.orderBookCollectionElapsedSeconds
+        val hasCompletedAverage = snapshot.orderBookBidSeries.isNotEmpty() && snapshot.orderBookAskSeries.isNotEmpty()
+        val collectionLabel = if (hasCompletedAverage) {
+            "Last completed ${windowSeconds}s batch • collecting next: ${elapsedSeconds}/${windowSeconds}s"
+        } else {
+            "Collecting first full window: ${elapsedSeconds}/${windowSeconds}s"
+        }
         findViewById<TextView>(R.id.orderBookValue).text =
-            " ${selectedOrderBookWindowSeconds}-second smoothed average • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
+            "${collectionLabel} • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
         findViewById<TextView>(R.id.priceValue).text =
             "EMA ${metrics.emaPeriod}: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)}"
         findViewById<TextView>(R.id.volumeValue).text =
