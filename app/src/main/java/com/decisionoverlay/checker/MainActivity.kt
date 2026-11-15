@@ -250,7 +250,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.orderBookValue).text =
             "${collectionLabel} • Bids: ${fmtPrice(averageBids)} USDT • Asks: ${fmtPrice(averageAsks)} USDT"
         findViewById<TextView>(R.id.priceValue).text =
-            "1M EMA 3: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n5M EMA 3: ${fmtPrice(metrics.fiveMinuteEma3)}  •  EMA 99: ${fmtPrice(metrics.fiveMinuteEma99)} (${metrics.fiveMinuteTrend})\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)} • Distance: ${fmtPrice(metrics.distanceToTarget)}"
+            "1M EMA 3: ${fmtPrice(metrics.emaPrice)}  •  EMA 99: ${fmtPrice(metrics.ema99Price)}\n5M EMA 3: ${fmtPrice(metrics.fiveMinuteEma3)}  •  EMA 99: ${fmtPrice(metrics.fiveMinuteEma99)} (${metrics.fiveMinuteTrend})\n15-minute target (${formatTime(metrics.targetTime)}): ${fmtPrice(metrics.targetPrice)} • Gap: ${if ((metrics.distanceToTarget ?: 0.0) >= 0.0) "below by" else "above by"} ${fmtPrice(kotlin.math.abs(metrics.distanceToTarget ?: 0.0))}"
         findViewById<TextView>(R.id.volumeValue).text =
             "Each box = one 1-minute candle. Green = candle closed up; red = candle closed down. Taller boxes = unusually high total volume."
         findViewById<TextView>(R.id.momentumValue).text =
