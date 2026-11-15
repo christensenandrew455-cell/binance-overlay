@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity() {
         val active = prefs.getBoolean(OverlayService.KEY_MONITORING_ACTIVE, false)
         if (!active) return
         val symbol = prefs.getString(OverlayService.KEY_SYMBOL, "BTCUSDT") ?: "BTCUSDT"
-        selectedEmaPeriod = prefs.getInt(OverlayService.KEY_EMA_PERIOD, 3).coerceIn(1, 10)
+        selectedEmaPeriod = 3
         selectedOrderBookWindowSeconds = prefs.getInt(OverlayService.KEY_ORDER_BOOK_WINDOW_SECONDS, 15).coerceIn(15, 60)
             .let { if (it <= 15) 15 else if (it <= 30) 30 else if (it <= 45) 45 else 60 }
         findViewById<SeekBar>(R.id.orderBookWindowSlider).progress =
