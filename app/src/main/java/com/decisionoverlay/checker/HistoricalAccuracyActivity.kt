@@ -29,7 +29,7 @@ private data class SectionResult(
     val finishPrice: Double,
     val prediction: String,
     val actual: String,
-    val correct: Boolean?
+    val correct: Boolean
 )
 
 private data class CoinResult(
@@ -200,9 +200,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                 ?: throw IllegalStateException("Missing +15 minute close for " + symbol + " section " + (i + 1))
             val prediction = direction(minutePrice, target)
             val actual = direction(finishPrice, target)
+            // Score every section. FLAT is a real third outcome, not an excluded sample.
+            // A prediction is correct only when UP/DOWN/FLAT matches the actual result.
             val isNeutral = prediction == "FLAT" || actual == "FLAT"
-            val isCorrect = if (isNeutral) null else prediction == actual
-            if (isNeutral) neutral++ else if (isCorrect == true) correct++ else incorrect++
+            val isCorrect = prediction == actual
+            if (isNeutral) neutral++
+            if (isCorrect) correct++ else incorrect++
             sections.add(
                 SectionResult(
                     i + 1, targetTime, target, minutePrice, finishPrice,
@@ -222,13 +225,13 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun showResults(results: List<CoinResult>, anchor: Long) {
         val totalCorrect = results.sumOf { it.correct }
         val totalIncorrect = results.sumOf { it.incorrect }
-        val totalScored = totalCorrect + totalIncorrect
+        val totalScored = results.sumOf { it.sections.size }
         val overall = if (totalScored == 0) 0.0 else totalCorrect * 100.0 / totalScored
         status.text = "Completed • 700 sections checked • Anchor: " +
             SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date(anchor)) +
             "\nOverall accuracy: " + String.format(Locale.US, "%.1f%%", overall) +
-            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect; flat/tied: " +
-            results.sumOf { it.neutral } + ")"
+            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect out of " +
+            totalScored + "; flat-involved sections: " + results.sumOf { it.neutral } + ")"
 
         chartSlot.addView(label("ACCURACY BY COIN", 18f, 0xFFFFFFFF.toInt(), true))
         chartSlot.addView(AccuracyBarChart(this, results), LinearLayout.LayoutParams(-1, 240))
@@ -246,8 +249,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             )
             val counts = label(
                 coin.correct.toString() + " correct • " + coin.incorrect.toString() +
-                    " incorrect • " + coin.neutral.toString() + " flat/tied • " +
-                    coin.scored.toString() + " scored",
+                    " incorrect • " + coin.neutral.toString() + " flat-involved • " +
+                    coin.sections.size.toString() + " total",
                 13f, 0xFFB9C7D8.toInt()
             )
             val detailButton = Button(this).apply { text = "SHOW 100 SECTION RESULTS" }
@@ -273,11 +276,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val out = StringBuilder()
         out.append("Section | target time | +1m guess | +15m result | result\n")
         for (s in coin.sections) {
-            val mark = when (s.correct) {
-                true -> "CORRECT"
-                false -> "WRONG"
-                null -> "FLAT / TIE"
-            }
+            val mark = if (s.correct) "CORRECT" else "WRONG"
             out.append(s.number).append(" | ")
                 .append(fmt.format(Date(s.targetTime))).append(" | ")
                 .append(s.prediction).append(" | ")
