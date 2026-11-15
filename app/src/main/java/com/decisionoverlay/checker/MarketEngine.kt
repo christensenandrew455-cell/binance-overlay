@@ -88,8 +88,9 @@ class MarketEngine(
         orderBookWindowSeconds = next
         synchronized(rawOrderBookSamples) { rawOrderBookSamples.clear() }
         synchronized(orderBookHistory) { orderBookHistory.clear() }
-        lastBookWindowAtMs = 0L
-        log("Order book smoothing window changed to ${next}s")
+        orderBook = null
+        bookWindowStartedAtMs = 0L
+        log("Order book collection window changed to ${next}s; collecting a fresh full window")
         publish()
     }
 
