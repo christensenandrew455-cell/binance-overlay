@@ -71,7 +71,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "8 coins • 100 time windows each • 15-minute tests\nOnly tests from 11:00 PM through 10:00 AM local time (overnight). Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
+            "8 coins • 100 time windows each • 15-minute tests\nChoose your own start and end times below (24-hour local time). Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
             14f, 0xFFB9C7D8.toInt()
         )
         val timeLabel = label("TEST WINDOW (24-HOUR LOCAL TIME)", 15f, 0xFFFFFFFF.toInt(), true)
@@ -93,7 +93,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             text = "CHECK ACCURACY"
             setOnClickListener { startTest() }
         }
-        status = label("Press CHECK ACCURACY after 5:00 PM local time.", 14f, 0xFFB9C7D8.toInt())
+        status = label("Enter a time window and press CHECK ACCURACY.", 14f, 0xFFB9C7D8.toInt())
         chartSlot = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(title)
