@@ -28,7 +28,7 @@ class MarketEngine(
     private val rawOrderBookSamples = ArrayDeque<OrderBookSnapshot>()
     @Volatile private var orderBookSocket: WebSocket? = null
     @Volatile private var lastOrderBookStreamAtMs = 0L
-    private var bookWindowStartedAtMs = 0L
+    @Volatile private var bookWindowStartedAtMs = 0L
     @Volatile private var orderBookWindowSeconds = 15
     private var orderBookReconnectJob: Job? = null
 
@@ -316,6 +316,10 @@ class MarketEngine(
                 momentumSeries = displayedMomentum,
                 orderBookBidSeries = synchronized(orderBookHistory) { orderBookHistory.map { it.nearBidNotional } }.takeLast(60),
                 orderBookAskSeries = synchronized(orderBookHistory) { orderBookHistory.map { it.nearAskNotional } }.takeLast(60),
+                orderBookWindowSeconds = orderBookWindowSeconds,
+                orderBookCollectionElapsedSeconds = if (bookWindowStartedAtMs > 0L)
+                    ((System.currentTimeMillis() - bookWindowStartedAtMs) / 1_000L).toInt().coerceIn(0, orderBookWindowSeconds)
+                else 0,
             )
         )
     }
