@@ -29,7 +29,7 @@ private data class SectionResult(
     val finishPrice: Double,
     val prediction: String,
     val actual: String,
-    val correct: Boolean
+    val correct: Boolean?
 )
 
 private data class CoinResult(
@@ -44,7 +44,7 @@ private data class CoinResult(
 }
 
 class HistoricalAccuracyActivity : AppCompatActivity() {
-    private val symbols = listOf("ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT")
+    private val symbols = listOf("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT")
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -68,7 +68,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "7 coins • 100 scored sections each • 15-minute tests\nOnly tests from 10:00 AM through 11:00 PM local time. Flat or tied sections are skipped and the test goes further back to find 100 directional results.",
+            "8 coins • 100 time windows each • 15-minute tests\nOnly tests from 10:00 AM through 11:00 PM local time. Flat/tied sections are included and reported separately; they do not count as correct or incorrect directional predictions.",
             14f, 0xFFB9C7D8.toInt()
         )
         runButton = Button(this).apply {
@@ -127,8 +127,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun fetchCoin(symbol: String, anchor: Long): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
-        // Pull up to 7 days so skipped flat/tied windows can be replaced by older
-        // eligible windows while still collecting 100 directional scored sections.
+        // Pull up to 7 days to collect 100 eligible 15-minute windows
+        // inside the user's 10:00 AM–11:00 PM local-time trading window.
         val firstOpen = anchor - 7L * 24L * 60L * minute
         val lastOpen = anchor - minute
         val prices = HashMap<Long, Double>()
@@ -190,7 +190,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val sections = ArrayList<SectionResult>(100)
         var correct = 0
         var incorrect = 0
-        var skippedFlat = 0
+        var flatInvolved = 0
         var candidate = anchor - quarter
         val calendar = Calendar.getInstance()
         while (candidate >= firstOpen + minute && sections.size < 100) {
@@ -207,32 +207,34 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                 if (target != null && minutePrice != null && finishPrice != null) {
                     val prediction = direction(minutePrice, target)
                     val actual = direction(finishPrice, target)
-                    // Flat prediction or flat actual outcome is not a scored trade.
-                    // Skip it and continue farther back until 100 directional tests exist.
-                    if (prediction == "FLAT" || actual == "FLAT") {
-                        skippedFlat++
+                    // Keep every eligible time window, including flat/tied outcomes.
+                    // Flat-involved windows are reported but are not directional wins/losses.
+                    val isFlatInvolved = prediction == "FLAT" || actual == "FLAT"
+                    val isCorrect = if (isFlatInvolved) null else prediction == actual
+                    if (isFlatInvolved) {
+                        flatInvolved++
+                    } else if (isCorrect == true) {
+                        correct++
                     } else {
-                        val isCorrect = prediction == actual
-                        if (isCorrect) correct++ else incorrect++
-                        sections.add(
-                            SectionResult(
-                                sections.size + 1, candidate, target, minutePrice, finishPrice,
-                                prediction, actual, isCorrect
-                            )
-                        )
+                        incorrect++
                     }
+                    sections.add(
+                        SectionResult(
+                            sections.size + 1, candidate, target, minutePrice, finishPrice,
+                            prediction, actual, isCorrect
+                        )
+                    )
                 }
             }
             candidate -= quarter
         }
         if (sections.size < 100) {
             throw IllegalStateException(
-                "Only found " + sections.size + " directional sections for " + symbol +
-                    " in the last 7 days between 10:00 AM and 11:00 PM. Need 100. " +
-                    "Skipped flat/tied: " + skippedFlat + "."
+                "Only found " + sections.size + " eligible time windows for " + symbol +
+                    " in the last 7 days between 10:00 AM and 11:00 PM. Need 100."
             )
         }
-        return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, skippedFlat)
+        return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
     }
 
     private fun direction(price: Double, target: Double): String = when {
@@ -246,11 +248,11 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val totalIncorrect = results.sumOf { it.incorrect }
         val totalScored = results.sumOf { it.sections.size }
         val overall = if (totalScored == 0) 0.0 else totalCorrect * 100.0 / totalScored
-        status.text = "Completed • 700 directional sections checked • Anchor: " +
+        status.text = "Completed • 800 time windows checked • Anchor: " +
             SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date(anchor)) +
             "\nOverall accuracy: " + String.format(Locale.US, "%.1f%%", overall) +
-            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect out of " +
-            totalScored + "; skipped flat/tied: " + results.sumOf { it.neutral } + ")"
+            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect directional predictions; " +
+            results.sumOf { it.neutral } + " flat-involved windows out of " + totalScored + ")"
 
         chartSlot.addView(label("ACCURACY BY COIN", 18f, 0xFFFFFFFF.toInt(), true))
         chartSlot.addView(AccuracyBarChart(this, results), LinearLayout.LayoutParams(-1, 240))
@@ -268,7 +270,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             )
             val counts = label(
                 coin.correct.toString() + " correct • " + coin.incorrect.toString() +
-                    " incorrect • " + coin.neutral.toString() + " flat/tied skipped • 100 scored",
+                    " incorrect • " + coin.neutral.toString() + " flat-involved • 100 windows",
                 13f, 0xFFB9C7D8.toInt()
             )
             val detailButton = Button(this).apply { text = "SHOW 100 SECTION RESULTS" }
@@ -294,7 +296,11 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val out = StringBuilder()
         out.append("Section | target time | +1m guess | +15m result | result\n")
         for (s in coin.sections) {
-            val mark = if (s.correct) "CORRECT" else "WRONG"
+            val mark = when (s.correct) {
+                true -> "CORRECT"
+                false -> "WRONG"
+                null -> "FLAT / TIE — NOT SCORED"
+            }
             out.append(s.number).append(" | ")
                 .append(fmt.format(Date(s.targetTime))).append(" | ")
                 .append(s.prediction).append(" | ")
@@ -333,7 +339,7 @@ private class AccuracyBarChart(
         val left = 82f
         val right = width - 18f
         val top = 18f
-        val rowHeight = (height - 30f) / 7f
+        val rowHeight = (height - 30f) / 8f
         paint.textSize = 30f
         paint.color = 0xFFFFFFFF.toInt()
         paint.typeface = Typeface.DEFAULT_BOLD
