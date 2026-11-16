@@ -30,6 +30,7 @@ import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.ceil
 
 /**
  * Separate leading-side HOLD strategy. No orders are placed. Monitor is active
@@ -171,7 +172,8 @@ class HoldEdgeActivity : AppCompatActivity() {
                 val spot = fetchSpot(coin)
                 val lead = HoldProbabilityEngine.leadingSide(spot, market.target)
                 val absoluteDistance = abs(spot - market.target)
-                val minute = remaining.toInt().coerceIn(1, 14)
+                // The latest fully CLOSED minute corresponds to ceil(time left).
+                val minute = ceil(remaining).toInt().coerceIn(1, 14)
                 val band = HoldProbabilityEngine.bandFor(coin, absoluteDistance)
                 val key = HoldProbabilityEngine.Key(minute, band, lead)
                 val old = historic.rate(key, false)
