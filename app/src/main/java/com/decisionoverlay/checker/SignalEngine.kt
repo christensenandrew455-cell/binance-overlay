@@ -216,6 +216,12 @@ object SignalEngine {
      *  Historical order-book/aggTrades snapshots cannot be reconstructed from OHLCV.
      *  Return 0 for WAIT. All inputs must include only candles closed by observation.
      */
+    /** BOS = candle CLOSE crossing a previously confirmed 2-left/2-right swing.
+     * The break must have occurred within the last 3 closed candles (1m),
+     * or last 2 closed candles (5m). This never examines later candles.
+     */
+    enum class BosMode { NONE, ONE_MINUTE, FIVE_MINUTE, EITHER }
+
     data class CandleRules(
         val name: String = "Original",
         val minScore: Int = 4,
@@ -223,8 +229,39 @@ object SignalEngine {
         val minMomentum: Double = 0.0,
         val requireStructure: Boolean = false,
         val requireWick: Boolean = false,
-        val travelMultiplier: Double = 1.0
+        val travelMultiplier: Double = 1.0,
+        val bosMode: BosMode = BosMode.NONE
     )
+
+    /** Uses only the candles passed in; recent closes must exceed a prior
+     * confirmed swing HIGH (up) or LOW (down). Wick-only breaks don't count.
+     */
+    fun recentBreakOfStructure(
+        bars: List<Bar>, direction: Int, recentCandles: Int = 3
+    ): Boolean {
+        if (direction !in listOf(-1, 1) || bars.size < 10 || recentCandles < 1) return false
+        val firstBreak = max(5, bars.size - recentCandles)
+        for (i in firstBreak until bars.size) {
+            // Pivots require two completed candles on both sides BEFORE the break.
+            var lastPivot: Double? = null
+            for (p in max(2, i - 42) until i - 2) {
+                val v = if (direction == 1) bars[p].high else bars[p].low
+                val confirmed = if (direction == 1)
+                    v > bars[p - 1].high && v > bars[p - 2].high &&
+                    v > bars[p + 1].high && v > bars[p + 2].high
+                else
+                    v < bars[p - 1].low && v < bars[p - 2].low &&
+                    v < bars[p + 1].low && v < bars[p + 2].low
+                if (confirmed) lastPivot = v
+            }
+            val pivot = lastPivot ?: continue
+            if (direction == 1 && bars[i - 1].close <= pivot && bars[i].close > pivot)
+                return true
+            if (direction == -1 && bars[i - 1].close >= pivot && bars[i].close < pivot)
+                return true
+        }
+        return false
+    }
     data class CandleSignal(val direction: Int, val reason: String, val score: Int = 0)
 
     fun replayCandle(
@@ -285,6 +322,18 @@ object SignalEngine {
             return CandleSignal(0, "Structure not confirmed.", score)
         if (rules.requireWick && !(if (dir == 1) wickUp else wickDown))
             return CandleSignal(0, "Wick not confirmed.", score)
+        if (rules.bosMode != BosMode.NONE) {
+            val bos1m = recentBreakOfStructure(one, dir, 3)
+            val bos5m = recentBreakOfStructure(five, dir, 2)
+            val bosConfirmed = when (rules.bosMode) {
+                BosMode.ONE_MINUTE -> bos1m
+                BosMode.FIVE_MINUTE -> bos5m
+                BosMode.EITHER -> bos1m || bos5m
+                BosMode.NONE -> true
+            }
+            if (!bosConfirmed) return CandleSignal(0,
+                "No confirmed " + rules.bosMode + " break of structure.", score)
+        }
         val needed = abs(spot - target) + max(atr * 0.10, spot * 0.00005)
         val projected = travelBudget(atr, minutesLeft, dir * delta3 / 3.0) *
             rules.travelMultiplier
