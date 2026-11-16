@@ -73,12 +73,17 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this@MainActivity, HistoricalAccuracyActivity::class.java))
             }
         }
+        val trendTest = Button(this).apply {
+            text = "TEST TRENDS"
+            setOnClickListener { startActivity(Intent(this@MainActivity, TrendOpportunityActivity::class.java)) }
+        }
         root.addView(title)
         root.addView(nextAlert)
         root.addView(stateText)
         root.addView(start)
         root.addView(stop)
         root.addView(accuracyTest)
+        root.addView(trendTest)
         setContentView(root)
         refresh()
     }
