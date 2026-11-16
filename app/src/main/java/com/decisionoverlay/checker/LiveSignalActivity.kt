@@ -42,6 +42,8 @@ class LiveSignalActivity : AppCompatActivity() {
     private var inFlight = false
     private var report = ""
     private var lastAlertKey: String? = null
+    private var backtestBusy = false
+    private lateinit var historyButton: Button
     private lateinit var selector: Spinner
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
@@ -91,6 +93,11 @@ class LiveSignalActivity : AppCompatActivity() {
         verdict = label("WAIT", 29f, true)
         status = label("Select a coin and press START. Refreshes about every 12 seconds.", 14f)
         details = label("", 13f)
+        historyButton = Button(this).apply {
+            text = "BACKTEST 100 HISTORICAL SIGNALS"
+            setOnClickListener { runHistoricalReplay() }
+        }
+        root.addView(historyButton)
         root.addView(startButton)
         root.addView(stopButton)
         root.addView(verdict)
@@ -105,8 +112,49 @@ class LiveSignalActivity : AppCompatActivity() {
         root.addView(ScrollView(this).apply {
             addView(details)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(Button(this).apply { text = "BACK"; setOnClickListener { finish() } })
         setContentView(root)
+    }
+
+    private fun runHistoricalReplay() {
+        if (backtestBusy) return
+        stopChecking()
+        backtestBusy = true
+        historyButton.isEnabled = false
+        startButton.isEnabled = false
+        selector.isEnabled = false
+        val coin = selector.selectedItem.toString()
+        verdict.text = "BACKTESTING"
+        details.text = ""
+        status.text = "Replaying old 15-minute markets for " + coin + "..."
+        Thread {
+            var output: String? = null
+            var failure: String? = null
+            try {
+                output = HistoricalSignalReplay.run(coin) { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) status.text = progress
+                    }
+                }
+            } catch (e: Exception) {
+                failure = e.message ?: e.javaClass.simpleName
+            }
+            val finalOutput = output
+            val finalFailure = failure
+            runOnUiThread {
+                backtestBusy = false
+                historyButton.isEnabled = true
+                startButton.isEnabled = true
+                selector.isEnabled = true
+                if (!isFinishing && !isDestroyed) {
+                    report = finalOutput ?: "BACKTEST ERROR: " + (finalFailure ?: "Unknown")
+                    details.text = report
+                    verdict.text = if (finalOutput != null) "BACKTEST FINISHED" else "ERROR"
+                    status.text = if (finalOutput != null)
+                        "Results ready for " + coin + ". Scroll to view or copy."
+                    else "Backtest failed: " + (finalFailure ?: "Unknown")
+                }
+            }
+        }.start()
     }
 
     private fun startChecking() {
