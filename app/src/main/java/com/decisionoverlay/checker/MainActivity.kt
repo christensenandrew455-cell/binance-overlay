@@ -85,6 +85,10 @@ class MainActivity : AppCompatActivity() {
         root.addView(accuracyTest)
         root.addView(trendTest)
         root.addView(Button(this).apply {
+            text = "LIVE TARGET-CROSS SIGNAL"
+            setOnClickListener { startActivity(Intent(this@MainActivity, LiveSignalActivity::class.java)) }
+        })
+        root.addView(Button(this).apply {
             text = "KALSHI EDGE CHECK"
             setOnClickListener { startActivity(Intent(this@MainActivity, KalshiEdgeActivity::class.java)) }
         })
