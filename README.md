@@ -15,10 +15,15 @@ The app now includes a **KALSHI EDGE CHECK** button. It retrieves the current op
 including its target, remaining time, and the live **buy YES / buy NO asks**.
 No Kalshi key or account is required for these public read-only quotes.
 
-For each coin the app scans **300 completed 15-minute windows** from Binance.US
-using approximately 4,501 one-minute candles, and groups observations by the
-distance from the target and the minutes left to expiry. It displays the rate
-that the side currently in the lead remained on that side at settlement,
+For each coin the app scans **300 completed 15-minute windows initially**, and
+continues in batches of 300 (up to **2,400 historical windows per coin**) until
+the current distance/time bracket contains at least **100 matching examples**.
+It downloads Binance.US one-minute candles as needed; this can take longer for
+rare conditions and may still produce fewer than 100 matches. The scanner pools
+UP-leading and DOWN-leading cases by absolute distance, as requested, while
+also displaying separate UP and DOWN counts to help spot differences.
+It displays the rate that the side currently in the lead remained in the
+lead at settlement,
 a rough confidence interval, and an indicative expected value compared
 with the live Kalshi ask plus an estimated taker fee.
 
@@ -31,6 +36,10 @@ with the live Kalshi ask plus an estimated taker fee.
   from Kalshi's true contract outcome, especially near the target.
 - The current Binance.US ticker price is also an **approximation** to the CF index,
   and live quotes can change while the multi-coin check is running.
+- The goal of 100 matches is a sampling threshold, **not** proof of accuracy.
+  The app does not treat buckets with fewer than 100 matching cases as
+  supported trade candidates. The combined rate assumes UP- and DOWN-leading
+  situations are reasonably comparable; the side breakdown helps assess this.
 - The output is a screening test, **not** proof of positive expected value.
   A faithful return backtest requires historical Kalshi executable ask prices,
   matching CF index data, fill sizes, bid/ask spread and actual fees.
