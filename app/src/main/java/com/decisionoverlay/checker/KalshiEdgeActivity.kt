@@ -38,10 +38,27 @@ class KalshiEdgeActivity : AppCompatActivity() {
         val series: String get() = "KX" + name + "15M"
     }
     private data class MinuteBar(val proxy: Double)
-    private data class Bucket(var hits: Int = 0, var wins: Int = 0) {
+    private data class Bucket(
+        var hits: Int = 0, var wins: Int = 0,
+        var upHits: Int = 0, var upWins: Int = 0,
+        var downHits: Int = 0, var downWins: Int = 0
+    ) {
         val rate: Double get() = if (hits == 0) 0.0 else wins.toDouble() / hits
+        fun record(leadingUp: Boolean, held: Boolean) {
+            hits++
+            if (held) wins++
+            if (leadingUp) {
+                upHits++
+                if (held) upWins++
+            } else {
+                downHits++
+                if (held) downWins++
+            }
+        }
     }
-    private data class Historic(val buckets: Map<Pair<Int, Int>, Bucket>, val rounds: Int)
+    private data class Historic(
+        val buckets: Map<Pair<Int, Int>, Bucket>, val rounds: Int, val scannedRounds: Int
+    )
     private data class Live(
         val market: JSONObject,
         val minutesRemaining: Double,
@@ -50,6 +67,9 @@ class KalshiEdgeActivity : AppCompatActivity() {
         val noAsk: Double?
     )
 
+    private val batchRounds = 300
+    private val maxRounds = 2400
+    private val targetMatches = 100
     private val coins = listOf("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "NEAR", "ZEC")
         .map { Coin(it) }
     private val client = OkHttpClient.Builder()
@@ -73,8 +93,8 @@ class KalshiEdgeActivity : AppCompatActivity() {
         root.addView(label("KALSHI 15-MIN EDGE CHECK", 22f, true))
         root.addView(label(
             "Nine coins • live Kalshi YES/NO buy asks • minutes left • distance from target. " +
-            "Compare with 300 completed 15-minute rounds per coin from Binance.US 1m candles. " +
-            "Historical probability is an APPROXIMATION, not Kalshi's pricing algorithm.",
+            "Scan 300-2400 completed 15-minute rounds per coin until 100 matching cases are found. " +
+            "History is a PROXY, not Kalshi's official success probability.",
             13f
         ))
         check = Button(this).apply {
@@ -114,10 +134,13 @@ class KalshiEdgeActivity : AppCompatActivity() {
             output.appendLine("Run at: " + Instant.ofEpochMilli(started).toString())
             output.appendLine("Kalshi settlement: CF Benchmarks 60-second average before END >= average before START is YES.")
             output.appendLine("Live ask: actual quoted BUY YES/NO, NOT an official success probability.")
-            output.appendLine("History: 300 latest COMPLETED rounds, Binance.US 1m OHLC4 proxy; not exact Kalshi index.")
+            output.appendLine("History: scan in 300-round batches, up to 2400 rounds, until 100 matches for the current time/distance bucket.")
+            output.appendLine("Historical prices: Binance.US 1m OHLC4 proxy; NOT Kalshi's CF settlement index.")
             output.appendLine("Proxy brackets: time remaining 1-3 / 4-6 / 7-10 / 11-14 minutes;")
             output.appendLine("absolute distance <0.10% / 0.10-0.25% / 0.25-0.50% / >=0.50%.")
             output.appendLine("Historical samples: one per time bracket per market (2, 5, 8, 12 minutes remaining).")
+            output.appendLine("Survival rate pools UP and DOWN leaders by absolute distance as requested.")
+            output.appendLine("UP and DOWN sample breakdowns are shown to check that pooling is sensible.")
             output.appendLine("Historical confidence interval is approximate Wilson 95%.")
             output.appendLine("YES wins ties in the 15-minute UP/DOWN contract; data-provider prices may disagree.")
             output.appendLine("Estimated fee uses the GENERAL taker formula for one contract; actual fee/order may differ.")
@@ -125,83 +148,130 @@ class KalshiEdgeActivity : AppCompatActivity() {
             output.appendLine()
             var successes = 0
             for ((index, coin) in coins.withIndex()) {
-                runOnUiThread {
-                    status.text = "Checking " + (index + 1) + "/9: " + coin.name +
-                        " (live Kalshi + historical Binance.US)"
-                }
                 output.appendLine("==== " + coin.name + " ====")
-                // Complete the slower historical download FIRST, then collect the
-                // rapidly changing live ask and spot price near each other in time.
-                val history = try { fetchHistoric(coin) }
+                runOnUiThread {
+                    status.text = "Coin " + (index + 1) + "/9: checking Kalshi target and current price..."
+                }
+
+                // Get the current bucket first, so we only download extra history
+                // when the user's actual comparison needs more examples.
+                val startingLive = try { fetchLive(coin) }
                 catch (e: Exception) {
-                    output.appendLine("Binance history unavailable: " + (e.message ?: "unknown"))
+                    output.appendLine("Initial Kalshi quote unavailable: " + (e.message ?: "unknown"))
                     null
                 }
-                if (history != null) output.appendLine(
-                    "History: " + history.rounds + " completed 15m rounds assessed."
-                )
+                val startingSpot = if (startingLive != null) try { fetchSpot(coin) }
+                catch (e: Exception) {
+                    output.appendLine("Initial Binance spot unavailable: " + (e.message ?: "unknown"))
+                    null
+                } else null
+
+                val history = if (startingLive != null && startingSpot != null) {
+                    val initialPct = kotlin.math.abs((startingSpot - startingLive.target) /
+                        startingLive.target) * 100.0
+                    try {
+                        fetchHistoric(
+                            coin, timeBucket(startingLive.minutesRemaining),
+                            distanceBucket(initialPct), index
+                        )
+                    } catch (e: Exception) {
+                        output.appendLine("Binance history unavailable: " + (e.message ?: "unknown"))
+                        null
+                    }
+                } else null
+
+                if (history != null) {
+                    output.appendLine("History: " + history.rounds +
+                        " complete rounds out of " + history.scannedRounds + " scanned.")
+                }
+
+                // Quotes and spot can change while history downloads; take fresh
+                // values for the displayed comparison, never the preliminary quote.
                 val live = try { fetchLive(coin) }
                 catch (e: Exception) {
-                    output.appendLine("Kalshi unavailable: " + (e.message ?: "unknown"))
+                    output.appendLine("Latest Kalshi quote unavailable: " + (e.message ?: "unknown"))
                     null
                 }
                 if (live == null) {
-                    output.appendLine("No currently open 15-minute contract with a usable target; no invented quotes.")
+                    output.appendLine("No CURRENT open contract with a usable target/quote.")
                 } else {
-                    val ticker = live.market.optString("ticker")
-                    output.appendLine("Ticker: " + ticker)
+                    output.appendLine("Ticker: " + live.market.optString("ticker"))
                     output.appendLine(String.format(Locale.US,
                         "Target (Kalshi index): %.6f USD | time remaining at quote: %.2f min",
                         live.target, live.minutesRemaining))
                     output.appendLine("Kalshi BUY asks: YES " + fmtAsk(live.yesAsk) +
                         " / NO " + fmtAsk(live.noAsk))
-                    output.appendLine("Kalshi displayed prices are set by orders; $ distance alone does not set %.")
                 }
+
                 if (live != null && history != null) {
                     try {
                         val spot = fetchSpot(coin)
                         val dollars = spot - live.target
-                        val distancePct = if (live.target > 0) kotlin.math.abs(dollars / live.target * 100) else 0.0
-                        val leadingYes = dollars >= 0
+                        val distancePct = kotlin.math.abs(dollars / live.target * 100.0)
+                        val leadingYes = dollars >= 0.0
                         val ask = if (leadingYes) live.yesAsk else live.noAsk
-                        val timeBucket = timeBucket(live.minutesRemaining)
-                        val distBucket = distanceBucket(distancePct)
-                        val stats = history.buckets[Pair(timeBucket, distBucket)] ?: Bucket()
+                        val timeB = timeBucket(live.minutesRemaining)
+                        val distB = distanceBucket(distancePct)
+                        val stats = history.buckets[Pair(timeB, distB)] ?: Bucket()
                         val direction = if (leadingYes) "YES / UP" else "NO / DOWN"
                         output.appendLine(String.format(Locale.US,
                             "Binance.US NOW %.6f USD | Kalshi target gap %+.6f USD (%.4f%%) | leading: %s",
                             spot, dollars, distancePct, direction))
-                        output.appendLine("Matched history bucket: " + timeName(timeBucket) + " remaining, " +
-                            distName(distBucket) + " away.")
+                        output.appendLine("Matched history: " + timeName(timeB) +
+                            " remaining, " + distName(distB) + " away.")
+                        output.appendLine("Matching cases: " + stats.hits + "/" + targetMatches +
+                            " goal (max " + maxRounds + " historical rounds).")
                         if (stats.hits > 0) {
                             val ci = wilson(stats.wins, stats.hits)
                             output.appendLine(String.format(Locale.US,
-                                "Leading side held: %d/%d = %.1f%% | 95%% interval %.1f%%-%.1f%%",
+                                "Either leading side held: %d/%d = %.1f%% | 95%% interval %.1f%%-%.1f%%",
                                 stats.wins, stats.hits, stats.rate * 100, ci.first * 100, ci.second * 100))
+                            output.appendLine("Breakdown: UP lead held " + stats.upWins +
+                                "/" + stats.upHits + "; DOWN lead held " + stats.downWins +
+                                "/" + stats.downHits + " (pooled rate above).")
                             if (ask != null) {
                                 val fee = feeApprox(ask)
                                 val breakEven = ask + fee
                                 val proxyEv = stats.rate - breakEven
                                 output.appendLine(String.format(Locale.US,
-                                    "Buy ask %.2f cents + estimated fee %.2f cents => break-even %.2f%%",
+                                    "Buy %s at %.2f cents + est. fee %.2f cents => break-even %.2f%%",
+                                    if (leadingYes) "YES" else "NO",
                                     ask * 100, fee * 100, breakEven * 100))
                                 output.appendLine(String.format(Locale.US,
-                                    "PROXY expected net per $1 contract: %+.2f cents (not a validated edge)",
+                                    "POOLED proxy expected net per $1 contract: %+.2f cents (unverified)",
                                     proxyEv * 100))
+                                val currentSideHits = if (leadingYes) stats.upHits else stats.downHits
+                                val sideRate = if (currentSideHits > 0)
+                                    (if (leadingYes) stats.upWins else stats.downWins).toDouble() / currentSideHits
+                                    else Double.NaN
+                                if (currentSideHits > 0) {
+                                    output.appendLine(String.format(Locale.US,
+                                        "Direction sanity check: %d matching %s-leading cases, %.1f%% held.",
+                                        currentSideHits, if (leadingYes) "UP" else "DOWN",
+                                        sideRate * 100))
+                                }
                                 output.appendLine(
-                                    if (stats.hits < 40) "INCONCLUSIVE: too few matched historical cases (need >=40)."
+                                    if (stats.hits < targetMatches)
+                                        "INSUFFICIENT HISTORY for this exact bucket: do not label as an edge."
+                                    else if (currentSideHits < 20)
+                                        "RESEARCH ONLY: too few cases for this specific direction."
                                     else if (ci.first > breakEven)
-                                        "RESEARCH CANDIDATE ONLY: proxy lower confidence bound exceeds break-even; CF index mismatch remains."
-                                    else "NO VERIFIED EDGE at this price and bucket."
+                                        "POTENTIAL MISPRICING TO VERIFY: even pooled lower bound exceeds quoted break-even; not a validated edge."
+                                    else
+                                        "NO RELIABLE EDGE SHOWN by the pooled proxy at this price."
                                 )
-                            } else output.appendLine("No executable ask found; cannot estimate entry value.")
-                        } else output.appendLine("NO COMPARABLE HISTORY in this distance/time bracket.")
+                            } else {
+                                output.appendLine("No executable ask found; cannot estimate entry value.")
+                            }
+                        } else {
+                            output.appendLine("NO COMPARABLE HISTORY in this distance/time bracket.")
+                        }
                         successes++
                     } catch (e: Exception) {
-                        output.appendLine("Current Binance spot unavailable: " + (e.message ?: "unknown"))
+                        output.appendLine("Fresh Binance price unavailable: " + (e.message ?: "unknown"))
                     }
-                } else if (history != null) {
-                    output.appendLine("Historical sample saved in this run, but no valid live Kalshi comparison.")
+                } else {
+                    output.appendLine("No valid live+historical comparison for this coin.")
                 }
                 output.appendLine()
                 val snapshot = output.toString()
@@ -248,64 +318,77 @@ class KalshiEdgeActivity : AppCompatActivity() {
         return price
     }
 
-    private fun fetchHistoric(coin: Coin): Historic {
-        // 300 completed 15-minute periods, plus the preceding minute for each starting target.
-        // Binance.US public candles are 1m: 4501 bars, typically 5 requests per coin.
+    private fun fetchHistoric(
+        coin: Coin, targetTimeBucket: Int, targetDistanceBucket: Int, coinIndex: Int
+    ): Historic {
+        // Download additional non-overlapping batches ONLY if the current time
+        // and distance bucket has fewer than 100 matching historical cases.
+        // The max prevents unbounded mobile downloads on rare price moves.
         val quarter = 900_000L
-        val end = (System.currentTimeMillis() / quarter) * quarter
-        val first = end - 300L * quarter
-        val from = first - 60_000L
-        val until = end - 1L
-        val bars = HashMap<Long, MinuteBar>()
-        var cursor = from
-        var pages = 0
-        while (cursor <= until && pages < 7) {
-            val url = "https://api.binance.us/api/v3/klines?symbol=" + coin.pair +
-                "&interval=1m&startTime=" + cursor + "&endTime=" + until + "&limit=1000"
-            val rows = getArray(url)
-            if (rows.length() == 0) break
-            for (i in 0 until rows.length()) {
-                val c = rows.getJSONArray(i)
-                val ts = c.getLong(0)
-                // OHLC4 approximates an average over the minute, NOT a CF Benchmarks average.
-                val p = (c.getDouble(1) + c.getDouble(2) +
-                    c.getDouble(3) + c.getDouble(4)) / 4.0
-                if (ts in from..until && p.isFinite() && p > 0) bars[ts] = MinuteBar(p)
-            }
-            val last = rows.getJSONArray(rows.length() - 1).getLong(0)
-            val next = last + 60_000L
-            if (next <= cursor) break
-            cursor = next
-            pages++
-            if (rows.length() < 1000) break
-        }
+        val latestCompletedEnd = (System.currentTimeMillis() / quarter) * quarter
         val buckets = HashMap<Pair<Int, Int>, Bucket>()
+        val desired = Pair(targetTimeBucket, targetDistanceBucket)
         var complete = 0
-        for (round in 0 until 300) {
-            val start = first + round * quarter
-            val target = bars[start - 60_000L]?.proxy ?: continue
-            val finish = bars[start + 14 * 60_000L]?.proxy ?: continue
-            // Require the full 15-minute minute-candle sequence. Missing candles
-            // would otherwise bias results for partial or low-liquidity markets.
-            if ((-1..14).any { bars[start + it * 60_000L] == null }) continue
-            complete++
-            // One observation per time bracket per round avoids counting the same
-            // settled outcome multiple times in a confidence interval.
-            for (minutesLeft in listOf(2, 5, 8, 12)) {
-                // Sample at the start of this minute, using only the previous CLOSED minute.
-                val observed = bars[start + (14 - minutesLeft) * 60_000L]!!.proxy
-                val delta = observed - target
-                if (delta == 0.0) continue // No leading side at the observation.
-                val distance = kotlin.math.abs(delta / target) * 100.0
-                val key = Pair(timeBucket(minutesLeft.toDouble()), distanceBucket(distance))
-                val stats = buckets.getOrPut(key) { Bucket() }
-                stats.hits++
-                val leadingSideWon = if (delta > 0) finish >= target else finish < target
-                if (leadingSideWon) stats.wins++
+        var scanned = 0
+
+        while (scanned < maxRounds) {
+            val batchEnd = latestCompletedEnd - scanned * quarter
+            val first = batchEnd - batchRounds * quarter
+            val from = first - 60_000L
+            val until = batchEnd - 1L
+            val bars = HashMap<Long, MinuteBar>()
+            var cursor = from
+            var pages = 0
+            while (cursor <= until && pages < 7) {
+                val url = "https://api.binance.us/api/v3/klines?symbol=" + coin.pair +
+                    "&interval=1m&startTime=" + cursor + "&endTime=" + until + "&limit=1000"
+                val rows = getArray(url)
+                if (rows.length() == 0) break
+                for (i in 0 until rows.length()) {
+                    val c = rows.getJSONArray(i)
+                    val ts = c.getLong(0)
+                    // OHLC4 is only an approximation of Kalshi's CF index.
+                    val p = (c.getDouble(1) + c.getDouble(2) +
+                        c.getDouble(3) + c.getDouble(4)) / 4.0
+                    if (ts in from..until && p.isFinite() && p > 0) bars[ts] = MinuteBar(p)
+                }
+                val last = rows.getJSONArray(rows.length() - 1).getLong(0)
+                val next = last + 60_000L
+                if (next <= cursor) break
+                cursor = next
+                pages++
+                if (rows.length() < 1000) break
             }
+            for (round in 0 until batchRounds) {
+                val start = first + round * quarter
+                val target = bars[start - 60_000L]?.proxy ?: continue
+                val finish = bars[start + 14 * 60_000L]?.proxy ?: continue
+                // Require a complete round to avoid bias from missing candles.
+                if ((-1..14).any { bars[start + it * 60_000L] == null }) continue
+                complete++
+                // Exactly one observation per time bracket per completed round.
+                for (minutesLeft in listOf(2, 5, 8, 12)) {
+                    val observed = bars[start + (14 - minutesLeft) * 60_000L]!!.proxy
+                    val delta = observed - target
+                    if (delta == 0.0) continue
+                    val distance = kotlin.math.abs(delta / target) * 100.0
+                    val key = Pair(timeBucket(minutesLeft.toDouble()), distanceBucket(distance))
+                    val leadingUp = delta > 0.0
+                    val held = if (leadingUp) finish >= target else finish < target
+                    buckets.getOrPut(key) { Bucket() }.record(leadingUp, held)
+                }
+            }
+            scanned += batchRounds
+            val matches = buckets[desired]?.hits ?: 0
+            runOnUiThread {
+                status.text = "Coin " + (coinIndex + 1) + "/9: " + coin.name +
+                    " — " + matches + "/" + targetMatches + " matching cases (" +
+                    scanned + "/" + maxRounds + " rounds searched)"
+            }
+            if (matches >= targetMatches) break
         }
         require(complete > 0) { "No complete historical 15-minute rounds found" }
-        return Historic(buckets, complete)
+        return Historic(buckets, complete, scanned)
     }
 
     private fun getJson(url: String): JSONObject = JSONObject(fetch(url))
