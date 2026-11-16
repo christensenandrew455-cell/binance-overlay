@@ -84,6 +84,10 @@ class MainActivity : AppCompatActivity() {
         root.addView(stop)
         root.addView(accuracyTest)
         root.addView(trendTest)
+        root.addView(Button(this).apply {
+            text = "KALSHI EDGE CHECK"
+            setOnClickListener { startActivity(Intent(this@MainActivity, KalshiEdgeActivity::class.java)) }
+        })
         setContentView(root)
         refresh()
     }
