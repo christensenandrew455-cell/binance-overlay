@@ -123,9 +123,14 @@ class HoldEdgeActivity : AppCompatActivity() {
                     .setPrimaryClip(ClipData.newPlainText("Nine-coin hold percentages", report))
             }
         })
-        root.addView(ScrollView(this).apply { addView(output) },
-            LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        // Keep the chart, controls and potentially long nine-coin report
+        // in ONE scroll container, so landscape/short phone screens never
+        // collapse the results panel to zero height.
+        root.addView(output)
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(root)
+        })
 
         // Changing the selector updates the focused chart without restarting
         // the nine-coin monitor. It does not alter which coins are checked.
