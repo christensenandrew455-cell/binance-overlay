@@ -170,96 +170,72 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     ): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
-        // Keep downloads small: only fetch the latest 300 one-minute candles per coin.
-        val lastOpen = anchor - minute
-        val firstOpen = lastOpen - 299L * minute
-        val prices = HashMap<Long, Double>()
-        var cursor = firstOpen
-        var batchNumber = 0
-        val totalBatches = 1
-        onProgress("Preparing up to 300 one-minute candles...")
-        while (cursor <= lastOpen) {
-            val query = "/api/v3/klines?symbol=" + symbol +
-                "&interval=1m&startTime=" + cursor + "&endTime=" + lastOpen + "&limit=1000"
+        val maxSections = 100
+        val prices = HashMap<Long, Double?>()
+        var requests = 0
+
+        // Each reading needs only three closes: target, +1m prediction, and +15m finish.
+        // Binance timestamps a 1m candle by its OPEN, so use the preceding candle's close.
+        fun priceAt(clockTime: Long): Double? {
+            val candleOpen = clockTime - minute
+            if (prices.containsKey(candleOpen)) return prices[candleOpen]
             val hosts = listOf("https://api.binance.us", "https://api1.binance.us", "https://api2.binance.us")
-            var parsed = false
+            val query = "/api/v3/klines?symbol=" + symbol +
+                "&interval=1m&startTime=" + candleOpen + "&endTime=" + candleOpen + "&limit=1"
             val failures = ArrayList<String>()
             for (host in hosts) {
-                val url = host + query
                 try {
-                    val request = Request.Builder().url(url).get().build()
+                    val request = Request.Builder().url(host + query).get().build()
                     client.newCall(request).execute().use { response ->
                         val body = response.body?.string().orEmpty()
                         if (!response.isSuccessful) {
-                            val detail = body.take(240).ifBlank { "no response body" }
-                            failures.add(host + " returned HTTP " + response.code + ": " + detail)
-                            if (response.code in 400..499) {
-                                throw IllegalStateException(
-                                    "Binance.US rejected " + symbol + " (HTTP " + response.code + "). " +
-                                        detail + " Endpoint: " + host +
-                                        ". Verify that the pair is supported on Binance.US."
-                                )
-                            }
+                            failures.add(host + " HTTP " + response.code + ": " + body.take(160))
                             return@use
                         }
                         val rows = JSONArray(body)
                         if (rows.length() == 0) {
-                            failures.add(host + " returned an empty candle list")
-                            return@use
+                            prices[candleOpen] = null
+                            return null
                         }
-                        var newest = cursor
-                        for (i in 0 until rows.length()) {
-                            val row = rows.getJSONArray(i)
-                            val openTime = row.getLong(0)
-                            prices[openTime] = row.getString(4).toDouble()
-                            if (openTime > newest) newest = openTime
-                        }
-                        cursor = newest + minute
-                        batchNumber++
-                        parsed = true
-                        onProgress(
-                            "Downloaded ${prices.size} candles • batch $batchNumber (about $totalBatches) • " +
-                                "${prices.size / 60} hours of price history"
-                        )
+                        val value = rows.getJSONArray(0).getString(4).toDouble()
+                        prices[candleOpen] = value
+                        requests++
+                        onProgress("Fetched $requests exact price points • cached ${prices.size} timestamps")
+                        return value
                     }
-                } catch (e: IllegalStateException) {
-                    throw e
                 } catch (e: Exception) {
                     failures.add(host + ": " + (e.message ?: e.javaClass.simpleName))
                 }
-                if (parsed) break
             }
-            if (!parsed) {
-                throw IllegalStateException(
-                    "Unable to download " + symbol + " candles from Binance.US. Tried api.binance.us, " +
-                        "api1.binance.us, and api2.binance.us. " + failures.joinToString(" | ")
-                )
-            }
+            throw IllegalStateException(
+                "Could not fetch the exact 1-minute price for " + symbol + " at " +
+                    Date(clockTime).toString() + ". " + failures.joinToString(" | ")
+            )
         }
 
         val sections = ArrayList<SectionResult>()
         var correct = 0
         var incorrect = 0
-        var flatInvolved = 0
         var candidate = anchor - quarter
         val calendar = Calendar.getInstance()
-        while (candidate >= firstOpen + minute) {
+        val duration = (endMinutes - startMinutes + 1440) % 1440
+        val oldestCandidate = anchor - 60L * 24L * 60L * minute
+        onProgress("Collecting up to $maxSections readings • 3 exact prices per reading (shared timestamps reused)...")
+        while (candidate >= oldestCandidate && sections.size < maxSections) {
             calendar.timeInMillis = candidate
             val hour = calendar.get(Calendar.HOUR_OF_DAY)
             val minuteOfHour = calendar.get(Calendar.MINUTE)
             val candidateMinutes = hour * 60 + minuteOfHour
             val offset = (candidateMinutes - startMinutes + 1440) % 1440
-            // The entire 15-minute result must fit inside the selected time range.
             val inAllowedWindow = minuteOfHour in listOf(0, 15, 30, 45) &&
                 offset < duration && offset + 15 <= duration
             if (inAllowedWindow) {
-                val target = prices[candidate - minute]
-                val minutePrice = prices[candidate]
-                val finishPrice = prices[candidate + 14L * minute]
+                val target = priceAt(candidate)
+                val minutePrice = priceAt(candidate + minute)
+                val finishPrice = priceAt(candidate + quarter)
                 if (target != null && minutePrice != null && finishPrice != null) {
                     val prediction = direction(minutePrice, target)
                     val actual = direction(finishPrice, target)
-                    // Kalshi YES wins at or above the target, so exact ties are UP.
                     val isCorrect = prediction == actual
                     if (isCorrect) correct++ else incorrect++
                     sections.add(
@@ -273,8 +249,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             }
             candidate -= quarter
         }
-        onProgress("Finished downloading • analyzed ${sections.size} eligible 15-minute windows.")
-        return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
+        onProgress("Finished • ${sections.size} readings • $requests exact price points fetched (not every candle in between).")
+        return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, 0)
     }
 
     // Exact target ties are treated as UP/YES for Kalshi-style settlement.
