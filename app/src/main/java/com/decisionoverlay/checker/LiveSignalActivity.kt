@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit
 /** Read-only live signals while this Activity is visible. No orders are placed. */
 class LiveSignalActivity : AppCompatActivity() {
     private data class Market(val ticker: String, val strike: Double, val closesAt: Long)
-    private val coins = listOf("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "NEAR", "ZEC")
+    private val coins = HistoricalSignalReplay.supportedCoins
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     private val main = Handler(Looper.getMainLooper())
@@ -77,7 +77,7 @@ class LiveSignalActivity : AppCompatActivity() {
             "1m entries + 5m direction • EMA4/EMA100 • OHLC/wicks • " +
             "previous highs/lows • volume and momentum • order book • " +
             "executed buy/sell flow. Only 10 AM–11 PM New York time. " +
-            "Power % is NOT a win probability.", 13f
+            "Power % is NOT a win probability. BUY checks only with 4–5 minutes left.", 13f
         ))
         selector = Spinner(this)
         selector.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, coins)
@@ -95,7 +95,7 @@ class LiveSignalActivity : AppCompatActivity() {
         status = label("Select a coin and press START. Refreshes about every 12 seconds.", 14f)
         details = label("", 13f)
         historyButton = Button(this).apply {
-            text = "BACKTEST 100 HISTORICAL SIGNALS"
+            text = "BACKTEST ALL 9 COINS (LAST 5 MIN)"
             setOnClickListener { runHistoricalReplay() }
         }
         root.addView(historyButton)
@@ -123,36 +123,65 @@ class LiveSignalActivity : AppCompatActivity() {
         historyButton.isEnabled = false
         startButton.isEnabled = false
         selector.isEnabled = false
-        val coin = selector.selectedItem.toString()
         verdict.text = "BACKTESTING"
+        report = ""
         details.text = ""
-        status.text = "Replaying old 15-minute markets for " + coin + "..."
+        status.text = "Starting all 9 coins: 2,400 eligible markets each; only 4–5 minutes left."
         Thread {
-            var output: String? = null
-            var failure: String? = null
-            try {
-                output = HistoricalSignalReplay.run(coin) { progress ->
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) status.text = progress
+            val output = StringBuilder()
+            output.appendLine("NINE-COIN 15-MIN CANDLE SIGNAL BACKTEST")
+            output.appendLine("Coins: " + coins.joinToString(", "))
+            output.appendLine("Per coin: 2,400 eligible 10 AM–11 PM NY markets; older 1,200 training, newer 1,200 testing.")
+            output.appendLine("Signals permitted only with 4–5 minutes left; the final 3 minutes are blocked.")
+            output.appendLine("Each coin is scored separately. A missing call is WAIT, not a win.")
+            output.appendLine("Binance.US OHLC4 proxy differs from the Kalshi CF benchmark; accuracy is not profit.")
+            output.appendLine()
+            var successes = 0
+            val failures = mutableListOf<String>()
+            for ((index, coin) in coins.withIndex()) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed)
+                        status.text = "Coin " + (index + 1) + "/9: " + coin + " — starting history..."
+                }
+                try {
+                    val singleReport = HistoricalSignalReplay.run(coin) { progress ->
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed)
+                                status.text = "Coin " + (index + 1) + "/9: " + progress
+                        }
+                    }
+                    output.appendLine(singleReport)
+                    successes++
+                } catch (e: Exception) {
+                    val message = e.message ?: e.javaClass.simpleName
+                    failures.add(coin)
+                    output.appendLine("=== " + coin + " ERROR ===")
+                    output.appendLine(message)
+                    output.appendLine("No accuracy computed for this coin; other coins still run.")
+                    output.appendLine()
+                }
+                val partial = output.toString()
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        report = partial
+                        details.text = partial
                     }
                 }
-            } catch (e: Exception) {
-                failure = e.message ?: e.javaClass.simpleName
             }
-            val finalOutput = output
-            val finalFailure = failure
+            output.appendLine("FINISHED: " + successes + "/9 coins successfully tested.")
+            if (failures.isNotEmpty())
+                output.appendLine("Unable to test: " + failures.joinToString(", "))
+            val finalOutput = output.toString()
             runOnUiThread {
                 backtestBusy = false
                 historyButton.isEnabled = true
                 startButton.isEnabled = true
                 selector.isEnabled = true
                 if (!isFinishing && !isDestroyed) {
-                    report = finalOutput ?: "BACKTEST ERROR: " + (finalFailure ?: "Unknown")
+                    report = finalOutput
                     details.text = report
-                    verdict.text = if (finalOutput != null) "BACKTEST FINISHED" else "ERROR"
-                    status.text = if (finalOutput != null)
-                        "Results ready for " + coin + ". Scroll to view or copy."
-                    else "Backtest failed: " + (finalFailure ?: "Unknown")
+                    verdict.text = if (successes > 0) "BACKTEST FINISHED" else "BACKTEST ERROR"
+                    status.text = "Completed " + successes + "/9 coins. Scroll to review or copy."
                 }
             }
         }.start()
