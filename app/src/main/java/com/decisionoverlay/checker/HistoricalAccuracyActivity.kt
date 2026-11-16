@@ -71,7 +71,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "8 coins • Goal: 100+ time windows per coin • 15-minute tests\nThe test collects every eligible window it can find in the last 7 days for your selected times. 100 is a goal, not a limit. Flat/tied sections are reported separately and are not scored.",
+            "8 coins • Goal: 100+ time windows per coin • 15-minute tests\nThe lookback automatically expands based on your selected hours to aim for 100 windows per coin. It uses all available matching history if fewer exist. Exact ties count as UP (YES), matching the market rule.",
             14f, 0xFFB9C7D8.toInt()
         )
         val timeLabel = label("TEST WINDOW (24-HOUR LOCAL TIME)", 15f, 0xFFFFFFFF.toInt(), true)
@@ -154,8 +154,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun fetchCoin(symbol: String, anchor: Long, startMinutes: Int, endMinutes: Int): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
-        // Pull up to 7 days to collect 100 eligible windows in the user-entered local-time range.
-        val firstOpen = anchor - 7L * 24L * 60L * minute
+        // Estimate enough history to reach the 100-window goal for the selected daily time range.
+        // Add 30 extra days as a buffer for missing candles and market downtime.
+        val duration = (endMinutes - startMinutes + 1440) % 1440
+        val windowsPerDay = maxOf(1, duration / 15)
+        val lookbackDays = maxOf(7, (100 / windowsPerDay) + 30)
+        val firstOpen = anchor - lookbackDays.toLong() * 24L * 60L * minute
         val lastOpen = anchor - minute
         val prices = HashMap<Long, Double>()
         var cursor = firstOpen
@@ -224,7 +228,6 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             val hour = calendar.get(Calendar.HOUR_OF_DAY)
             val minuteOfHour = calendar.get(Calendar.MINUTE)
             val candidateMinutes = hour * 60 + minuteOfHour
-            val duration = (endMinutes - startMinutes + 1440) % 1440
             val offset = (candidateMinutes - startMinutes + 1440) % 1440
             // The entire 15-minute result must fit inside the selected time range.
             val inAllowedWindow = minuteOfHour in listOf(0, 15, 30, 45) &&
@@ -236,17 +239,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                 if (target != null && minutePrice != null && finishPrice != null) {
                     val prediction = direction(minutePrice, target)
                     val actual = direction(finishPrice, target)
-                    // Keep every eligible time window, including flat/tied outcomes.
-                    // Flat-involved windows are reported but are not directional wins/losses.
-                    val isFlatInvolved = prediction == "FLAT" || actual == "FLAT"
-                    val isCorrect = if (isFlatInvolved) null else prediction == actual
-                    if (isFlatInvolved) {
-                        flatInvolved++
-                    } else if (isCorrect == true) {
-                        correct++
-                    } else {
-                        incorrect++
-                    }
+                    // Kalshi YES wins at or above the target, so exact ties are UP.
+                    val isCorrect = prediction == actual
+                    if (isCorrect) correct++ else incorrect++
                     sections.add(
                         SectionResult(
                             sections.size + 1, candidate, target, minutePrice, finishPrice,
@@ -260,11 +255,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
     }
 
-    private fun direction(price: Double, target: Double): String = when {
-        price > target -> "UP"
-        price < target -> "DOWN"
-        else -> "FLAT"
-    }
+    // Exact target ties are treated as UP/YES for Kalshi-style settlement.
+    private fun direction(price: Double, target: Double): String =
+        if (price >= target) "UP" else "DOWN"
 
     private fun showResults(results: List<CoinResult>, anchor: Long) {
         val totalCorrect = results.sumOf { it.correct }
@@ -295,8 +288,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             )
             val counts = label(
                 coin.correct.toString() + " correct • " + coin.incorrect.toString() +
-                    " incorrect • " + coin.neutral.toString() + " flat/tied not scored • " +
-                    coin.sections.size + " total windows",
+                    " incorrect • " + coin.neutral.toString() + " neutral • " +
+                    coin.sections.size + " total windows (ties count as UP)",
                 13f, 0xFFB9C7D8.toInt()
             )
             val detailButton = Button(this).apply { text = "SHOW " + coin.sections.size + " SECTION RESULTS" }
@@ -322,11 +315,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val out = StringBuilder()
         out.append("Section | target time | +1m guess | +15m result | result\n")
         for (s in coin.sections) {
-            val mark = when (s.correct) {
-                true -> "CORRECT"
-                false -> "WRONG"
-                null -> "FLAT / TIE — NOT SCORED"
-            }
+            val mark = if (s.correct == true) "CORRECT" else "WRONG"
             out.append(s.number).append(" | ")
                 .append(fmt.format(Date(s.targetTime))).append(" | ")
                 .append(s.prediction).append(" | ")
