@@ -30,7 +30,9 @@ private data class SectionResult(
     val finishPrice: Double,
     val prediction: String,
     val actual: String,
-    val correct: Boolean?
+    val correct: Boolean?,
+    val predictionTie: Boolean,
+    val actualTie: Boolean
 )
 
 private data class CoinResult(
@@ -132,8 +134,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         runButton.isEnabled = false
         val durationMinutes = (endMinutes - startMinutes + 1440) % 1440
         val windowsPerDay = maxOf(1, durationMinutes / 15)
-        val lookbackDays = maxOf(7, (100 / windowsPerDay) + 30)
-        status.text = "Starting download • 8 coins • about $lookbackDays days of history each. Progress will appear here."
+        status.text = "Starting download • maximum 300 one-minute candles per coin. Progress will appear here."
         resultsBox.removeAllViews()
         chartSlot.removeAllViews()
         Thread {
@@ -169,18 +170,14 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     ): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
-        // Estimate enough history to reach the 100-window goal for the selected daily time range.
-        // Add 30 extra days as a buffer for missing candles and market downtime.
-        val duration = (endMinutes - startMinutes + 1440) % 1440
-        val windowsPerDay = maxOf(1, duration / 15)
-        val lookbackDays = maxOf(7, (100 / windowsPerDay) + 30)
-        val firstOpen = anchor - lookbackDays.toLong() * 24L * 60L * minute
+        // Keep downloads small: only fetch the latest 300 one-minute candles per coin.
         val lastOpen = anchor - minute
+        val firstOpen = lastOpen - 299L * minute
         val prices = HashMap<Long, Double>()
         var cursor = firstOpen
         var batchNumber = 0
-        val totalBatches = ((lookbackDays * 1440) + 999) / 1000
-        onProgress("Preparing $lookbackDays days of 1-minute candles...")
+        val totalBatches = 1
+        onProgress("Preparing up to 300 one-minute candles...")
         while (cursor <= lastOpen) {
             val query = "/api/v3/klines?symbol=" + symbol +
                 "&interval=1m&startTime=" + cursor + "&endTime=" + lastOpen + "&limit=1000"
@@ -268,7 +265,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                     sections.add(
                         SectionResult(
                             sections.size + 1, candidate, target, minutePrice, finishPrice,
-                            prediction, actual, isCorrect
+                            prediction, actual, isCorrect,
+                            minutePrice == target, finishPrice == target
                         )
                     )
                 }
@@ -293,8 +291,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             results.size + " coins • Anchor: " +
             SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US).format(Date(anchor)) +
             "\nOverall directional accuracy: " + String.format(Locale.US, "%.1f%%", overall) +
-            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect; " +
-            results.sumOf { it.neutral } + " flat/tied not scored; " + totalScored + " scored)"
+            " (" + totalCorrect + " correct / " + totalIncorrect + " incorrect; " + totalScored + " scored)" +
+            "\nTies: " + results.sumOf { r -> r.sections.count { it.predictionTie } } +
+            " at +1m prediction, " + results.sumOf { r -> r.sections.count { it.actualTie } } + " at final result. Ties count as UP."
 
         chartSlot.addView(label("ACCURACY BY COIN", 18f, 0xFFFFFFFF.toInt(), true))
         chartSlot.addView(AccuracyBarChart(this, results), LinearLayout.LayoutParams(-1, 240))
@@ -313,7 +312,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             val counts = label(
                 coin.correct.toString() + " correct • " + coin.incorrect.toString() +
                     " incorrect • " + coin.neutral.toString() + " neutral • " +
-                    coin.sections.size + " total windows (ties count as UP)",
+                    coin.sections.size + " total windows • " +
+                    coin.sections.count { it.predictionTie } + " prediction ties • " +
+                    coin.sections.count { it.actualTie } + " result ties (ties count as UP)",
                 13f, 0xFFB9C7D8.toInt()
             )
             val detailButton = Button(this).apply { text = "SHOW " + coin.sections.size + " SECTION RESULTS" }
@@ -339,7 +340,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val out = StringBuilder()
         out.append("Section | target time | +1m guess | +15m result | result\n")
         for (s in coin.sections) {
-            val mark = if (s.correct == true) "CORRECT" else "WRONG"
+            val mark = (if (s.correct == true) "CORRECT" else "WRONG") +
+                (if (s.predictionTie) " • PREDICTION TIE" else "") +
+                (if (s.actualTie) " • RESULT TIE" else "")
             out.append(s.number).append(" | ")
                 .append(fmt.format(Date(s.targetTime))).append(" | ")
                 .append(s.prediction).append(" | ")
