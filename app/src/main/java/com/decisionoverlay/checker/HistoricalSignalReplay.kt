@@ -37,7 +37,13 @@ object HistoricalSignalReplay {
         SignalEngine.CandleRules("More momentum: +0.6 ATR", minMomentum = 0.60),
         SignalEngine.CandleRules("Require higher/lower structure", requireStructure = true),
         SignalEngine.CandleRules("Require rejection wick", requireWick = true),
-        SignalEngine.CandleRules("Tighter target reach", travelMultiplier = 0.75)
+        SignalEngine.CandleRules("Tighter target reach", travelMultiplier = 0.75),
+        SignalEngine.CandleRules("1m break of structure (BOS)",
+            bosMode = SignalEngine.BosMode.ONE_MINUTE),
+        SignalEngine.CandleRules("5m break of structure (BOS)",
+            bosMode = SignalEngine.BosMode.FIVE_MINUTE),
+        SignalEngine.CandleRules("1m OR 5m BOS",
+            bosMode = SignalEngine.BosMode.EITHER)
     )
 
     data class Attempt(
@@ -168,6 +174,9 @@ object HistoricalSignalReplay {
         report.appendLine("Trading hours: 10:00 AM–11:00 PM America/New_York (DST-aware).")
         report.appendLine("Only rounds beginning 10:00–22:45 New York time are eligible.")
         report.appendLine("BUY evaluation: only 5 or 4 whole minutes remaining (never earlier or in final 3m).")
+        report.appendLine("BOS: candle CLOSE breaks last confirmed swing high/low (2 candles each side).")
+        report.appendLine("A BOS must be recent: last 3 closed 1m candles or last 2 closed 5m candles.")
+        report.appendLine("BOS filters are compared as alternatives, NOT assumed to improve accuracy.")
         report.appendLine("Calendar rounds searched: " + calendarRoundsSearched)
         report.appendLine("Skipped OUTSIDE trading hours: " + skippedOutsideHours)
         report.appendLine("Eligible markets selected for testing: " + eligibleStarts.size +
@@ -218,6 +227,14 @@ object HistoricalSignalReplay {
         val noCalls = tested.filter { it.direction == -1 }
         report.appendLine("UP/YES crossings: " + accuracy(yesCalls))
         report.appendLine("DOWN/NO crossings: " + accuracy(noCalls))
+        report.appendLine()
+        report.appendLine("=== UNSEEN BREAK-OF-STRUCTURE COMPARISON ===")
+        for (bosRule in candidates.filter { it.bosMode != SignalEngine.BosMode.NONE }) {
+            val bosTrades = tallies.getValue(bosRule).testing.takeLast(TARGET_TEST_SIGNALS)
+            report.appendLine(bosRule.name + ": " + accuracy(bosTrades) +
+                " | " + bosTrades.size + "/100 held-out calls")
+        }
+        report.appendLine("Small BOS sample counts are inconclusive. BOS is not forced live until validated.")
         report.appendLine()
         report.appendLine("=== EACH OF THE MOST RECENT VALIDATION CALLS (max 100) ===")
         for ((i, entry) in tested.withIndex()) {
