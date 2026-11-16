@@ -8,6 +8,38 @@ A native Android floating overlay that reads **Binance.US spot-market candles** 
 
 The app never places orders, connects to a wallet, or needs access to a Binance account. It is a manual decision aid, not financial advice.
 
+## Kalshi 15-minute edge checker (research only)
+
+The app now includes a **KALSHI EDGE CHECK** button. It retrieves the current open
+15-minute Kalshi market for BTC, ETH, SOL, XRP, DOGE, BNB, HYPE, NEAR and ZEC,
+including its target, remaining time, and the live **buy YES / buy NO asks**.
+No Kalshi key or account is required for these public read-only quotes.
+
+For each coin the app scans **300 completed 15-minute windows** from Binance.US
+using approximately 4,501 one-minute candles, and groups observations by the
+distance from the target and the minutes left to expiry. It displays the rate
+that the side currently in the lead remained on that side at settlement,
+a rough confidence interval, and an indicative expected value compared
+with the live Kalshi ask plus an estimated taker fee.
+
+**Important limitations:**
+
+- Kalshi's displayed contract percentage is **market pricing from traders'
+  resting bids and offers**, not a formula based solely on USD distance.
+- The target and settlement values are **60-second CF Benchmarks index averages**.
+  Binance.US one-minute OHLC4 is only a historical proxy. It can differ materially
+  from Kalshi's true contract outcome, especially near the target.
+- The current Binance.US ticker price is also an **approximation** to the CF index,
+  and live quotes can change while the multi-coin check is running.
+- The output is a screening test, **not** proof of positive expected value.
+  A faithful return backtest requires historical Kalshi executable ask prices,
+  matching CF index data, fill sizes, bid/ask spread and actual fees.
+- Some Binance.US coin pairs may be unavailable; the checker reports an error for
+  that coin instead of inventing a figure. It does not place orders.
+
+The historical download runs while this Activity is open. Copy the full report
+using the on-screen button. The existing BUY TIMER and other tests remain present.
+
 ## Download the Android APK
 
 **Direct download:** [Download the latest app-debug.apk](https://github.com/christensenandrew455-cell/binance-overlay/releases/latest/download/app-debug.apk)
