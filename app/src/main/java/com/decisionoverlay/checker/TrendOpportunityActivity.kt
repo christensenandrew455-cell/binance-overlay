@@ -14,28 +14,27 @@ import org.json.JSONArray
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.max
 
 /**
- * Exploratory, no-lookahead scan. Signals use only candles closed at entry.
- * Results are NOT executable returns: fees, spreads, slippage, funding and liquidation are excluded.
+ * Research-only intraday swing scanner.
+ * A swing is measured from its intraday turning point, not daily open-to-close.
+ * The entry signal uses ONLY completed candles; subsequent extrema are outcomes.
  */
 class TrendOpportunityActivity : AppCompatActivity() {
-    private data class Bar(val time: Long, val close: Double)
-    private data class Stat(val symbol: String, val horizon: Int, val filter: String,
-                            val n: Int, val wins: Int, val mean: Double, val gain: Double,
-                            val loss: Double, val maxAdverse: Double) {
-        val hit get() = if (n == 0) 0.0 else wins * 100.0 / n
-    }
+    private data class Candle(val time: Long, val high: Double, val low: Double, val close: Double)
+    private data class Result(val symbol: String, val timeframe: Int, val direction: String,
+                              val signals: Int, val reached10: Int, val avgBest: Double,
+                              val avgAtExit: Double, val avgWorst: Double, val maxBest: Double)
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS).build()
-    private val symbols = listOf("BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "HYPEUSDT", "DOGEUSDT", "SOLUSDT", "NEARUSDT", "ZECUSDT")
-    private val horizons = listOf(15, 30, 60, 120, 240)
+    private val symbols = listOf("BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT",
+        "HYPEUSDT", "DOGEUSDT", "SOLUSDT", "NEARUSDT", "ZECUSDT")
     private lateinit var status: TextView
-    private lateinit var output: TextView
-    private lateinit var run: Button
+    private lateinit var results: TextView
+    private lateinit var check: Button
     private lateinit var copy: Button
     private var report = ""
-    @Volatile private var busy = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,146 +43,148 @@ class TrendOpportunityActivity : AppCompatActivity() {
             setPadding(24, 24, 24, 24)
             setBackgroundColor(0xFF10151D.toInt())
         }
-        fun label(value: String, size: Float): TextView = TextView(this).apply {
-            text = value; textSize = size; setTextColor(0xFFE5EDF5.toInt())
+        fun label(s: String, size: Float) = TextView(this).apply {
+            text = s; textSize = size; setTextColor(0xFFE5EDF5.toInt())
             setPadding(0, 10, 0, 10)
         }
-        root.addView(label("TREND OPPORTUNITY SCANNER", 22f))
-        root.addView(label("Find the largest predictable percentage move per hour. Compare 15m, 30m, 1h, 2h and 4h holds using closed 5m Binance.US candles. Research only; no orders.", 14f))
-        run = Button(this).apply { text = "CHECK BINANCE TRENDS"; setOnClickListener { scan() } }
+        root.addView(label("INTRADAY TREND CATCHER", 22f))
+        root.addView(label("Scan 15m and 30m signals for BOTH up and down moves. " +
+            "Measure how much could be captured in the next 24h, even when the day closes flat. " +
+            "10% is the target, not a prerequisite. Historical research only.", 14f))
+        check = Button(this).apply { text = "CHECK ALL NINE COINS"; setOnClickListener { scan() } }
         copy = Button(this).apply {
             text = "COPY RESULTS"; isEnabled = false
             setOnClickListener {
                 (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                    .setPrimaryClip(ClipData.newPlainText("Trend scan", report))
+                    .setPrimaryClip(ClipData.newPlainText("Intraday trend scan", report))
             }
         }
         status = label("Ready", 14f)
-        output = label("", 13f)
-        root.addView(run); root.addView(copy); root.addView(status)
-        val scroll = ScrollView(this).apply { addView(output) }
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        results = label("", 13f)
+        root.addView(check); root.addView(copy); root.addView(status)
+        root.addView(ScrollView(this).apply { addView(results) },
+            LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(Button(this).apply { text = "BACK"; setOnClickListener { finish() } })
         setContentView(root)
     }
 
     private fun scan() {
-        if (busy) return
-        busy = true; run.isEnabled = false; copy.isEnabled = false
-        status.text = "Downloading closed 5-minute candles..."
-        output.text = ""; report = ""
+        check.isEnabled = false; copy.isEnabled = false; results.text = ""
         Thread {
-            val rows = mutableListOf<Stat>()
+            val stats = mutableListOf<Result>()
             val errors = mutableListOf<String>()
             symbols.forEachIndexed { index, symbol ->
                 runOnUiThread { status.text = "Checking ${index + 1}/${symbols.size}: $symbol" }
                 try {
-                    val bars = fetchBars(symbol)
-                    if (bars.size < 200) throw IllegalStateException("Only ${bars.size} candles")
-                    for (h in horizons) {
-                        for (filter in listOf("5m", "5m+15m", "5m+15m+30m")) {
-                            evaluate(symbol, bars, h, filter)?.let(rows::add)
-                        }
-                    }
+                    val bars = fetch(symbol)
+                    if (bars.size < 150) error("Only ${bars.size} completed candles available")
+                    stats.addAll(listOf(15, 30).flatMap { minutes ->
+                        listOf(1, -1).map { direction -> evaluate(symbol, bars, minutes, direction) }
+                    })
                 } catch (e: Exception) { errors.add("$symbol: ${e.message}") }
             }
-            val sorted = rows.filter { it.n >= 30 }.sortedWith(
-                compareByDescending<Stat> { it.mean / (it.horizon / 60.0) }
-                    .thenByDescending { it.hit })
-            val text = buildString {
-                appendLine("BINANCE TREND OPPORTUNITY TEST")
-                appendLine("Signal: direction of previous 5m close-to-close move; optional confirmation by 15m and 30m returns.")
-                appendLine("Entry: signal candle close. Exit: close after stated horizon.")
-                appendLine("Non-overlapping samples per configuration; no future candles used for signals.")
-                appendLine("Rank: average signed return per holding hour, NOT guaranteed profit.")
-                appendLine("Returns are unleveraged percentages; NO fees, spread, slippage, funding, or liquidation.")
-                appendLine("Backtest uses recent completed 5m candles; results can overfit. Validate out-of-sample.")
+            val ranked = stats.sortedWith(compareByDescending<Result> { it.avgAtExit }
+                .thenByDescending { it.reached10 })
+            val output = buildString {
+                appendLine("INTRADAY TREND CATCHER — 15m/30m")
+                appendLine("All nine requested coins; Binance.US 15m candles; UP and DOWN separately.")
+                appendLine("Entry: 3 consecutive closed 15m candles trending in signal direction;")
+                appendLine("30m confirmation also requires the prior 30m direction to agree.")
+                appendLine("Exit: first opposite 15m close-to-close move, or after 24h.")
+                appendLine("Each signal starts after the previous trade's exit; no overlapping trades per configuration.")
+                appendLine("BEST% = largest favorable high/low excursion before exit (not executable profit).")
+                appendLine("EXIT% = price return at simulated exit; WORST% = deepest intratrade adverse high/low.")
+                appendLine("10% COUNT = trades touching +10% favorably before exit.")
+                appendLine("No lookahead in entry/exit decisions; 15m close exits ignore spread and slippage.")
+                appendLine("All figures UNLEVERAGED and before fees/funding. Historical signals are not predictions.")
                 appendLine()
-                appendLine("COIN | HOLD | CONFIRM | N | HIT% | AVG% | AVG WIN% | AVG LOSS% | AVG ADVERSE% | AVG%/HR")
-                sorted.forEach {
+                appendLine("COIN | SIGNAL | SIDE | N | 10% COUNT | AVG BEST% | AVG EXIT% | AVG WORST% | MAX BEST%")
+                ranked.forEach {
                     appendLine(String.format(Locale.US,
-                        "%s | %dm | %s | %d | %.1f | %+.3f | +%.3f | %.3f | %.3f | %+.3f",
-                        it.symbol, it.horizon, it.filter, it.n, it.hit, it.mean, it.gain,
-                        it.loss, it.maxAdverse, it.mean * 60.0 / it.horizon))
+                        "%s | %dm | %s | %d | %d | +%.3f | %+.3f | %.3f | +%.3f",
+                        it.symbol, it.timeframe, it.direction, it.signals, it.reached10,
+                        it.avgBest, it.avgAtExit, it.avgWorst, it.maxBest))
                 }
-                if (sorted.isEmpty()) appendLine("Not enough qualifying samples.")
-                if (errors.isNotEmpty()) { appendLine(); appendLine("ERRORS:"); errors.forEach { appendLine(it) } }
+                if (errors.isNotEmpty()) {
+                    appendLine(); appendLine("UNAVAILABLE / ERRORS:")
+                    errors.forEach { appendLine(it) }
+                }
             }
             runOnUiThread {
-                report = text; output.text = text
-                status.text = "Finished: ${sorted.size} combinations, ${errors.size} coin errors"
-                copy.isEnabled = true; run.isEnabled = true; busy = false
+                report = output; results.text = output
+                status.text = "Done: ${ranked.size} configurations; ${errors.size} coin errors"
+                check.isEnabled = true; copy.isEnabled = true
             }
         }.start()
     }
 
-    private fun fetchBars(symbol: String): List<Bar> {
-        val interval = 300_000L
+    private fun fetch(symbol: String): List<Candle> {
+        val interval = 900_000L
         val end = (System.currentTimeMillis() / interval) * interval - 1L
         val start = end - 3000L * interval
-        val hosts = listOf("https://api.binance.us", "https://api1.binance.us", "https://api2.binance.us")
-        val out = sortedMapOf<Long, Bar>()
+        val out = sortedMapOf<Long, Candle>()
         var cursor = start
         while (cursor <= end) {
-            val path = "/api/v3/klines?symbol=$symbol&interval=5m&startTime=$cursor&endTime=$end&limit=1000"
-            var page: JSONArray? = null
-            val failures = mutableListOf<String>()
-            for (host in hosts) {
-                try {
-                    client.newCall(Request.Builder().url(host + path).build()).execute().use { response ->
-                        val body = response.body?.string().orEmpty()
-                        if (response.isSuccessful) page = JSONArray(body)
-                        else failures.add("${response.code} at $host: ${body.take(100)}")
-                    }
-                    if (page != null) break
-                } catch (e: Exception) { failures.add("${e.message}") }
+            val url = "https://api.binance.us/api/v3/klines?symbol=$symbol&interval=15m" +
+                "&startTime=$cursor&endTime=$end&limit=1000"
+            val array = client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) error("Binance HTTP ${response.code}: ${body.take(120)}")
+                JSONArray(body)
             }
-            val data = page ?: throw IllegalStateException(failures.joinToString(" / "))
-            if (data.length() == 0) break
-            for (i in 0 until data.length()) {
-                val row = data.getJSONArray(i)
-                val t = row.getLong(0)
-                val closeTime = row.getLong(6)
-                if (closeTime > System.currentTimeMillis()) continue
-                val price = row.getDouble(4)
-                if (price > 0 && price.isFinite()) out[t] = Bar(t, price)
+            if (array.length() == 0) break
+            for (i in 0 until array.length()) {
+                val item = array.getJSONArray(i)
+                if (item.getLong(6) <= System.currentTimeMillis()) {
+                    val c = Candle(item.getLong(0), item.getDouble(2),
+                        item.getDouble(3), item.getDouble(4))
+                    if (c.close > 0) out[c.time] = c
+                }
             }
-            val next = data.getJSONArray(data.length() - 1).getLong(0) + interval
+            val next = array.getJSONArray(array.length() - 1).getLong(0) + interval
             if (next <= cursor) break
             cursor = next
-            if (data.length() < 1000) break
+            if (array.length() < 1000) break
         }
         return out.values.toList()
     }
 
-    private fun evaluate(symbol: String, bars: List<Bar>, horizon: Int, filter: String): Stat? {
-        val steps = horizon / 5
-        var n = 0; var wins = 0; var sum = 0.0; var winSum = 0.0
-        var lossSum = 0.0; var winN = 0; var lossN = 0; var adverseSum = 0.0
-        // Advance by full holding period to avoid counting overlapping trades as independent.
-        var i = 7
-        while (i + steps < bars.size) {
-            val p = bars[i].close
-            val dir = when {
-                p > bars[i - 1].close -> 1
-                p < bars[i - 1].close -> -1
-                else -> 0
+    private fun evaluate(symbol: String, bars: List<Candle>, timeframe: Int, dir: Int): Result {
+        var n = 0; var reached10 = 0
+        var totalBest = 0.0; var totalExit = 0.0; var totalWorst = 0.0; var maxBest = 0.0
+        var i = 4
+        while (i < bars.size - 1) {
+            if (bars[i].time - bars[i - 3].time != 3 * 900_000L) { i++; continue }
+            val trend = (i - 2..i).all { k ->
+                dir * (bars[k].close - bars[k - 1].close) > 0
             }
-            val confirm15 = filter == "5m" || dir * (p - bars[i - 3].close) > 0
-            val confirm30 = filter != "5m+15m+30m" || dir * (p - bars[i - 6].close) > 0
-            if (dir != 0 && confirm15 && confirm30 &&
-                (i until i + steps).all { bars[it + 1].time - bars[it].time == 300_000L }) {
-                val ret = dir * (bars[i + steps].close / p - 1.0) * 100.0
-                val adverse = (1..steps).minOf { dir * (bars[i + it].close / p - 1.0) * 100.0 }
-                n++; sum += ret; adverseSum += adverse.coerceAtMost(0.0)
-                if (ret > 0) { wins++; winN++; winSum += ret }
-                else { lossN++; lossSum += ret }
-                i += steps
-            } else i++
+            val confirmed = timeframe == 15 ||
+                dir * (bars[i].close - bars[i - 2].close) > 0 &&
+                dir * (bars[i - 2].close - bars[i - 4].close) > 0
+            if (!trend || !confirmed) { i++; continue }
+            val entry = bars[i].close
+            var best = 0.0; var worst = 0.0; var exit = 0.0
+            var j = i + 1
+            while (j < bars.size && j <= i + 96) {
+                if (bars[j].time - bars[j - 1].time != 900_000L) break
+                val favorable = if (dir == 1) bars[j].high else bars[j].low
+                val adverse = if (dir == 1) bars[j].low else bars[j].high
+                best = max(best, dir * (favorable / entry - 1) * 100)
+                worst = kotlin.math.min(worst, dir * (adverse / entry - 1) * 100)
+                exit = dir * (bars[j].close / entry - 1) * 100
+                if (dir * (bars[j].close - bars[j - 1].close) < 0) break
+                j++
+            }
+            if (j >= bars.size) break
+            n++; if (best >= 10) reached10++
+            totalBest += best; totalWorst += worst; totalExit += exit
+            maxBest = max(maxBest, best)
+            i = max(i + 1, j + 1)
         }
-        if (n == 0) return null
-        return Stat(symbol.removeSuffix("USDT"), horizon, filter, n, wins, sum / n,
-            if (winN == 0) 0.0 else winSum / winN,
-            if (lossN == 0) 0.0 else lossSum / lossN, adverseSum / n)
+        return Result(symbol.removeSuffix("USDT"), timeframe,
+            if (dir == 1) "UP" else "DOWN", n, reached10,
+            if (n == 0) 0.0 else totalBest / n,
+            if (n == 0) 0.0 else totalExit / n,
+            if (n == 0) 0.0 else totalWorst / n, maxBest)
     }
 }
