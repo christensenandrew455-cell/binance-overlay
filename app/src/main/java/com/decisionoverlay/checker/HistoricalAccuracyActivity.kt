@@ -1,5 +1,7 @@
 package com.decisionoverlay.checker
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.View
@@ -7,15 +9,13 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private data class HourStats(
@@ -46,9 +46,11 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
     private lateinit var runButton: Button
+    private lateinit var copyButton: Button
     private lateinit var status: TextView
     private lateinit var resultsBox: LinearLayout
     private var running = false
+    private var lastResults: List<CoinResult> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,9 +72,15 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             text = "CHECK ALL 24 HOURS"
             setOnClickListener { startTest() }
         }
+        copyButton = Button(this).apply {
+            text = "COPY ALL RESULTS"
+            isEnabled = false
+            setOnClickListener { copyAllResults() }
+        }
         status = label("Press CHECK ALL 24 HOURS to begin.", 14f, 0xFFB9C7D8.toInt())
         resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(runButton)
+        content.addView(copyButton)
         content.addView(status)
         content.addView(resultsBox)
         scroll.addView(content)
@@ -88,6 +96,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         if (running) return
         running = true
         runButton.isEnabled = false
+        copyButton.isEnabled = false
+        lastResults = emptyList()
         resultsBox.removeAllViews()
         status.text = "Starting 100-day Binance download for all 24 hours..."
         Thread {
@@ -100,7 +110,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                     }
                 }
                 runOnUiThread {
+                    lastResults = all
                     showResults(all)
+                    copyButton.isEnabled = all.isNotEmpty()
                     running = false
                     runButton.isEnabled = true
                 }
@@ -109,6 +121,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                     status.text = "Test failed: ${e.message ?: "Unknown error"}\nCheck your connection and try again."
                     running = false
                     runButton.isEnabled = true
+                    copyButton.isEnabled = lastResults.isNotEmpty()
                 }
             }
         }.start()
@@ -178,7 +191,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val completed = results.sumOf { it.totalCandles }
         status.text = "Completed • $completed quarter candles across ${results.size} coins. " +
             "Each hour below combines up to 400 quarters (4 per day × 100 days). " +
-            "Times are shown in your phone's local time zone."
+            "Times are shown in your phone's local time zone. Exact UP, DOWN, and TIE counts are shown below."
         for (coin in results) {
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -187,25 +200,64 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             }
             panel.addView(label("${coin.symbol} • ${coin.totalCandles} quarters", 19f, 0xFFFFFFFF.toInt(), true))
             panel.addView(label(
-                "HOUR (LOCAL) | UP / DOWN excluding ties | TIES | UP / DOWN including ties",
+                "HOUR (LOCAL) | UP / DOWN counts | TIES | UP / DOWN excluding ties | UP / DOWN including ties | n",
                 11f, 0xFFB9C7D8.toInt(), true
             ))
             for (hour in coin.hours) {
-                val nextHour = (hour.hour + 1) % 24
-                val row = String.format(
-                    Locale.US,
-                    "%02d:00–%02d:00 | UP %.1f%% / DOWN %.1f%% | TIES %d (%.1f%%) | UP %.1f%% / DOWN %.1f%% | n=%d",
-                    hour.hour, nextHour,
-                    hour.upExcludingTies, hour.downExcludingTies,
-                    hour.ties, hour.tiePercent,
-                    hour.upIncludingTies, hour.downIncludingTies,
-                    hour.total
-                )
-                panel.addView(label(row, 12f, 0xFFD4DCE6.toInt()))
+                panel.addView(label(formatDisplayRow(hour), 12f, 0xFFD4DCE6.toInt()))
             }
             val params = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 10, 0, 10) }
             resultsBox.addView(panel, params)
         }
+    }
+
+    private fun formatDisplayRow(hour: HourStats): String {
+        val nextHour = (hour.hour + 1) % 24
+        return String.format(
+            Locale.US,
+            "%02d:00–%02d:00 | UP %d / DOWN %d | TIES %d (%.1f%%) | UP %.1f%% / DOWN %.1f%% | UP %.1f%% / DOWN %.1f%% | n=%d",
+            hour.hour, nextHour,
+            hour.up, hour.down,
+            hour.ties, hour.tiePercent,
+            hour.upExcludingTies, hour.downExcludingTies,
+            hour.upIncludingTies, hour.downIncludingTies,
+            hour.total
+        )
+    }
+
+    private fun copyAllResults() {
+        if (lastResults.isEmpty()) {
+            Toast.makeText(this, "Run the historical test first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val report = buildString {
+            appendLine("BINANCE HISTORICAL 24-HOUR TEST")
+            appendLine("Period: Last 100 completed days")
+            appendLine("Candle interval: 15 minutes")
+            appendLine("Timezone: Phone local time")
+            appendLine()
+            appendLine("Coin\tHour\tUP count\tDOWN count\tTIE count\tTotal n\tUP % excluding ties\tDOWN % excluding ties\tTIE %\tUP % including ties\tDOWN % including ties")
+            for (coin in lastResults) {
+                for (hour in coin.hours) {
+                    val nextHour = (hour.hour + 1) % 24
+                    appendLine(
+                        String.format(
+                            Locale.US,
+                            "%s\t%02d:00-%02d:00\t%d\t%d\t%d\t%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f",
+                            coin.symbol, hour.hour, nextHour,
+                            hour.up, hour.down, hour.ties, hour.total,
+                            hour.upExcludingTies, hour.downExcludingTies,
+                            hour.tiePercent, hour.upIncludingTies, hour.downIncludingTies
+                        )
+                    )
+                }
+            }
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Binance historical results", report))
+        Toast.makeText(this, "All ${lastResults.size} coins copied. Paste into Sheets, Excel, or a text file.", Toast.LENGTH_LONG).show()
     }
 
     private fun label(textValue: String, size: Float, color: Int, bold: Boolean = false): TextView =
