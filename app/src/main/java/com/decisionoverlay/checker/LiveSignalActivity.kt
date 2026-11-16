@@ -76,7 +76,8 @@ class LiveSignalActivity : AppCompatActivity() {
         root.addView(label(
             "1m entries + 5m direction • EMA4/EMA100 • OHLC/wicks • " +
             "previous highs/lows • volume and momentum • order book • " +
-            "executed buy/sell flow. Power % is NOT a win probability.", 13f
+            "executed buy/sell flow. Only 10 AM–11 PM New York time. " +
+            "Power % is NOT a win probability.", 13f
         ))
         selector = Spinner(this)
         selector.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, coins)
@@ -194,6 +195,17 @@ class LiveSignalActivity : AppCompatActivity() {
 
     private fun runCheck() {
         if (!running || inFlight) return
+        val now = System.currentTimeMillis()
+        if (!TradingHours.allowedMarketStart(TradingHours.currentQuarterStart(now))) {
+            verdict.text = "WAIT"
+            verdict.setTextColor(0xFFE5EDF5.toInt())
+            report = "Outside permitted market hours: 10:00 AM to 11:00 PM New York time. " +
+                "First allowed 15m market starts at 10:00; last allowed starts at 22:45."
+            details.text = report
+            status.text = "Outside trading hours. Checking again in ~12 seconds."
+            main.postDelayed({ runCheck() }, 12_000L)
+            return
+        }
         inFlight = true
         val coin = selector.selectedItem.toString()
         Thread {
@@ -258,7 +270,9 @@ class LiveSignalActivity : AppCompatActivity() {
                 Instant.parse(m.getString("close_time")).toEpochMilli()
             }.getOrNull() ?: return@mapNotNull null
             val target = m.optString("floor_strike").toDoubleOrNull() ?: 0.0
-            if (target <= 0 || close <= now || close > now + 15 * 60_000L) null
+            val marketStart = close - 15 * 60_000L
+            if (target <= 0 || close <= now || close > now + 15 * 60_000L ||
+                !TradingHours.allowedMarketStart(marketStart)) null
             else Market(m.optString("ticker"), target, close)
         }
         return available.minByOrNull { it.closesAt }
