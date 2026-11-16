@@ -68,4 +68,37 @@ class SignalEngineTest {
         val result = SignalEngine.evaluate(late)
         assertEquals("WAIT", result.verdict)
     }
+    private fun syntheticSwingBars(direction: Int, breakWithClose: Boolean): List<SignalEngine.Bar> =
+        (0 until 20).map { i ->
+            val swingHigh = if (i == 8 && direction == 1) 110.0 else 101.0
+            val swingLow = if (i == 8 && direction == -1) 90.0 else 99.0
+            val close = when {
+                i == 18 && breakWithClose && direction == 1 -> 111.0
+                i == 18 && breakWithClose && direction == -1 -> 89.0
+                else -> 100.0
+            }
+            val high = maxOf(swingHigh, close + 1.0)
+            val low = minOf(swingLow, close - 1.0)
+            SignalEngine.Bar(i * 60_000L, i * 60_000L + 59_999L,
+                100.0, high, low, close, 100.0)
+        }
+
+    @Test fun bosRequiresCloseBeyondConfirmedEarlierSwingHighOrLow() {
+        val up = syntheticSwingBars(1, true)
+        val down = syntheticSwingBars(-1, true)
+        assertTrue(SignalEngine.recentBreakOfStructure(up, 1))
+        assertTrue(SignalEngine.recentBreakOfStructure(down, -1))
+        assertEquals(false, SignalEngine.recentBreakOfStructure(up, -1))
+        assertEquals(false, SignalEngine.recentBreakOfStructure(down, 1))
+    }
+
+    @Test fun wickOnlyOrFutureBreakIsNotConfirmedBos() {
+        val wickOnly = syntheticSwingBars(1, false).toMutableList()
+        val b = wickOnly[18]
+        wickOnly[18] = b.copy(high = 112.0, close = 100.0)
+        assertEquals(false, SignalEngine.recentBreakOfStructure(wickOnly, 1))
+        val full = syntheticSwingBars(1, true)
+        assertEquals(false, SignalEngine.recentBreakOfStructure(full.take(18), 1))
+    }
+
 }
