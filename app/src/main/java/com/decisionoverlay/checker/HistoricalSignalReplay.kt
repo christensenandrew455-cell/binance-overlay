@@ -69,12 +69,18 @@ object HistoricalSignalReplay {
         val byFive = fiveBars.withIndex().associate { it.value.openedAt to it.index }
         val tallies = candidates.associateWith { Tally() }
         var validRounds = 0
+        var skippedOutsideHours = 0
         var skippedMissing = 0
         var heldOutRounds = 0
         var trainRounds = 0
 
         for (roundIndex in 0 until ROUNDS) {
             val start = firstRound + roundIndex * QUARTER
+            // Do not test markets outside the user's New York trading hours.
+            if (!TradingHours.allowedMarketStart(start)) {
+                skippedOutsideHours++
+                continue
+            }
             // An OHLC4 proxy for the 60-second average PRECEDING market start.
             // Neither this nor the final OHLC4 are the official CF index.
             val targetIndex = byMinute[start - MINUTE]
@@ -141,8 +147,12 @@ object HistoricalSignalReplay {
         val report = StringBuilder()
         report.appendLine("15-MIN CANDLE SIGNAL BACKTEST — " + coin)
         report.appendLine("Run: " + Instant.ofEpochMilli(now))
-        report.appendLine("Completed historical markets inspected: " + validRounds +
-            "/" + ROUNDS + " (missing: " + skippedMissing + ")")
+        report.appendLine("Trading hours: 10:00 AM–11:00 PM America/New_York (DST-aware).")
+        report.appendLine("Only rounds beginning 10:00–22:45 New York time are eligible.")
+        report.appendLine("Historical rounds scanned: " + ROUNDS)
+        report.appendLine("Skipped OUTSIDE trading hours: " + skippedOutsideHours)
+        report.appendLine("Completed IN-WINDOW markets: " + validRounds +
+            " (missing inside window: " + skippedMissing + ")")
         report.appendLine("Chronological split: older " + trainRounds +
             " training markets; newer " + heldOutRounds + " unseen testing markets.")
         report.appendLine("Goal: 100 ACTUAL BUY signals on held-out markets, " +
