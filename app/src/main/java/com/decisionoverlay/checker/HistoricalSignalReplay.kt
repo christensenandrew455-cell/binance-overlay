@@ -112,7 +112,7 @@ object HistoricalSignalReplay {
                         one, five, spot, target, (15 - minuteOffset).toDouble(), rules
                     )
                     if (signal.direction == 0) continue
-                    val won = if (signal.direction == 1) settlement >= target else settlement < target
+                    val won = proxyWon(signal.direction, settlement, target)
                     firstSignals[rules] = Attempt(start, observedAt, signal.direction,
                         target, spot, settlement, won)
                 }
@@ -204,6 +204,12 @@ object HistoricalSignalReplay {
             "only; it cannot establish a profitable Kalshi strategy without entry prices.")
         return report.toString()
     }
+
+    /** Kalshi YES wins on a tie; NO must finish strictly below target. */
+    fun proxyWon(direction: Int, finalPrice: Double, target: Double): Boolean =
+        if (direction == 1) finalPrice >= target
+        else if (direction == -1) finalPrice < target
+        else false
 
     private fun accuracy(events: List<Attempt>): String {
         if (events.isEmpty()) return "0/0 (NO CALLS)"
