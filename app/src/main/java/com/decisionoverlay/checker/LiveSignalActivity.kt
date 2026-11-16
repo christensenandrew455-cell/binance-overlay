@@ -133,10 +133,12 @@ class LiveSignalActivity : AppCompatActivity() {
             output.appendLine("Coins: " + coins.joinToString(", "))
             output.appendLine("Per coin: 2,400 eligible 10 AM–11 PM NY markets; older 1,200 training, newer 1,200 testing.")
             output.appendLine("Signals permitted only with 4–5 minutes left; the final 3 minutes are blocked.")
+            output.appendLine("BOS 1m/5m comparisons use CONFIRMED swing highs/lows and candle-close breaks.")
             output.appendLine("Each coin is scored separately. A missing call is WAIT, not a win.")
             output.appendLine("Binance.US OHLC4 proxy differs from the Kalshi CF benchmark; accuracy is not profit.")
             output.appendLine()
             var successes = 0
+            val summaries = mutableListOf<String>()
             val failures = mutableListOf<String>()
             for ((index, coin) in coins.withIndex()) {
                 runOnUiThread {
@@ -151,16 +153,25 @@ class LiveSignalActivity : AppCompatActivity() {
                         }
                     }
                     output.appendLine(singleReport)
+                    val heldout = singleReport.lineSequence()
+                        .firstOrNull { it.startsWith("Selected rule: ") }
+                        ?.substringAfter("Selected rule: ") ?: "NO RESULT"
+                    val bos = singleReport.lineSequence()
+                        .filter { it.startsWith("1m OR 5m BOS: ") }
+                        .lastOrNull()?.substringAfter("1m OR 5m BOS: ") ?: "NO BOS RESULT"
+                    summaries.add(coin + ": " + heldout + " | BOS either: " + bos)
                     successes++
                 } catch (e: Exception) {
                     val message = e.message ?: e.javaClass.simpleName
                     failures.add(coin)
+                    summaries.add(coin + ": ERROR (" + message + ")")
                     output.appendLine("=== " + coin + " ERROR ===")
                     output.appendLine(message)
                     output.appendLine("No accuracy computed for this coin; other coins still run.")
                     output.appendLine()
                 }
-                val partial = output.toString()
+                val partial = "=== NINE-COIN SUMMARY (UNSEEN TESTING) ===\n" +
+                    summaries.joinToString("\n") + "\n\n" + output.toString()
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
                         report = partial
@@ -171,7 +182,8 @@ class LiveSignalActivity : AppCompatActivity() {
             output.appendLine("FINISHED: " + successes + "/9 coins successfully tested.")
             if (failures.isNotEmpty())
                 output.appendLine("Unable to test: " + failures.joinToString(", "))
-            val finalOutput = output.toString()
+            val finalOutput = "=== NINE-COIN SUMMARY (UNSEEN TESTING) ===\n" +
+                summaries.joinToString("\n") + "\n\n" + output.toString()
             runOnUiThread {
                 backtestBusy = false
                 historyButton.isEnabled = true
