@@ -28,7 +28,7 @@ class TrendOpportunityActivity : AppCompatActivity() {
     }
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS).build()
-    private val symbols = listOf("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT")
+    private val symbols = listOf("BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "HYPEUSDT", "DOGEUSDT", "SOLUSDT", "NEARUSDT", "ZECUSDT")
     private val horizons = listOf(15, 30, 60, 120, 240)
     private lateinit var status: TextView
     private lateinit var output: TextView
