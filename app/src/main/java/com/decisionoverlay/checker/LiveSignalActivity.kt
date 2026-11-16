@@ -99,6 +99,12 @@ class LiveSignalActivity : AppCompatActivity() {
             setOnClickListener { runHistoricalReplay() }
         }
         root.addView(historyButton)
+        root.addView(Button(this).apply {
+            text = "STAY ABOVE / BELOW — HISTORICAL EDGE"
+            setOnClickListener {
+                startActivity(Intent(this@LiveSignalActivity, HoldEdgeActivity::class.java))
+            }
+        })
         root.addView(startButton)
         root.addView(stopButton)
         root.addView(verdict)
