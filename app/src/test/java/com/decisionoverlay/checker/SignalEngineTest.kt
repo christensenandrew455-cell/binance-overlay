@@ -43,7 +43,7 @@ class SignalEngineTest {
                 buyerWasMaker = direction < 0)
         }
         return SignalEngine.Snapshot("BTC", "TEST", spot + targetGap,
-            now + 7 * 60_000L, now, spot, one, five, bids, asks, trades)
+            now + 5 * 60_000L, now, spot, one, five, bids, asks, trades)
     }
 
     @Test fun buyUpOnlyIfBelowTargetAndEnoughPower() {
