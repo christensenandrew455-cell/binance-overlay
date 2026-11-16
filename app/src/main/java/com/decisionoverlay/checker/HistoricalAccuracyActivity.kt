@@ -22,15 +22,20 @@ private data class HourStats(
     val hour: Int,
     var up: Int = 0,
     var down: Int = 0,
-    var ties: Int = 0
+    var ties: Int = 0,
+    var quoteVolumeUsdt: Double = 0.0,
+    var tradeCount: Long = 0L
 ) {
     val total: Int get() = up + down + ties
     val directional: Int get() = up + down
     val upExcludingTies: Double get() = if (directional == 0) 0.0 else up * 100.0 / directional
     val downExcludingTies: Double get() = if (directional == 0) 0.0 else down * 100.0 / directional
     val tiePercent: Double get() = if (total == 0) 0.0 else ties * 100.0 / total
-    val upIncludingTies: Double get() = if (total == 0) 0.0 else up * 100.0 / total
-    val downIncludingTies: Double get() = if (total == 0) 0.0 else down * 100.0 / total
+    // Kalshi-style settlement mapping: an unchanged candle is YES, not NO.
+    val yesIncludingTies: Double get() = if (total == 0) 0.0 else (up + ties) * 100.0 / total
+    val noIncludingTies: Double get() = if (total == 0) 0.0 else down * 100.0 / total
+    val averageQuoteVolumePerCandle: Double get() = if (total == 0) 0.0 else quoteVolumeUsdt / total
+    val averageTradesPerCandle: Double get() = if (total == 0) 0.0 else tradeCount.toDouble() / total
 }
 
 private data class CoinResult(
@@ -40,7 +45,7 @@ private data class CoinResult(
 )
 
 class HistoricalAccuracyActivity : AppCompatActivity() {
-    private val symbols = listOf("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT")
+    private val symbols = listOf("DOGEUSDT", "HYPEUSDT", "ZECUSDT", "SOLUSDT", "NEARUSDT", "XRPUSDT", "ETHUSDT", "BNBUSDT", "BTCUSDT")
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
@@ -63,9 +68,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(label("HISTORICAL 24-HOUR TEST", 23f, 0xFFFFFFFF.toInt(), true))
         content.addView(label(
-            "8 coins • Last 100 completed days • All 24 hours, split into four 15-minute quarters per hour. " +
-                "Each Binance 15-minute candle supplies only its opening and closing price. " +
-                "UP, DOWN, and exact TIES are counted separately. No time inputs.",
+            "9 coins • Last 100 completed days • All 24 hours, split into four 15-minute quarters per hour. " +
+                "UP + TIES count as YES; DOWN counts as NO. Binance quote volume and trade counts measure market activity. No time inputs.",
             14f, 0xFFB9C7D8.toInt()
         ))
         runButton = Button(this).apply {
@@ -165,6 +169,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                 if (openTime < startTime || openTime > endTime) continue
                 val openPrice = candle.getString(1).toDouble()
                 val closePrice = candle.getString(4).toDouble()
+                // Binance kline fields: index 7 = quote-asset volume (USDT), index 8 = trade count.
+                val quoteVolumeUsdt = candle.getString(7).toDouble()
+                val tradeCount = candle.getLong(8)
+                require(quoteVolumeUsdt.isFinite() && quoteVolumeUsdt >= 0.0 && tradeCount >= 0L) {
+                    "Invalid Binance activity data for $symbol at $openTime"
+                }
                 val calendar = Calendar.getInstance().apply { timeInMillis = openTime }
                 val hour = calendar.get(Calendar.HOUR_OF_DAY)
                 val stats = hours[hour]
@@ -173,6 +183,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                     closePrice < openPrice -> stats.down++
                     else -> stats.ties++
                 }
+                stats.quoteVolumeUsdt += quoteVolumeUsdt
+                stats.tradeCount += tradeCount
                 fetched++
             }
 
@@ -190,8 +202,8 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun showResults(results: List<CoinResult>) {
         val completed = results.sumOf { it.totalCandles }
         status.text = "Completed • $completed quarter candles across ${results.size} coins. " +
-            "Each hour below combines up to 400 quarters (4 per day × 100 days). " +
-            "Times are shown in your phone's local time zone. Exact UP, DOWN, and TIE counts are shown below."
+            "YES = UP + TIES; NO = DOWN. Hourly Binance USDT quote volume and trade counts show participation. " +
+            "Times are shown in your phone's local time zone."
         for (coin in results) {
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -200,7 +212,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             }
             panel.addView(label("${coin.symbol} • ${coin.totalCandles} quarters", 19f, 0xFFFFFFFF.toInt(), true))
             panel.addView(label(
-                "HOUR (LOCAL) | UP / DOWN counts | TIES | UP / DOWN excluding ties | UP / DOWN including ties | n",
+                "HOUR (LOCAL) | UP / DOWN / TIE counts | YES (UP+TIE) / NO (DOWN) | USDT quote volume | trades | n",
                 11f, 0xFFB9C7D8.toInt(), true
             ))
             for (hour in coin.hours) {
@@ -215,12 +227,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val nextHour = (hour.hour + 1) % 24
         return String.format(
             Locale.US,
-            "%02d:00–%02d:00 | UP %d / DOWN %d | TIES %d (%.1f%%) | UP %.1f%% / DOWN %.1f%% | UP %.1f%% / DOWN %.1f%% | n=%d",
+            "%02d:00–%02d:00 | UP %d / DOWN %d / TIE %d | YES %.1f%% / NO %.1f%% | QV $%.0f (avg $%.0f/15m) | trades %d (avg %.1f/15m) | n=%d",
             hour.hour, nextHour,
-            hour.up, hour.down,
-            hour.ties, hour.tiePercent,
-            hour.upExcludingTies, hour.downExcludingTies,
-            hour.upIncludingTies, hour.downIncludingTies,
+            hour.up, hour.down, hour.ties,
+            hour.yesIncludingTies, hour.noIncludingTies,
+            hour.quoteVolumeUsdt, hour.averageQuoteVolumePerCandle,
+            hour.tradeCount, hour.averageTradesPerCandle,
             hour.total
         )
     }
@@ -233,22 +245,27 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
 
         val report = buildString {
             appendLine("BINANCE HISTORICAL 24-HOUR TEST")
+            appendLine("Assets: DOGE, HYPE, ZEC, SOL, NEAR, XRP, ETH, BNB, BTC")
             appendLine("Period: Last 100 completed days")
             appendLine("Candle interval: 15 minutes")
             appendLine("Timezone: Phone local time")
+            appendLine("Settlement mapping: YES = UP + TIES; NO = DOWN")
+            appendLine("Activity: Binance.US USDT quote-asset volume and trade count")
             appendLine()
-            appendLine("Coin\tHour\tUP count\tDOWN count\tTIE count\tTotal n\tUP % excluding ties\tDOWN % excluding ties\tTIE %\tUP % including ties\tDOWN % including ties")
+            appendLine("Coin\tHour\tUP count\tDOWN count\tTIE count\tYES count (UP+TIE)\tNO count (DOWN)\tTotal n\tUP % excluding ties\tDOWN % excluding ties\tTIE %\tYES %\tNO %\tUSDT quote volume\tAvg USDT quote volume per 15m\tTrade count\tAvg trades per 15m")
             for (coin in lastResults) {
                 for (hour in coin.hours) {
                     val nextHour = (hour.hour + 1) % 24
                     appendLine(
                         String.format(
                             Locale.US,
-                            "%s\t%02d:00-%02d:00\t%d\t%d\t%d\t%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f",
+                            "%s\t%02d:00-%02d:00\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.2f\t%.2f\t%d\t%.2f",
                             coin.symbol, hour.hour, nextHour,
-                            hour.up, hour.down, hour.ties, hour.total,
+                            hour.up, hour.down, hour.ties, hour.up + hour.ties, hour.down, hour.total,
                             hour.upExcludingTies, hour.downExcludingTies,
-                            hour.tiePercent, hour.upIncludingTies, hour.downIncludingTies
+                            hour.tiePercent, hour.yesIncludingTies, hour.noIncludingTies,
+                            hour.quoteVolumeUsdt, hour.averageQuoteVolumePerCandle,
+                            hour.tradeCount, hour.averageTradesPerCandle
                         )
                     )
                 }
