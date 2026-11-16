@@ -233,8 +233,8 @@ object SignalEngine {
         rules: CandleRules = CandleRules()
     ): CandleSignal {
         fun wait(reason: String) = CandleSignal(0, reason)
-        if (minutesLeft <= 3.0 || minutesLeft > 12.0)
-            return wait("Outside 3-12 minute entry window.")
+        if (minutesLeft <= 3.0 || minutesLeft > 5.0)
+            return wait("Outside the last-five-minute entry window (3 < minutes left <= 5).")
         if (minuteBars.size < 115 || fiveBars.size < 115)
             return wait("Insufficient EMA100 warm-up candles.")
         val one = minuteBars
