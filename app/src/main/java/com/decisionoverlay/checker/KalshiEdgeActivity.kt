@@ -117,6 +117,7 @@ class KalshiEdgeActivity : AppCompatActivity() {
             output.appendLine("History: 300 latest COMPLETED rounds, Binance.US 1m OHLC4 proxy; not exact Kalshi index.")
             output.appendLine("Proxy brackets: time remaining 1-3 / 4-6 / 7-10 / 11-14 minutes;")
             output.appendLine("absolute distance <0.10% / 0.10-0.25% / 0.25-0.50% / >=0.50%.")
+            output.appendLine("Historical samples: one per time bracket per market (2, 5, 8, 12 minutes remaining).")
             output.appendLine("Historical confidence interval is approximate Wilson 95%.")
             output.appendLine("YES wins ties in the 15-minute UP/DOWN contract; data-provider prices may disagree.")
             output.appendLine("Estimated fee uses the GENERAL taker formula for one contract; actual fee/order may differ.")
@@ -129,7 +130,17 @@ class KalshiEdgeActivity : AppCompatActivity() {
                         " (live Kalshi + historical Binance.US)"
                 }
                 output.appendLine("==== " + coin.name + " ====")
-                val live = try { fetchLive(coin, started) }
+                // Complete the slower historical download FIRST, then collect the
+                // rapidly changing live ask and spot price near each other in time.
+                val history = try { fetchHistoric(coin) }
+                catch (e: Exception) {
+                    output.appendLine("Binance history unavailable: " + (e.message ?: "unknown"))
+                    null
+                }
+                if (history != null) output.appendLine(
+                    "History: " + history.rounds + " completed 15m rounds assessed."
+                )
+                val live = try { fetchLive(coin) }
                 catch (e: Exception) {
                     output.appendLine("Kalshi unavailable: " + (e.message ?: "unknown"))
                     null
@@ -140,20 +151,12 @@ class KalshiEdgeActivity : AppCompatActivity() {
                     val ticker = live.market.optString("ticker")
                     output.appendLine("Ticker: " + ticker)
                     output.appendLine(String.format(Locale.US,
-                        "Target (Kalshi index): %.6f USD | time remaining at fetch: %.2f min",
+                        "Target (Kalshi index): %.6f USD | time remaining at quote: %.2f min",
                         live.target, live.minutesRemaining))
                     output.appendLine("Kalshi BUY asks: YES " + fmtAsk(live.yesAsk) +
                         " / NO " + fmtAsk(live.noAsk))
                     output.appendLine("Kalshi displayed prices are set by orders; $ distance alone does not set %.")
                 }
-                val history = try { fetchHistoric(coin) }
-                catch (e: Exception) {
-                    output.appendLine("Binance history unavailable: " + (e.message ?: "unknown"))
-                    null
-                }
-                if (history != null) output.appendLine(
-                    "History: " + history.rounds + " completed 15m rounds assessed."
-                )
                 if (live != null && history != null) {
                     try {
                         val spot = fetchSpot(coin)
@@ -219,9 +222,10 @@ class KalshiEdgeActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun fetchLive(coin: Coin, reference: Long): Live? {
+    private fun fetchLive(coin: Coin): Live? {
         val base = "https://external-api.kalshi.com/trade-api/v2/markets"
         val json = getJson(base + "?series_ticker=" + coin.series + "&status=open&limit=100")
+        val reference = System.currentTimeMillis()
         val markets = json.optJSONArray("markets") ?: return null
         val available = (0 until markets.length()).map { markets.getJSONObject(it) }.mapNotNull { m ->
             val close = try {
@@ -285,7 +289,9 @@ class KalshiEdgeActivity : AppCompatActivity() {
             // would otherwise bias results for partial or low-liquidity markets.
             if ((-1..14).any { bars[start + it * 60_000L] == null }) continue
             complete++
-            for (minutesLeft in 1..14) {
+            // One observation per time bracket per round avoids counting the same
+            // settled outcome multiple times in a confidence interval.
+            for (minutesLeft in listOf(2, 5, 8, 12)) {
                 // Sample at the start of this minute, using only the previous CLOSED minute.
                 val observed = bars[start + (14 - minutesLeft) * 60_000L]!!.proxy
                 val delta = observed - target
