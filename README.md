@@ -8,6 +8,34 @@ A native Android floating overlay that reads **Binance.US spot-market candles** 
 
 The app never places orders, connects to a wallet, or needs access to a Binance account. It is a manual decision aid, not financial advice.
 
+## Live 1m/5m target-cross signal
+
+Use **LIVE TARGET-CROSS SIGNAL** on the main screen, select any of the same nine coins,
+and tap **START LIVE CHECK**. The screen refreshes approximately every 12 seconds
+**only while it is open**; STOP ends monitoring. It does not run in the
+background or place trades. On a new BUY UP/BUY DOWN signal it may send a
+notification, if Android notification permission is granted.
+
+- **5-minute trend filter:** EMA4 versus EMA100, last completed close versus EMA100,
+  and EMA4 slope. Two of the three must agree.
+- **1-minute entry checks:** EMA4 versus EMA100, fast EMA slope, close versus fast EMA,
+  three-candle momentum normalized by ATR14, recent higher highs/lows or lower
+  highs/lows, rejection candle wicks, and last-candle quote-volume versus prior 20.
+- **Buyer/seller power:** Binance.US book depth within 0.20% of spot, plus recent
+  **executed trade** buy versus sell notional. Aggressor trade flow gets 70% weight
+  and resting book imbalance 30%. Displayed power is a pressure score, not a
+  measured success probability. A large book wall can be cancelled.
+- **Kalshi target and reachability:** only consider BUY UP while spot is **below**
+  the Kalshi target and the filters suggest a crossing **above**; only BUY DOWN
+  while spot is **above** target and the filters suggest a crossing **below**.
+  Show WAIT when the target is too far for an approximate ATR/time travel budget,
+  5m direction is mixed, data is stale, pressure is weak, or less than 3 minutes
+  remain. Also waits during the first 3 minutes.
+- **Source limitations:** Binance.US is NOT Kalshi's CF Benchmarks settlement index;
+  spot prices, order book, and taker trades are only one venue. The ATR travel
+  budget and score thresholds are **unvalidated heuristics**. They require
+  out-of-sample tests and actual Kalshi price/fee data to assess profitability.
+
 ## Kalshi 15-minute edge checker (research only)
 
 The app now includes a **KALSHI EDGE CHECK** button. It retrieves the current open
