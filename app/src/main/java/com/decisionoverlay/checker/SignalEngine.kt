@@ -181,27 +181,15 @@ object SignalEngine {
             Result(verdict, reason, header + "$verdict: $reason\n" + body,
                 buyerPower, sellerPower)
 
-        if (minutesLeft <= 3.0) return done("WAIT", "Last 3 minutes are blocked.")
-        if (minutesLeft > 12.0) return done("WAIT", "Wait for the first 3 minutes to pass.")
-        if (fiveDirection == 0) return done("WAIT", "5m trend is mixed.")
-        val direction = fiveDirection
-        if (!targetAllows(direction, input.spot, input.target))
-            return done("WAIT", if (direction == 1)
-                "UP trend, but price is already at/above target; no UP crossing entry."
-            else "DOWN trend, but price is already at/below target; no DOWN crossing entry.")
-        val score = if (direction == 1) oneBull else oneBear
-        if (score < 4) return done("WAIT", "1m confirmation weak ($score/7).")
+        val candle = replayCandle(one, five, input.spot, input.target, minutesLeft)
+        if (candle.direction == 0) return done("WAIT", candle.reason)
+        val direction = candle.direction
         if (direction * flowImbalance < 0.08)
             return done("WAIT", "Executed trade flow does not support 5m direction.")
         if (direction * pressure < 0.20)
             return done("WAIT", "Buyer/seller combined power is not strong enough.")
         if (direction * bookImbalance < -0.35)
             return done("WAIT", "Order book strongly opposes the move.")
-        if (volumeRatio < 0.65)
-            return done("WAIT", "1m volume too weak relative to previous 20.")
-        val budget = if (direction == 1) estimatedMoveUp else estimatedMoveDown
-        if (needed > budget)
-            return done("WAIT", "Target is farther away than the estimated time/volatility travel budget.")
         return done(if (direction == 1) "BUY UP" else "BUY DOWN",
             "5m trend, 1m setup, volume, executed trade flow and travel budget align.")
     }
@@ -221,6 +209,88 @@ object SignalEngine {
             if (dir == 1) upWick else downWick,
             volume >= 1.0 && dir * (last.close - last.open) > 0
         ).count { it }
+    }
+
+
+    /** Candle-only decision used by BOTH live monitoring and historical replay.
+     *  Historical order-book/aggTrades snapshots cannot be reconstructed from OHLCV.
+     *  Return 0 for WAIT. All inputs must include only candles closed by observation.
+     */
+    data class CandleRules(
+        val name: String = "Original",
+        val minScore: Int = 4,
+        val minVolume: Double = 0.65,
+        val minMomentum: Double = 0.0,
+        val requireStructure: Boolean = false,
+        val requireWick: Boolean = false,
+        val travelMultiplier: Double = 1.0
+    )
+    data class CandleSignal(val direction: Int, val reason: String, val score: Int = 0)
+
+    fun replayCandle(
+        minuteBars: List<Bar>, fiveBars: List<Bar>,
+        spot: Double, target: Double, minutesLeft: Double,
+        rules: CandleRules = CandleRules()
+    ): CandleSignal {
+        fun wait(reason: String) = CandleSignal(0, reason)
+        if (minutesLeft <= 3.0 || minutesLeft > 12.0)
+            return wait("Outside 3-12 minute entry window.")
+        if (minuteBars.size < 115 || fiveBars.size < 115)
+            return wait("Insufficient EMA100 warm-up candles.")
+        val one = minuteBars
+        val five = fiveBars
+        if (!continuous(one.takeLast(110), 60_000L) ||
+            !continuous(five.takeLast(110), 300_000L))
+            return wait("Missing candle interval.")
+        val fast1 = ema(one.map { it.close }, 4)
+        val slow1 = ema(one.map { it.close }, 100)
+        val fast5 = ema(five.map { it.close }, 4)
+        val slow5 = ema(five.map { it.close }, 100)
+        val fiveScore = listOf(
+            sign(fast5.last() - slow5.last()),
+            sign(five.last().close - slow5.last()),
+            sign(fast5.last() - fast5[fast5.lastIndex - 1])
+        ).sum()
+        val dir = if (fiveScore >= 2) 1 else if (fiveScore <= -2) -1 else 0
+        if (dir == 0) return wait("5m trend neutral.")
+        if (!targetAllows(dir, spot, target))
+            return wait("Trend cannot cross target from the required side.")
+        val atr = atr14(one)
+        if (!atr.isFinite() || atr <= 0) return wait("ATR unavailable.")
+        val last = one.last()
+        val prev = one.subList(one.size - 11, one.size - 6)
+        val recent = one.subList(one.size - 6, one.size - 1)
+        val upStructure = recent.maxOf { it.high } > prev.maxOf { it.high } &&
+            recent.minOf { it.low } > prev.minOf { it.low }
+        val downStructure = recent.maxOf { it.high } < prev.maxOf { it.high } &&
+            recent.minOf { it.low } < prev.minOf { it.low }
+        val upperWick = last.high - max(last.open, last.close)
+        val lowerWick = min(last.open, last.close) - last.low
+        val candleRange = max(1.0e-10, last.high - last.low)
+        val wickUp = lowerWick / candleRange >= 0.35 && lowerWick > upperWick * 1.5
+        val wickDown = upperWick / candleRange >= 0.35 && upperWick > lowerWick * 1.5
+        val priorVolume = one.subList(one.size - 21, one.size - 1)
+            .map { it.quoteVolume }.average()
+        val volumeRatio = if (priorVolume > 0) last.quoteVolume / priorVolume else 0.0
+        val delta3 = last.close - one[one.size - 4].close
+        val momentumATR = delta3 / atr
+        val score = score1m(dir, one, fast1, slow1, momentumATR, volumeRatio,
+            upStructure, downStructure, wickUp, wickDown)
+        if (score < rules.minScore) return CandleSignal(0, "1m score below threshold.", score)
+        if (volumeRatio < rules.minVolume)
+            return CandleSignal(0, "Volume below threshold.", score)
+        if (dir * momentumATR < rules.minMomentum)
+            return CandleSignal(0, "Momentum below threshold.", score)
+        if (rules.requireStructure && !(if (dir == 1) upStructure else downStructure))
+            return CandleSignal(0, "Structure not confirmed.", score)
+        if (rules.requireWick && !(if (dir == 1) wickUp else wickDown))
+            return CandleSignal(0, "Wick not confirmed.", score)
+        val needed = abs(spot - target) + max(atr * 0.10, spot * 0.00005)
+        val projected = travelBudget(atr, minutesLeft, dir * delta3 / 3.0) *
+            rules.travelMultiplier
+        if (needed > projected)
+            return CandleSignal(0, "Target too far to reach in time (ATR heuristic).", score)
+        return CandleSignal(dir, "Candle setup passed; live order flow still required.", score)
     }
 
     private fun sign(x: Double): Int = when {
