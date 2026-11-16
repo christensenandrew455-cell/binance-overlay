@@ -11,6 +11,7 @@
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.DecisionOverlay">
+        <activity android:name=".TrendOpportunityActivity" android:exported="false" />
         <activity
             android:name=".HistoricalAccuracyActivity"
             android:exported="false" />
