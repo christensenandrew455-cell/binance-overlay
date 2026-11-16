@@ -73,7 +73,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         val title = label("HISTORICAL ACCURACY TEST", 23f, 0xFFFFFFFF.toInt(), true)
         val description = label(
-            "8 coins • Goal: 100+ time windows per coin • 15-minute tests\nThe lookback automatically expands based on your selected hours to aim for 100 windows per coin. It uses all available matching history if fewer exist. Exact ties count as UP (YES), matching the market rule.",
+            "8 coins • Maximum 300 one-minute candles per coin • 15-minute tests\nEach result shows the target, observed prices, and exact dollar difference from the target. A $0.00 difference is an exact tie; ties count as UP (YES).",
             14f, 0xFFB9C7D8.toInt()
         )
         val timeLabel = label("TEST WINDOW (24-HOUR LOCAL TIME)", 15f, 0xFFFFFFFF.toInt(), true)
@@ -338,19 +338,30 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
     private fun sectionDetails(coin: CoinResult): String {
         val fmt = SimpleDateFormat("MMM d h:mm a", Locale.US)
         val out = StringBuilder()
-        out.append("Section | target time | +1m guess | +15m result | result\n")
+        out.append("Section | time | target | +1m price (difference) | final price (difference) | result\n")
         for (s in coin.sections) {
             val mark = (if (s.correct == true) "CORRECT" else "WRONG") +
                 (if (s.predictionTie) " • PREDICTION TIE" else "") +
                 (if (s.actualTie) " • RESULT TIE" else "")
             out.append(s.number).append(" | ")
-                .append(fmt.format(Date(s.targetTime))).append(" | ")
-                .append(s.prediction).append(" | ")
-                .append(s.actual).append(" | ")
-                .append(mark).append("\n")
+                .append(fmt.format(Date(s.targetTime))).append(" | target $")
+                .append(priceText(s.target)).append(" | +1m $")
+                .append(priceText(s.minutePrice)).append(" (")
+                .append(deltaText(s.minutePrice - s.target)).append(") | final $")
+                .append(priceText(s.finishPrice)).append(" (")
+                .append(deltaText(s.finishPrice - s.target)).append(") | ")
+                .append(s.prediction).append("/")
+                .append(s.actual).append(" | ").append(mark).append("\n")
         }
         return out.toString()
     }
+
+    private fun priceText(value: Double): String =
+        String.format(Locale.US, "%.8f", value).trimEnd('0').trimEnd('.')
+
+    private fun deltaText(value: Double): String =
+        (if (value > 0.0) "+" else if (value < 0.0) "-" else "") +
+            "$" + priceText(kotlin.math.abs(value))
 
     private fun parseTime(value: String): Int? {
         val match = Regex("^(\\d{1,2}):(\\d{2})$").matchEntire(value.trim()) ?: return null
