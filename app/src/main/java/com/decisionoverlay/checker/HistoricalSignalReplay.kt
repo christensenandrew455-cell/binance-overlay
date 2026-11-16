@@ -22,9 +22,10 @@ object HistoricalSignalReplay {
     private const val QUARTER = 15L * MINUTE
     private const val FIVE = 5L * MINUTE
     private const val ROUNDS = 2400
-    private const val WARMUP_MINUTES = 650
+    // 180 completed 5m candles require at least 900 minutes of warm-up.
+    private const val WARMUP_MINUTES = 950
     private const val TARGET_TEST_SIGNALS = 100
-    private const val MAX_PAGES = 45
+    private const val MAX_PAGES = 105
 
     private val candidates = listOf(
         SignalEngine.CandleRules("Original: score 4/7"),
@@ -51,6 +52,21 @@ object HistoricalSignalReplay {
         val testing: MutableList<Attempt> = mutableListOf()
     )
 
+    /** The latest N eligible 15m markets, not merely the last N calendar markets.
+     *  Returns oldest-to-newest for chronological training/test splits.
+     */
+    fun lastEligibleStarts(lastCompleteEnd: Long, count: Int): List<Long> {
+        require(count in 1..10_000)
+        val starts = ArrayList<Long>(count)
+        var start = lastCompleteEnd - QUARTER
+        while (starts.size < count) {
+            if (TradingHours.allowedMarketStart(start)) starts.add(start)
+            start -= QUARTER
+        }
+        starts.reverse()
+        return starts
+    }
+
     fun run(coin: String, progress: (String) -> Unit): String {
         require(coin in listOf("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "NEAR", "ZEC"))
         val client = OkHttpClient.Builder()
@@ -58,10 +74,16 @@ object HistoricalSignalReplay {
             .readTimeout(25, TimeUnit.SECONDS).build()
         val now = System.currentTimeMillis()
         val lastCompleteEnd = (now / QUARTER) * QUARTER
-        val firstRound = lastCompleteEnd - ROUNDS * QUARTER
+        // Count ROUNDS inside allowed hours, going farther back to replace excluded hours.
+        val eligibleStarts = lastEligibleStarts(lastCompleteEnd, ROUNDS)
+        val firstRound = eligibleStarts.first()
+        val calendarRoundsSearched = ((lastCompleteEnd - firstRound) / QUARTER).toInt()
+        val skippedOutsideHours = calendarRoundsSearched - eligibleStarts.size
         val from = firstRound - WARMUP_MINUTES * MINUTE
         val until = lastCompleteEnd - 1
-        progress("Downloading " + coin + " 1-minute candles. This may take a minute...")
+        progress("Found " + eligibleStarts.size + " eligible 10 AM–11 PM markets across " +
+            calendarRoundsSearched + " calendar rounds. Downloading " + coin +
+            " candles (may take a few minutes)...")
         val minuteBars = download(client, coin, from, until, progress)
         require(minuteBars.isNotEmpty()) { "Binance.US returned no history" }
         val byMinute = minuteBars.withIndex().associate { it.value.openedAt to it.index }
@@ -69,18 +91,11 @@ object HistoricalSignalReplay {
         val byFive = fiveBars.withIndex().associate { it.value.openedAt to it.index }
         val tallies = candidates.associateWith { Tally() }
         var validRounds = 0
-        var skippedOutsideHours = 0
         var skippedMissing = 0
         var heldOutRounds = 0
         var trainRounds = 0
 
-        for (roundIndex in 0 until ROUNDS) {
-            val start = firstRound + roundIndex * QUARTER
-            // Do not test markets outside the user's New York trading hours.
-            if (!TradingHours.allowedMarketStart(start)) {
-                skippedOutsideHours++
-                continue
-            }
+        for ((roundIndex, start) in eligibleStarts.withIndex()) {
             // An OHLC4 proxy for the 60-second average PRECEDING market start.
             // Neither this nor the final OHLC4 are the official CF index.
             val targetIndex = byMinute[start - MINUTE]
@@ -149,8 +164,10 @@ object HistoricalSignalReplay {
         report.appendLine("Run: " + Instant.ofEpochMilli(now))
         report.appendLine("Trading hours: 10:00 AM–11:00 PM America/New_York (DST-aware).")
         report.appendLine("Only rounds beginning 10:00–22:45 New York time are eligible.")
-        report.appendLine("Historical rounds scanned: " + ROUNDS)
+        report.appendLine("Calendar rounds searched: " + calendarRoundsSearched)
         report.appendLine("Skipped OUTSIDE trading hours: " + skippedOutsideHours)
+        report.appendLine("Eligible markets selected for testing: " + eligibleStarts.size +
+            "/" + ROUNDS)
         report.appendLine("Completed IN-WINDOW markets: " + validRounds +
             " (missing inside window: " + skippedMissing + ")")
         report.appendLine("Chronological split: older " + trainRounds +
@@ -307,8 +324,13 @@ object HistoricalSignalReplay {
                 progress("Downloaded " + bars.size + " one-minute candles (" +
                     pages + " pages) for " + coin + "...")
             }
-            if (json.length() < 1000) break
+            // Some symbols have missing minute bars; a short page isn't proof
+            // that all later candles have been fetched. Continue by timestamp.
         }
+        if (cursor <= end) error(
+            "History download incomplete: fetched " + pages +
+                " pages, stopped before requested end. Cannot report partial sample."
+        )
         progress("Download finished: " + bars.size + " minute candles. Replaying...")
         return bars.distinctBy { it.openedAt }.sortedBy { it.openedAt }
     }
