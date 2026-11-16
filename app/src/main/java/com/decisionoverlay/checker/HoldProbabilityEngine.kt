@@ -179,7 +179,8 @@ object HoldProbabilityEngine {
     }
     fun bandForPercent(percentGap: Double): Int {
         require(percentGap.isFinite() && percentGap >= 0)
-        return floor(percentGap / PERCENT_STEP).toInt().coerceIn(0, MAX_DISTANCE_BAND)
+        // Tiny epsilon prevents 0.10% from slipping into 0.05-0.10% due to floating-point roundoff.
+        return floor((percentGap + 1e-9) / PERCENT_STEP).toInt().coerceIn(0, MAX_DISTANCE_BAND)
     }
     fun bandLabel(band: Int): String =
         if (band >= MAX_DISTANCE_BAND)
