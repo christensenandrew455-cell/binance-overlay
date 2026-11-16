@@ -130,12 +130,21 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }
         running = true
         runButton.isEnabled = false
-        status.text = "Downloading historical 1-minute prices from Binance..."
+        val durationMinutes = (endMinutes - startMinutes + 1440) % 1440
+        val windowsPerDay = maxOf(1, durationMinutes / 15)
+        val lookbackDays = maxOf(7, (100 / windowsPerDay) + 30)
+        status.text = "Starting download • 8 coins • about $lookbackDays days of history each. Progress will appear here."
         resultsBox.removeAllViews()
         chartSlot.removeAllViews()
         Thread {
             try {
-                val all = symbols.map { symbol -> fetchCoin(symbol, anchor, startMinutes, endMinutes) }
+                val all = symbols.mapIndexed { index, symbol ->
+                    fetchCoin(symbol, anchor, startMinutes, endMinutes) { detail ->
+                        runOnUiThread {
+                            status.text = "Downloading coin ${index + 1}/${symbols.size} • $symbol\n$detail"
+                        }
+                    }
+                }
                 runOnUiThread {
                     showResults(all, anchor)
                     running = false
@@ -151,7 +160,13 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun fetchCoin(symbol: String, anchor: Long, startMinutes: Int, endMinutes: Int): CoinResult {
+    private fun fetchCoin(
+        symbol: String,
+        anchor: Long,
+        startMinutes: Int,
+        endMinutes: Int,
+        onProgress: (String) -> Unit
+    ): CoinResult {
         val minute = 60_000L
         val quarter = 15L * minute
         // Estimate enough history to reach the 100-window goal for the selected daily time range.
@@ -163,6 +178,9 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
         val lastOpen = anchor - minute
         val prices = HashMap<Long, Double>()
         var cursor = firstOpen
+        var batchNumber = 0
+        val totalBatches = ((lookbackDays * 1440) + 999) / 1000
+        onProgress("Preparing $lookbackDays days of 1-minute candles...")
         while (cursor <= lastOpen) {
             val query = "/api/v3/klines?symbol=" + symbol +
                 "&interval=1m&startTime=" + cursor + "&endTime=" + lastOpen + "&limit=1000"
@@ -200,7 +218,12 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
                             if (openTime > newest) newest = openTime
                         }
                         cursor = newest + minute
+                        batchNumber++
                         parsed = true
+                        onProgress(
+                            "Downloaded ${prices.size} candles • batch $batchNumber (about $totalBatches) • " +
+                                "${prices.size / 60} hours of price history"
+                        )
                     }
                 } catch (e: IllegalStateException) {
                     throw e
@@ -252,6 +275,7 @@ class HistoricalAccuracyActivity : AppCompatActivity() {
             }
             candidate -= quarter
         }
+        onProgress("Finished downloading • analyzed ${sections.size} eligible 15-minute windows.")
         return CoinResult(symbol.removeSuffix("USDT"), sections, correct, incorrect, flatInvolved)
     }
 
