@@ -177,8 +177,15 @@ object SignalEngine {
             last.open, last.high, last.low, last.close, upperWick, lowerWick,
             needed, estimatedMoveUp, estimatedMoveDown)
 
+        val bosDetails = if (fiveDirection == 0) "Recent BOS: no 5m direction.\n"
+        else "Recent break of confirmed swing high/low: 1m " +
+            (if (recentBreakOfStructure(one, fiveDirection, 3)) "YES" else "NO") +
+            " | 5m " +
+            (if (recentBreakOfStructure(five, fiveDirection, 2)) "YES" else "NO") +
+            ". BOS is displayed for research; not a required live entry filter.\n"
+
         fun done(verdict: String, reason: String) =
-            Result(verdict, reason, header + "$verdict: $reason\n" + body,
+            Result(verdict, reason, header + "$verdict: $reason\n" + body + bosDetails,
                 buyerPower, sellerPower)
 
         val candle = replayCandle(one, five, input.spot, input.target, minutesLeft)
