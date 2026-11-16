@@ -26,6 +26,9 @@ object HistoricalSignalReplay {
     private const val WARMUP_MINUTES = 950
     private const val TARGET_TEST_SIGNALS = 100
     private const val MAX_PAGES = 105
+    // Only observe after minute 10 or 11 of the round: 5 or 4 minutes left.
+    internal val entryMinuteOffsets: IntRange = 10..11
+    val supportedCoins = listOf("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "NEAR", "ZEC")
 
     private val candidates = listOf(
         SignalEngine.CandleRules("Original: score 4/7"),
@@ -68,7 +71,7 @@ object HistoricalSignalReplay {
     }
 
     fun run(coin: String, progress: (String) -> Unit): String {
-        require(coin in listOf("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "NEAR", "ZEC"))
+        require(coin in supportedCoins)
         val client = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(25, TimeUnit.SECONDS).build()
@@ -117,7 +120,7 @@ object HistoricalSignalReplay {
             if (isTrain) trainRounds++ else heldOutRounds++
             validRounds++
             val firstSignals = HashMap<SignalEngine.CandleRules, Attempt>()
-            for (minuteOffset in 3..11) {
+            for (minuteOffset in entryMinuteOffsets) {
                 val observedAt = start + minuteOffset * MINUTE
                 val oneIndex = byMinute[observedAt - MINUTE] ?: continue
                 // Last 5m candle that COMPLETED before observedAt.
@@ -164,6 +167,7 @@ object HistoricalSignalReplay {
         report.appendLine("Run: " + Instant.ofEpochMilli(now))
         report.appendLine("Trading hours: 10:00 AM–11:00 PM America/New_York (DST-aware).")
         report.appendLine("Only rounds beginning 10:00–22:45 New York time are eligible.")
+        report.appendLine("BUY evaluation: only 5 or 4 whole minutes remaining (never earlier or in final 3m).")
         report.appendLine("Calendar rounds searched: " + calendarRoundsSearched)
         report.appendLine("Skipped OUTSIDE trading hours: " + skippedOutsideHours)
         report.appendLine("Eligible markets selected for testing: " + eligibleStarts.size +
