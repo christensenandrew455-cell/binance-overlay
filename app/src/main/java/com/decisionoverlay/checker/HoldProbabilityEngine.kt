@@ -30,6 +30,7 @@ object HoldProbabilityEngine {
     const val MAX_DISTANCE_BAND = 30
     const val PERCENT_STEP = 0.05 // percentage points, not dollars (5 basis points)
     const val MIN_MATCHES = 100
+    const val TABLE_MIN_MATCHES = 40 // exploratory table ONLY, never live buy gating
     const val TRAIN_ROUNDS = 1200
     const val TEST_ROUNDS = 1200
     const val TOTAL_ROUNDS = TRAIN_ROUNDS + TEST_ROUNDS
@@ -93,6 +94,82 @@ object HoldProbabilityEngine {
                     return band * PERCENT_STEP
             }
             return null
+        }
+
+        /**
+         * Research-only percentage target, NOT a Kalshi contract quote or buy rule.
+         * Pick the smallest leading-price gap using ONLY older training observations.
+         * Verify its actual stay-side rate on the newer, untouched period.
+         *
+         * Aggregate all distance buckets >= the candidate gap so estimates
+         * do not hinge on one tiny 0.05%-wide bucket. Both periods need enough
+         * examples; if not, leave the result unknown instead of making it up.
+         */
+        data class ChanceGap(val minimumGapPct: Double,
+            val training: Rate, val newer: Rate)
+
+        fun chanceGap(minute: Int, side: Int, desiredStay: Double): ChanceGap? {
+            if (minute !in 1..15 || side !in listOf(-1, 1) ||
+                desiredStay !in 0.0..1.0) return null
+            val older = Rate()
+            val newer = Rate()
+            var qualifying: ChanceGap? = null
+            for (band in MAX_DISTANCE_BAND downTo 0) {
+                val a = rate(Key(minute, band, side), false)
+                val b = rate(Key(minute, band, side), true)
+                older.count += a.count
+                older.successes += a.successes
+                newer.count += b.count
+                newer.successes += b.successes
+                if (older.count >= TABLE_MIN_MATCHES &&
+                    newer.count >= TABLE_MIN_MATCHES &&
+                    older.probability >= desiredStay) {
+                    // Looping from far to near, the last qualifying gap is
+                    // the SMALLEST gap supported by older training data.
+                    qualifying = ChanceGap(band * PERCENT_STEP,
+                        older.copy(), newer.copy())
+                }
+            }
+            return qualifying
+        }
+
+        private fun chanceCell(minute: Int, side: Int, desiredStay: Double): String {
+            val found = chanceGap(minute, side, desiredStay) ?: return "—"
+            return String.format(Locale.US, ">=%.2f%% -> %.1f%% (n=%d)",
+                found.minimumGapPct, found.newer.probability * 100.0,
+                found.newer.count)
+        }
+
+        /** Compact, copyable output: 15 through 1 minutes; YES and NO;
+         * four 60%-90% desired historical stay-side rates for each coin.
+         */
+        fun chanceTable(desiredStay: Double): String = buildString {
+            appendLine(String.format(Locale.US,
+                "%s — desired stay %.0f%% (training-derived gap, newer measured rate)",
+                coin, desiredStay * 100.0))
+            appendLine("Left | YES: price gap -> held-out stay | NO: price gap -> held-out stay")
+            for (minute in 15 downTo 1) {
+                appendLine(String.format(Locale.US, "%2dm | %s | %s",
+                    minute, chanceCell(minute, 1, desiredStay),
+                    chanceCell(minute, -1, desiredStay)))
+            }
+            appendLine("— = insufficient evidence. n = newer cases with gap at least shown.")
+            appendLine("Observation, NOT a calibrated forecast or a Kalshi contract price.")
+        }
+
+        fun compactChanceReport(): String = buildString {
+            appendLine("STAY-SIDE PRICE GAP (%) — " + coin)
+            appendLine("15 to 1 min left; YES above target / NO below target.")
+            appendLine("Training selects distance; newer held-out markets measure stays.")
+            appendLine("Only 10 AM–11 PM New York, 1200 older + 1200 newer markets.")
+            appendLine("At least " + TABLE_MIN_MATCHES + " samples in EACH period per threshold.")
+            appendLine("A 90% goal may validate BELOW 90%; see actual newer result.")
+            appendLine("Binance.US historical proxy, not Kalshi settlement/index.")
+            appendLine()
+            for (desired in listOf(.60, .70, .80, .90)) {
+                appendLine(chanceTable(desired))
+                appendLine()
+            }
         }
 
         fun report(): String = buildString {
