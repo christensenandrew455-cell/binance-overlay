@@ -283,8 +283,12 @@ class BtcFunnelLiveService : Service() {
         }.maxByOrNull { it.goal }
         val comparison = if (best != null)
             BtcFunnelLevels.comparison(best, ask) else "NO VALIDATED INNER LEVEL REACHED"
-        val acceptable = !beyond && best != null &&
-            comparison == "BELOW CONSERVATIVE HISTORICAL BOUND"
+        // User wants alerts when the quote MATCHES the historical fraction,
+        // too. Such matches are explicitly labelled "before fees" and
+        // are not represented as profitable or validated forecast odds.
+        val matchOrBetter = comparison == "BELOW CONSERVATIVE HISTORICAL BOUND" ||
+            comparison.startsWith("AT/BELOW RAW HISTORY")
+        val acceptable = !beyond && best != null && matchOrBetter
 
         if (acceptable && best != null) {
             val identity = market.ticker + ":" + side + ":" + best.goal
@@ -293,7 +297,9 @@ class BtcFunnelLiveService : Service() {
                     "BTC $%.2f; %.1fm left; %s ask %.1fc; model held-out %.1f%%",
                     spot, left, if (side == 1) "YES" else "NO",
                     (ask ?: 0.0) * 100.0, best.observedPct)
-                alert("BTC " + best.goal + "% funnel level reached", note,
+                alert("BTC " + best.goal + "% line: " +
+                    (if (comparison.startsWith("AT/BELOW")) "MATCH before fees"
+                     else "quoted below conservative history"), note,
                     8400 + best.goal)
             }
         }
@@ -322,7 +328,7 @@ class BtcFunnelLiveService : Service() {
             appendLine("Best level reached: " +
                 (if (best == null) "NONE VALIDATED" else best.goal.toString() + "%"))
             appendLine("Comparison: " + comparison)
-            appendLine(if (acceptable) "ALERT ELIGIBLE (once per market/side/level)."
+            appendLine(if (acceptable) "ALERT ELIGIBLE (once per market/side/level; fee caveat shown)."
                 else "NO ALERT — model line/price comparison did not qualify.")
             appendLine()
             appendLine("CURRENT MINUTE LEVELS (older calibration, newer held-out):")
