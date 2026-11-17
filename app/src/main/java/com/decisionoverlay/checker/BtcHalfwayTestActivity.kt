@@ -47,15 +47,16 @@ class BtcHalfwayTestActivity : AppCompatActivity() {
             text = s; textSize = size; setTextColor(Color.WHITE)
             setPadding(0, 10, 0, 10); setTextIsSelectable(true)
         }
-        layout.addView(txt("BTC — THREE MINUTES LEFT / 0.10% TEST", 22f))
-        layout.addView(txt("Test Bitcoin ONLY, exactly 3 minutes before each 15-minute " +
-            "market ends (12 minutes elapsed). Find 100 DOWN and 100 UP historical " +
-            "cases when BTC is 0.090%–0.110% away from target (around $66 at $65,000). " +
-            "Report how many finish on that side, cross back, tie or touch the target. " +
-            "10 AM–11 PM Eastern, DST-aware. Runs in background; Binance.US candles " +
-            "are a proxy, not Kalshi settlement data or actual Kalshi odds.", 13f))
+        layout.addView(txt("BTC — SECOND-HALF FUNNEL BACKTEST", 22f))
+        layout.addView(txt("Scan minutes 7 through 14 elapsed (8 to 1 minute left). " +
+            "At every minute, your funnel boundary is 0.05% x minutes remaining " +
+            "above or below the start target. Find 100 near-line cases on EACH side " +
+            "at EACH minute (+/-0.010 percentage points around the line). " +
+            "Count how often price never touches the target again, and how often " +
+            "it finishes on the same side. Binance.US 1-minute candles, 10:00–23:00 " +
+            "Eastern, background scanning. This tests a hypothesis, not Kalshi odds.", 13f))
         start = Button(this).apply {
-            text = "START 3-MIN BTC TEST — BACKGROUND"
+            text = "START BTC FUNNEL BACKTEST — BACKGROUND"
             setOnClickListener {
                 if (Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(
@@ -83,7 +84,7 @@ class BtcHalfwayTestActivity : AppCompatActivity() {
                     .getString("report", "").orEmpty()
                 if (data.isNotBlank())
                     (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText("BTC 3-minute study result", data))
+                        .setPrimaryClip(ClipData.newPlainText("BTC funnel study results", data))
             }
         })
         status = txt("", 14f); results = txt("", 14f)
@@ -147,14 +148,37 @@ object BtcThreeMinuteMath {
         else "CROSS"
 }
 
+/** Hypothesis only, not a statistical proof of a 90% outcome. */
+object BtcFunnelMath {
+    const val RATE = 0.05 // percentage points per remaining minute
+    const val TOLERANCE = 0.01 // percentage points on each side of line
+    const val START = 7
+    const val END = 14
+    const val GOAL = 100
+    fun threshold(elapsed: Int): Double {
+        require(elapsed in START..END)
+        return RATE * (15 - elapsed)
+    }
+    fun gap(price: Double, target: Double) = (price - target) / target * 100.0
+    fun matches(price: Double, target: Double, elapsed: Int, above: Boolean): Boolean {
+        if (!price.isFinite() || !target.isFinite() || price <= 0 || target <= 0) return false
+        val g = gap(price, target)
+        return (if (above) g > 0 else g < 0) &&
+            abs(abs(g) - threshold(elapsed)) <= TOLERANCE + 1e-9
+    }
+    fun result(end: Double, target: Double, above: Boolean) =
+        if (end == target) "TIE"
+        else if ((end > target) == above) "STAY" else "CROSS"
+}
+
 class BtcHalfwayScanService : Service() {
     companion object {
-        const val PREFS = "btc_three_minute_010_v1"
+        const val PREFS = "btc_funnel_second_half_v1"
         const val START = "btc.halfway.START"
         const val STOP = "btc.halfway.STOP"
-        private const val CHANNEL = "btc_three_min_010"
-        private const val RESULT_CHANNEL = "btc_three_min_010_results"
-        private const val NOTIFICATION_ID = 7193
+        private const val CHANNEL = "btc_funnel_second_half"
+        private const val RESULT_CHANNEL = "btc_funnel_second_half_results"
+        private const val NOTIFICATION_ID = 7195
     }
     private val cancel = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
@@ -175,14 +199,14 @@ class BtcHalfwayScanService : Service() {
     override fun onCreate() {
         super.onCreate()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .createNotificationChannel(NotificationChannel(CHANNEL, "BTC three-minute scan",
+            .createNotificationChannel(NotificationChannel(CHANNEL, "BTC funnel scan",
                 NotificationManager.IMPORTANCE_LOW))
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel("btc_halfway_results",
                 "BTC scan results", NotificationManager.IMPORTANCE_HIGH))
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel(RESULT_CHANNEL,
-                "BTC three-minute scan finished or failed", NotificationManager.IMPORTANCE_HIGH))
+                "BTC funnel scan finished or failed", NotificationManager.IMPORTANCE_HIGH))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
@@ -227,7 +251,7 @@ class BtcHalfwayScanService : Service() {
     private fun notification(info: String): Notification =
         NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Bitcoin 3m / 0.10% historical test")
+            .setContentTitle("BTC funnel second-half backtest")
             .setContentText(info).setOngoing(true).setOnlyAlertOnce(true)
             .setContentIntent(PendingIntent.getActivity(this, 7193,
                 Intent(this, BtcHalfwayTestActivity::class.java),
@@ -294,23 +318,23 @@ class BtcHalfwayScanService : Service() {
         return emptyMap()
     }
     private fun scan(): String {
-        val groups = listOf(Cases(BtcThreeMinuteMath.ELAPSED, true),
-            Cases(BtcThreeMinuteMath.ELAPSED, false))
+        // 8 observation times x 2 directions. Markets may occur in multiple buckets.
+        val groups = (BtcFunnelMath.START..BtcFunnelMath.END)
+            .flatMap { elapsed -> listOf(Cases(elapsed, true), Cases(elapsed, false)) }
         val latestEnd = System.currentTimeMillis() / quarter * quarter
         var date = LocalDate.now(zone)
         var days = 0
         var markets = 0
         var skipped = 0
         var noDataDays = 0
-        // One <=781-candle fetch per day. Stop at 100 cases per group or
-        // after 2500 days / 60 consecutive dates without Binance history.
         while (days < 2500 && !cancel.get() &&
-            groups.any { it.n < BtcThreeMinuteMath.GOAL }) {
+            groups.any { it.n < BtcFunnelMath.GOAL }) {
             val from = date.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
             val until = min(date.atTime(23, 0).atZone(zone).toInstant().toEpochMilli(),
                 latestEnd)
             date = date.minusDays(1)
             if (until <= from) continue
+            // At most 781 1-minute candles per request; Binance.US limit is 1000.
             val candles = dayCandles(from - minute, until - 1)
             days++
             if (candles.isEmpty()) {
@@ -319,90 +343,102 @@ class BtcHalfwayScanService : Service() {
                 continue
             }
             noDataDays = 0
-            var start = from
-            while (start + quarter <= until && !cancel.get()) {
-                val target = candles[start - minute]?.close
-                val end = candles[start + 14 * minute]?.close
+            var marketStart = from
+            while (marketStart + quarter <= until && !cancel.get()) {
+                val target = candles[marketStart - minute]?.close
+                val end = candles[marketStart + 14 * minute]?.close
                 if (target == null || end == null || target <= 0.0 ||
-                    (0..14).any { candles[start + it * minute] == null }) {
-                    skipped++; start += quarter; continue
+                    (0..14).any { candles[marketStart + it * minute] == null }) {
+                    skipped++; marketStart += quarter; continue
                 }
                 markets++
                 for (g in groups) {
-                    if (g.n >= BtcThreeMinuteMath.GOAL) continue
-                    val price = candles[start + (g.elapsed - 1) * minute]!!.close
-                    if (!BtcThreeMinuteMath.matches(price, target, g.above)) continue
-                    val d = abs(BtcThreeMinuteMath.gap(price, target))
-                    g.least = min(g.least, d); g.greatest = max(g.greatest, d)
-                    when (BtcThreeMinuteMath.result(end, target, g.above)) {
+                    if (g.n >= BtcFunnelMath.GOAL) continue
+                    // Minute N observes the close of the immediately preceding
+                    // fully completed 1-minute candle (no future data leakage).
+                    val price = candles[marketStart + (g.elapsed - 1) * minute]!!.close
+                    if (!BtcFunnelMath.matches(price, target, g.elapsed, g.above)) continue
+                    val distance = abs(BtcFunnelMath.gap(price, target))
+                    g.least = min(g.least, distance)
+                    g.greatest = max(g.greatest, distance)
+                    when (BtcFunnelMath.result(end, target, g.above)) {
                         "STAY" -> g.stay++
                         "CROSS" -> g.cross++
                         else -> g.tie++
                     }
-                    // A candle can touch the target and still settle on original side.
+                    // Even a temporary wick touch counts as touching the target.
+                    // That is distinct from a finish on the opposite side.
                     val touched = (g.elapsed..14).any { offset ->
-                        val bar = candles[start + offset * minute]!!
+                        val bar = candles[marketStart + offset * minute]!!
                         if (g.above) bar.low <= target else bar.high >= target
                     }
                     if (touched) g.touch++
                 }
-                start += quarter
+                marketStart += quarter
             }
             if (days == 1 || days % 5 == 0 ||
-                groups.all { it.n >= BtcThreeMinuteMath.GOAL }) {
-                val progress = groups.joinToString(" | ") {
-                    "3m left " + (if (it.above) "UP" else "DOWN") +
-                        " " + it.n + "/100"
-                }
-                save("running", "Days " + days + ", markets " + markets +
-                    ". " + progress, resultText(groups, days, markets, skipped))
+                groups.all { it.n >= BtcFunnelMath.GOAL }) {
+                val complete = groups.count { it.n >= BtcFunnelMath.GOAL }
+                val progress = complete.toString() + "/16 groups complete; lowest " +
+                    groups.minOf { it.n }.toString() + "/100"
+                save("running", "Days " + days + "; markets " + markets + ". " + progress,
+                    resultText(groups, days, markets, skipped))
                 (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                    .notify(NOTIFICATION_ID, notification("Days: " + days + ". " + progress))
+                    .notify(NOTIFICATION_ID, notification("Days " + days + "; " + progress))
             }
             if (!cancel.get()) Thread.sleep(250L)
         }
-        val ending = if (groups.all { it.n >= BtcThreeMinuteMath.GOAL })
-            "\nBoth 3-minute groups reached 100 matches."
-        else "\nSome groups did not reach 100; actual sample sizes shown."
+        val ending = if (groups.all { it.n >= BtcFunnelMath.GOAL })
+            "\nAll 16 groups reached 100 matches."
+        else "\nSome groups did not reach 100; see actual sample sizes."
         return resultText(groups, days, markets, skipped) + ending
     }
+
     private fun resultText(groups: List<Cases>, days: Int, markets: Int,
         skipped: Int): String = buildString {
-        appendLine("BTC — 3 MINUTES LEFT / 0.10% BACKTEST")
-        appendLine("Binance.US BTCUSDT 1-minute data; ONLY 10:00–23:00 " +
-            "America/New_York (DST-aware).")
-        appendLine("Market starts at :00/:15/:30/:45. All observations use " +
-            "completed 1-minute candles.")
-        appendLine("Target = last 1-minute close before start; end = last minute " +
-            "close before the market settles.")
-        appendLine("Observation: 12 minutes elapsed / 3 minutes remaining; last COMPLETED candle.")
-        appendLine("Match range: 0.090%–0.110% from target, UP and DOWN separately.")
-        appendLine("STAY = ends on observed side; CROSS = finishes on opposite side.")
-        appendLine("Exact ending ties are separate. TOUCH may happen even if price ends " +
-            "on the original side.")
-        appendLine("Binance.US data is NOT the official Kalshi settlement index.")
+        appendLine("BTC — SECOND-HALF FUNNEL 90% HYPOTHESIS BACKTEST")
+        appendLine("Binance.US BTCUSDT 1-minute data; 10:00–23:00 America/New_York, DST-aware.")
+        appendLine("15-minute markets start at :00/:15/:30/:45.")
+        appendLine("Target = prior 1-minute candle close; end = final 1-minute candle close.")
+        appendLine("Observation at minute N = last COMPLETED candle (minute N-1) close.")
+        appendLine("Threshold = 0.05% x minutes remaining; UP and DOWN separate.")
+        appendLine("Near-line matches: +/-0.010 percentage points around each threshold.")
+        appendLine("NO TOUCH means no later candle WICK touches or crosses the target.")
+        appendLine("STAY means final close remains on observed side, even if touched.")
+        appendLine("CROSS = opposite final side. Ending TIE separately counted.")
+        appendLine("A 90% result is a historical fraction, NOT a validated winning chance.")
+        appendLine("One market can appear in multiple minute buckets; results overlap.")
+        appendLine("Binance.US prices are NOT Kalshi's official settlement index.")
         appendLine("Days scanned " + days + "; markets scanned " + markets +
             "; markets missing candles " + skipped)
         appendLine()
         for (g in groups) {
-            appendLine(g.elapsed.toString() + " minutes INTO market (" +
-                (15 - g.elapsed) + " left), " +
-                (if (g.above) "ABOVE +0.10%" else "BELOW -0.10%"))
+            appendLine(String.format(Locale.US,
+                "%d MINUTES ELAPSED (%d LEFT), %s %.3f%%",
+                g.elapsed, 15 - g.elapsed, if (g.above) "ABOVE +" else "BELOW -",
+                BtcFunnelMath.threshold(g.elapsed)))
             appendLine("Found " + g.n + " / 100")
             if (g.n == 0) { appendLine("No matches yet.\n"); continue }
-            appendLine(String.format(Locale.US, "Actual gap range: %.4f%%–%.4f%%",
+            appendLine(String.format(Locale.US, "Actual gap range %.4f%%–%.4f%%",
                 g.least, g.greatest))
-            appendLine(String.format(Locale.US, "Stayed on observed side: %d/%d = %.1f%%",
-                g.stay, g.n, 100.0 * g.stay / g.n))
-            appendLine(String.format(Locale.US, "Crossed target by finish: %d/%d = %.1f%%",
-                g.cross, g.n, 100.0 * g.cross / g.n))
-            appendLine(String.format(Locale.US, "Tied at finish: %d/%d = %.1f%%",
-                g.tie, g.n, 100.0 * g.tie / g.n))
-            appendLine(String.format(Locale.US, "Touched target after observation: %d/%d = %.1f%%",
-                g.touch, g.n, 100.0 * g.touch / g.n))
+            appendLine(String.format(Locale.US,
+                "NO TOUCH: %d/%d = %.1f%%", g.n-g.touch, g.n,
+                100.0 * (g.n - g.touch) / g.n))
+            appendLine(String.format(Locale.US,
+                "STAY at finish: %d/%d = %.1f%%", g.stay, g.n, 100.0*g.stay/g.n))
+            appendLine(String.format(Locale.US,
+                "CROSS at finish: %d/%d = %.1f%%", g.cross, g.n, 100.0*g.cross/g.n))
+            appendLine(String.format(Locale.US,
+                "TIE at finish: %d/%d = %.1f%%", g.tie, g.n, 100.0*g.tie/g.n))
+            appendLine(String.format(Locale.US,
+                "Touched target after observation: %d/%d = %.1f%%",
+                g.touch, g.n, 100.0*g.touch/g.n))
+            appendLine("Strict 90% no-touch rule: " +
+                (if (g.n < 100) "PENDING"
+                 else if (g.n - g.touch >= 90) "MET in sample" else "NOT MET in sample"))
             appendLine()
         }
-        appendLine("This is a Binance.US candle backtest, NOT Kalshi CF index settlement.")
-        appendLine("Historical stay rates are not validated probabilities or trading advice.")
+        appendLine("The second-half test cannot establish first-half performance.")
+        appendLine("Historical proxy results are not trading advice or Kalshi odds.")
     }
 }
