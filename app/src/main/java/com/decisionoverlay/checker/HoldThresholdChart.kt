@@ -96,10 +96,13 @@ class HoldThresholdChart(context: Context) : View(context) {
         paint.style = Paint.Style.FILL
         paint.color = Color.rgb(220, 232, 242)
         paint.textSize = labelSize * 1.12f
-        canvas.drawText(if (probabilityMode) "Price gap needed for stay-side goal"\n            else "Minimum historical gap (% of target)", left, 17f * density, paint)
+        canvas.drawText(if (probabilityMode) "Price gap needed for stay-side goal"
+            else "Minimum historical gap (% of target)", left, 17f * density, paint)
         paint.textSize = labelSize
         paint.color = axis
-        canvas.drawText(if (probabilityMode) "Older historical goal: " + desiredStayPct + "% • newer rate in table"\n            else if (scenario) "Illustrative 60c asks (not live quotes)"\n            else "Current Kalshi BUY asks + estimated fees", left, 31f * density, paint)
+        canvas.drawText(if (probabilityMode) "Older historical goal: " + desiredStayPct + "% • newer rate in table"
+            else if (scenario) "Illustrative 60c asks (not live quotes)"
+            else "Current Kalshi BUY asks + estimated fees", left, 31f * density, paint)
 
         paint.color = Color.rgb(49, 65, 83)
         paint.strokeWidth = density
