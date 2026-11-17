@@ -129,6 +129,7 @@ class BtcHalfwayScanService : Service() {
         const val START = "btc.halfway.START"
         const val STOP = "btc.halfway.STOP"
         private const val CHANNEL = "btc_halfway_375"
+        private const val RESULT_CHANNEL = "btc_halfway_375_results"
         private const val NOTIFICATION_ID = 7193
     }
     private val cancel = AtomicBoolean(false)
@@ -152,6 +153,9 @@ class BtcHalfwayScanService : Service() {
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel(CHANNEL, "BTC halfway scan",
                 NotificationManager.IMPORTANCE_LOW))
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(NotificationChannel(RESULT_CHANNEL,
+                "BTC halfway scan finished or failed", NotificationManager.IMPORTANCE_HIGH))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
@@ -174,11 +178,16 @@ class BtcHalfwayScanService : Service() {
                 lock.acquire(3L * 60 * 60 * 1000)
                 val result = scan()
                 if (cancel.get()) save("stopped", "Stopped; partial results saved.", result)
-                else save("done", "Finished Bitcoin historical scan.", result)
+                else {
+                    save("done", "Finished Bitcoin historical scan.", result)
+                    resultNotification("BTC scan FINISHED", "Open the app to read your results.")
+                }
             } catch (e: Exception) {
                 val previous = getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("report", "").orEmpty()
-                save("error", "Binance request failed: " + (e.message ?: "unknown"), previous)
+                val reason = "Binance request failed: " + (e.message ?: "unknown")
+                save("error", reason, previous)
+                if (!cancel.get()) resultNotification("BTC scan FAILED", reason.take(115))
             } finally {
                 if (lock.isHeld) lock.release()
                 running.set(false)
@@ -196,6 +205,21 @@ class BtcHalfwayScanService : Service() {
             .setContentIntent(PendingIntent.getActivity(this, 7193,
                 Intent(this, BtcHalfwayTestActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)).build()
+    private fun resultNotification(title: String, message: String) {
+        val notification = NotificationCompat.Builder(this, RESULT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(PendingIntent.getActivity(this, 7194,
+                Intent(this, BtcHalfwayTestActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .build()
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(NOTIFICATION_ID + 1, notification)
+    }
+
     private fun save(phase: String, status: String, report: String? = null) {
         val editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString("phase", phase).putString("status", status)
