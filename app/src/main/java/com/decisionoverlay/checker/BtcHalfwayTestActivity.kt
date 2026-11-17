@@ -47,15 +47,15 @@ class BtcHalfwayTestActivity : AppCompatActivity() {
             text = s; textSize = size; setTextColor(Color.WHITE)
             setPadding(0, 10, 0, 10); setTextIsSelectable(true)
         }
-        layout.addView(txt("BTC — IS 0.375% REALLY 50/50?", 22f))
-        layout.addView(txt("Test Bitcoin ONLY. Observe at 7 and 8 minutes into each " +
-            "15-minute market (8 and 7 remaining). Search for +0.375% and −0.375% " +
-            "relative to target, using a disclosed 0.350–0.400% matching range. " +
-            "Find up to 100 historical cases in EACH of four groups. " +
-            "10 AM–11 PM Eastern trading hours only. This test continues in the " +
-            "background when the app is closed.", 13f))
+        layout.addView(txt("BTC — THREE MINUTES LEFT / 0.10% TEST", 22f))
+        layout.addView(txt("Test Bitcoin ONLY, exactly 3 minutes before each 15-minute " +
+            "market ends (12 minutes elapsed). Find 100 DOWN and 100 UP historical " +
+            "cases when BTC is 0.090%–0.110% away from target (around $66 at $65,000). " +
+            "Report how many finish on that side, cross back, tie or touch the target. " +
+            "10 AM–11 PM Eastern, DST-aware. Runs in background; Binance.US candles " +
+            "are a proxy, not Kalshi settlement data or actual Kalshi odds.", 13f))
         start = Button(this).apply {
-            text = "START BTC SCAN — BACKGROUND"
+            text = "START 3-MIN BTC TEST — BACKGROUND"
             setOnClickListener {
                 if (Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(
@@ -83,7 +83,7 @@ class BtcHalfwayTestActivity : AppCompatActivity() {
                     .getString("report", "").orEmpty()
                 if (data.isNotBlank())
                     (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText("BTC halfway result", data))
+                        .setPrimaryClip(ClipData.newPlainText("BTC 3-minute study result", data))
             }
         })
         status = txt("", 14f); results = txt("", 14f)
@@ -123,13 +123,37 @@ object BtcHalfwayMath {
         else "CROSS"
 }
 
+/** At 12 minutes elapsed the minute-11 close is the last known price. */
+object BtcThreeMinuteMath {
+    const val GAP = 0.10
+    const val TOLERANCE = 0.01
+    const val GOAL = 100
+    const val ELAPSED = 12
+
+    fun gap(price: Double, target: Double): Double =
+        (price - target) / target * 100.0
+
+    fun matches(price: Double, target: Double, above: Boolean): Boolean {
+        if (!price.isFinite() || !target.isFinite() || price <= 0.0 || target <= 0.0)
+            return false
+        val delta = gap(price, target)
+        return (if (above) delta > 0.0 else delta < 0.0) &&
+            abs(abs(delta) - GAP) <= TOLERANCE + 1e-9
+    }
+
+    fun result(end: Double, target: Double, above: Boolean): String =
+        if (end == target) "TIE"
+        else if ((end > target) == above) "STAY"
+        else "CROSS"
+}
+
 class BtcHalfwayScanService : Service() {
     companion object {
-        const val PREFS = "btc_halfway_375_v1"
+        const val PREFS = "btc_three_minute_010_v1"
         const val START = "btc.halfway.START"
         const val STOP = "btc.halfway.STOP"
-        private const val CHANNEL = "btc_halfway_375"
-        private const val RESULT_CHANNEL = "btc_halfway_375_results"
+        private const val CHANNEL = "btc_three_min_010"
+        private const val RESULT_CHANNEL = "btc_three_min_010_results"
         private const val NOTIFICATION_ID = 7193
     }
     private val cancel = AtomicBoolean(false)
@@ -151,14 +175,14 @@ class BtcHalfwayScanService : Service() {
     override fun onCreate() {
         super.onCreate()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .createNotificationChannel(NotificationChannel(CHANNEL, "BTC halfway scan",
+            .createNotificationChannel(NotificationChannel(CHANNEL, "BTC three-minute scan",
                 NotificationManager.IMPORTANCE_LOW))
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel("btc_halfway_results",
                 "BTC scan results", NotificationManager.IMPORTANCE_HIGH))
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel(RESULT_CHANNEL,
-                "BTC halfway scan finished or failed", NotificationManager.IMPORTANCE_HIGH))
+                "BTC three-minute scan finished or failed", NotificationManager.IMPORTANCE_HIGH))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
@@ -203,7 +227,7 @@ class BtcHalfwayScanService : Service() {
     private fun notification(info: String): Notification =
         NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Bitcoin 0.375% historical test")
+            .setContentTitle("Bitcoin 3m / 0.10% historical test")
             .setContentText(info).setOngoing(true).setOnlyAlertOnce(true)
             .setContentIntent(PendingIntent.getActivity(this, 7193,
                 Intent(this, BtcHalfwayTestActivity::class.java),
@@ -270,8 +294,8 @@ class BtcHalfwayScanService : Service() {
         return emptyMap()
     }
     private fun scan(): String {
-        val groups = listOf(Cases(7, true), Cases(7, false),
-            Cases(8, true), Cases(8, false))
+        val groups = listOf(Cases(BtcThreeMinuteMath.ELAPSED, true),
+            Cases(BtcThreeMinuteMath.ELAPSED, false))
         val latestEnd = System.currentTimeMillis() / quarter * quarter
         var date = LocalDate.now(zone)
         var days = 0
@@ -281,7 +305,7 @@ class BtcHalfwayScanService : Service() {
         // One <=781-candle fetch per day. Stop at 100 cases per group or
         // after 2500 days / 60 consecutive dates without Binance history.
         while (days < 2500 && !cancel.get() &&
-            groups.any { it.n < BtcHalfwayMath.GOAL }) {
+            groups.any { it.n < BtcThreeMinuteMath.GOAL }) {
             val from = date.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
             val until = min(date.atTime(23, 0).atZone(zone).toInstant().toEpochMilli(),
                 latestEnd)
@@ -305,12 +329,12 @@ class BtcHalfwayScanService : Service() {
                 }
                 markets++
                 for (g in groups) {
-                    if (g.n >= BtcHalfwayMath.GOAL) continue
+                    if (g.n >= BtcThreeMinuteMath.GOAL) continue
                     val price = candles[start + (g.elapsed - 1) * minute]!!.close
-                    if (!BtcHalfwayMath.matches(price, target, g.above)) continue
-                    val d = abs(BtcHalfwayMath.gap(price, target))
+                    if (!BtcThreeMinuteMath.matches(price, target, g.above)) continue
+                    val d = abs(BtcThreeMinuteMath.gap(price, target))
                     g.least = min(g.least, d); g.greatest = max(g.greatest, d)
-                    when (BtcHalfwayMath.result(end, target, g.above)) {
+                    when (BtcThreeMinuteMath.result(end, target, g.above)) {
                         "STAY" -> g.stay++
                         "CROSS" -> g.cross++
                         else -> g.tie++
@@ -325,9 +349,9 @@ class BtcHalfwayScanService : Service() {
                 start += quarter
             }
             if (days == 1 || days % 5 == 0 ||
-                groups.all { it.n >= BtcHalfwayMath.GOAL }) {
+                groups.all { it.n >= BtcThreeMinuteMath.GOAL }) {
                 val progress = groups.joinToString(" | ") {
-                    it.elapsed.toString() + "m " + (if (it.above) "+" else "-") +
+                    "3m left " + (if (it.above) "UP" else "DOWN") +
                         " " + it.n + "/100"
                 }
                 save("running", "Days " + days + ", markets " + markets +
@@ -337,22 +361,23 @@ class BtcHalfwayScanService : Service() {
             }
             if (!cancel.get()) Thread.sleep(250L)
         }
-        val ending = if (groups.all { it.n >= BtcHalfwayMath.GOAL })
-            "\nAll four groups reached 100 matches."
+        val ending = if (groups.all { it.n >= BtcThreeMinuteMath.GOAL })
+            "\nBoth 3-minute groups reached 100 matches."
         else "\nSome groups did not reach 100; actual sample sizes shown."
         return resultText(groups, days, markets, skipped) + ending
     }
     private fun resultText(groups: List<Cases>, days: Int, markets: Int,
         skipped: Int): String = buildString {
-        appendLine("BTC — 0.375% HALFWAY EXPERIMENT")
+        appendLine("BTC — 3 MINUTES LEFT / 0.10% BACKTEST")
         appendLine("Binance.US BTCUSDT 1-minute data; ONLY 10:00–23:00 " +
             "America/New_York (DST-aware).")
         appendLine("Market starts at :00/:15/:30/:45. All observations use " +
             "completed 1-minute candles.")
         appendLine("Target = last 1-minute close before start; end = last minute " +
             "close before the market settles.")
-        appendLine("Match range: 0.350%–0.400% in either direction, not exact 0.375%.")
-        appendLine("YES here = remains on OBSERVED side; NO = ends on the opposite side.")
+        appendLine("Observation: 12 minutes elapsed / 3 minutes remaining; last COMPLETED candle.")
+        appendLine("Match range: 0.090%–0.110% from target, UP and DOWN separately.")
+        appendLine("STAY = ends on observed side; CROSS = finishes on opposite side.")
         appendLine("Exact ending ties are separate. TOUCH may happen even if price ends " +
             "on the original side.")
         appendLine("Binance.US data is NOT the official Kalshi settlement index.")
@@ -362,14 +387,14 @@ class BtcHalfwayScanService : Service() {
         for (g in groups) {
             appendLine(g.elapsed.toString() + " minutes INTO market (" +
                 (15 - g.elapsed) + " left), " +
-                (if (g.above) "ABOVE +0.375%" else "BELOW -0.375%"))
+                (if (g.above) "ABOVE +0.10%" else "BELOW -0.10%"))
             appendLine("Found " + g.n + " / 100")
             if (g.n == 0) { appendLine("No matches yet.\n"); continue }
             appendLine(String.format(Locale.US, "Actual gap range: %.4f%%–%.4f%%",
                 g.least, g.greatest))
-            appendLine(String.format(Locale.US, "YES stayed: %d/%d = %.1f%%",
+            appendLine(String.format(Locale.US, "Stayed on observed side: %d/%d = %.1f%%",
                 g.stay, g.n, 100.0 * g.stay / g.n))
-            appendLine(String.format(Locale.US, "NO crossed at finish: %d/%d = %.1f%%",
+            appendLine(String.format(Locale.US, "Crossed target by finish: %d/%d = %.1f%%",
                 g.cross, g.n, 100.0 * g.cross / g.n))
             appendLine(String.format(Locale.US, "Tied at finish: %d/%d = %.1f%%",
                 g.tie, g.n, 100.0 * g.tie / g.n))
@@ -377,6 +402,7 @@ class BtcHalfwayScanService : Service() {
                 g.touch, g.n, 100.0 * g.touch / g.n))
             appendLine()
         }
-        appendLine("Historical percentages, not guaranteed trading probabilities.")
+        appendLine("This is a Binance.US candle backtest, NOT Kalshi CF index settlement.")
+        appendLine("Historical stay rates are not validated probabilities or trading advice.")
     }
 }
