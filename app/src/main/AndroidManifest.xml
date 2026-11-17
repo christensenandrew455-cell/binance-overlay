@@ -14,13 +14,18 @@
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.DecisionOverlay">
-        <activity android:name=".BtcHalfwayTestActivity" android:exported="true">
+        <activity android:name=".BtcAcmBacktestActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".BtcHalfwayTestActivity" android:exported="false" />
         <activity android:name=".BtcFunnelLiveActivity" android:exported="false" />
+        <service android:name=".BtcAcmBacktestService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
         <service android:name=".BtcFunnelLiveService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
