@@ -90,6 +90,39 @@ class HoldProbabilityEngineTest {
         assertNull(historic.threshold(5, 1, .60, 0))
     }
 
+    @Test fun chanceGoalsUsePriceGapPercentAndNeverChooseFromNewerSample() {
+        val old = mapOf(
+            HoldProbabilityEngine.Key(9, 0, 1) to HoldProbabilityEngine.Rate(100, 55),
+            HoldProbabilityEngine.Key(9, 1, 1) to HoldProbabilityEngine.Rate(80, 72),
+            HoldProbabilityEngine.Key(9, 2, 1) to HoldProbabilityEngine.Rate(50, 46))
+        val newer = mapOf(
+            HoldProbabilityEngine.Key(9, 0, 1) to HoldProbabilityEngine.Rate(110, 90),
+            HoldProbabilityEngine.Key(9, 1, 1) to HoldProbabilityEngine.Rate(90, 56),
+            HoldProbabilityEngine.Key(9, 2, 1) to HoldProbabilityEngine.Rate(50, 30))
+        val history = HoldProbabilityEngine.Historical("BTC", 2400, 1200, 1200,
+            0, 100000L, old, newer)
+        val sixty = history.chanceGap(9, 1, .60)!!
+        assertEquals(0.0, sixty.minimumGapPct, .00001)
+        assertEquals(176, sixty.newer.successes) // 90 + 56 + 30
+        val ninety = history.chanceGap(9, 1, .90)!!
+        assertEquals(.05, ninety.minimumGapPct, .00001)
+        assertEquals(140, ninety.newer.count)
+        // Newer real rate = 86/140, NOT a falsely advertised 90%.
+        assertEquals(86.0 / 140, ninety.newer.probability, .00001)
+        assertNull(history.chanceGap(9, -1, .60))
+        assertTrue(history.chanceTable(.90).contains("9m"))
+        assertTrue(history.chanceTable(.90).contains("61.4%"))
+    }
+
+    @Test fun oneCaseCannotProduceFakeNinetyPercentConfidence() {
+        val key = HoldProbabilityEngine.Key(15, 30, 1)
+        val history = HoldProbabilityEngine.Historical("DOGE", 2400, 1200, 1200,
+            0, 100000L,
+            mapOf(key to HoldProbabilityEngine.Rate(1, 1)),
+            mapOf(key to HoldProbabilityEngine.Rate(1, 1)))
+        assertNull(history.chanceGap(15, 1, .90))
+    }
+
     @Test fun percentStatisticsCachedSafelyInV2Json() {
         val key = HoldProbabilityEngine.Key(15, 0, 1, 1)
         val historic = HoldProbabilityEngine.Historical("SOL", 2400, 1199, 1200,
