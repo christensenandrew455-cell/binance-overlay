@@ -78,6 +78,13 @@ class BtcHalfwayTestActivity : AppCompatActivity() {
         }
         layout.addView(start); layout.addView(stop)
         layout.addView(Button(this).apply {
+            text = "LIVE BTC FUNNEL — 60 / 70 / 80 + KALSHI"
+            setOnClickListener {
+                startActivity(Intent(this@BtcHalfwayTestActivity,
+                    BtcFunnelLiveActivity::class.java))
+            }
+        })
+        layout.addView(Button(this).apply {
             text = "COPY RESULTS"
             setOnClickListener {
                 val data = getSharedPreferences(BtcHalfwayScanService.PREFS, MODE_PRIVATE)
