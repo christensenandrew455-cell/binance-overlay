@@ -155,7 +155,9 @@ class BtcHalfwayScanService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
-            cancel.set(true); save("stopping", "Stopping after current request.")
+            cancel.set(true)
+            if (running.get()) save("stopping", "Stopping after current request.")
+            else { save("stopped", "Scan is not running."); stopSelf() }
             return START_NOT_STICKY
         }
         if (!running.compareAndSet(false, true)) return START_STICKY
@@ -321,7 +323,7 @@ class BtcHalfwayScanService : Service() {
         for (g in groups) {
             appendLine(g.elapsed.toString() + " minutes INTO market (" +
                 (15 - g.elapsed) + " left), " +
-                if (g.above) "ABOVE +0.375%" else "BELOW -0.375%")
+                (if (g.above) "ABOVE +0.375%" else "BELOW -0.375%"))
             appendLine("Found " + g.n + " / 100")
             if (g.n == 0) { appendLine("No matches yet.\n"); continue }
             appendLine(String.format(Locale.US, "Actual gap range: %.4f%%–%.4f%%",
