@@ -93,7 +93,7 @@ object BtcFunnelLevels {
         val quotedPct = (ask + fee) * 100.0
         return when {
             quotedPct < level.conservativePct -> "BELOW CONSERVATIVE HISTORICAL BOUND"
-            ask * 100.0 <= level.observedPct ->
+            ask * 100.0 <= min(level.training.probability, level.validation.probability) * 100.0 + 1e-9 ->
                 "AT/BELOW RAW HISTORY, BUT NOT SUPPORTED AFTER FEES/UNCERTAINTY"
             else -> "KALSHI PRICE TOO HIGH FOR THIS HISTORICAL LEVEL"
         }
