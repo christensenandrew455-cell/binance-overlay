@@ -50,6 +50,8 @@ class HoldEdgeActivity : AppCompatActivity() {
     )
 
     private val coins = HoldProbabilityEngine.coins
+    private val chanceLevels = listOf(.60, .70, .80, .90)
+    private val historyByCoin = linkedMapOf<String, HoldProbabilityEngine.Historical>()
     private val http = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS).readTimeout(18, TimeUnit.SECONDS).build()
     private val main = Handler(Looper.getMainLooper())
@@ -60,6 +62,7 @@ class HoldEdgeActivity : AppCompatActivity() {
     private val alerted = mutableSetOf<String>()
     private val latest = linkedMapOf<String, LiveResult>()
     private lateinit var coinSelector: Spinner
+    private lateinit var chanceSelector: Spinner
     private lateinit var chart: HoldThresholdChart
     private lateinit var testButton: Button
     private lateinit var startButton: Button
@@ -82,21 +85,28 @@ class HoldEdgeActivity : AppCompatActivity() {
         }
         root.addView(label("STAY ABOVE / BELOW TARGET", 21f, true))
         root.addView(label(
-            "Secondary strategy • all nine coins • 15m opening tick + every 1m " +
-                "through 1 minute left • price gap in PERCENT, not dollars. " +
-                "Narrowing green/amber bands show minimum historically supported gap " +
-                "at Kalshi's CURRENT ask. Missing evidence leaves a blank line. " +
-                "Only 10 AM–11 PM NY; read-only, no orders placed.", 12f))
+            "All nine coins, 15 minutes down to 1. Choose 60%, 70%, 80% or 90% " +
+                "historical stay-side rate. The chart and table show the percentage " +
+                "distance from target for YES and NO separately. Training selects the gap; " +
+                "newer markets show what actually held. This is NOT a Kalshi ask or a " +
+                "guaranteed win chance. 10 AM–11 PM NY only.", 12f))
         root.addView(label("Coin to display on the percentage chart:", 13f))
         coinSelector = Spinner(this)
         coinSelector.adapter = ArrayAdapter(this,
             android.R.layout.simple_spinner_dropdown_item, coins)
         root.addView(coinSelector)
+        root.addView(label("Historical stay-side goal (NOT contract price):", 13f))
+        chanceSelector = Spinner(this)
+        chanceSelector.adapter = ArrayAdapter(this,
+            android.R.layout.simple_spinner_dropdown_item,
+            listOf("60% stay", "70% stay", "80% stay", "90% stay"))
+        chanceSelector.setSelection(2) // 80% first, switch any time
+        root.addView(chanceSelector)
         chart = HoldThresholdChart(this)
         root.addView(chart, LinearLayout.LayoutParams(-1,
             (270 * resources.displayMetrics.density).toInt()))
         testButton = Button(this).apply {
-            text = "BACKTEST ALL 9 — EVERY MINUTE"
+            text = "SHOW 9 COINS — 15 TO 1 MIN, 60–90%"
             setOnClickListener { testAllNine() }
         }
         startButton = Button(this).apply {
@@ -138,11 +148,32 @@ class HoldEdgeActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
             override fun onItemSelected(parent: android.widget.AdapterView<*>?,
                 view: android.view.View?, position: Int, id: Long) {
-                latest[coins[position]]?.let { showChart(it) }
-                    ?: HoldProbabilityEngine.cached(this@HoldEdgeActivity, coins[position])?.let {
-                        chart.show(it, null, null)
-                    }
+                if (monitoring) latest[coins[position]]?.let { showChart(it) }
+                else showSelectedHistory()
             }
+        }
+        chanceSelector.onItemSelectedListener =
+            object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?,
+                    view: android.view.View?, position: Int, id: Long) {
+                    if (!monitoring) showSelectedHistory()
+                }
+            }
+    }
+
+    /** One coin and one desired stay probability at a time for a phone screen.
+     * COPY RESULTS still contains every coin and all four target rates.
+     */
+    private fun showSelectedHistory() {
+        if (!::coinSelector.isInitialized || !::chanceSelector.isInitialized ||
+            !::chart.isInitialized || !::output.isInitialized) return
+        val coin = coinSelector.selectedItem?.toString() ?: return
+        val desired = chanceLevels[chanceSelector.selectedItemPosition.coerceIn(0, 3)]
+        val history = historyByCoin[coin] ?: HoldProbabilityEngine.cached(this, coin)
+        if (history != null) {
+            chart.showChance(history, desired)
+            if (!monitoring) output.text = history.chanceTable(desired)
         }
     }
 
@@ -358,13 +389,14 @@ class HoldEdgeActivity : AppCompatActivity() {
                             if (!isFinishing) status.text = detail
                         }
                     }
-                    reports.appendLine(history.report())
+                    reports.appendLine(history.compactChanceReport())
                     summary.add(coin + ": " + history.trainMarkets + " training + " +
                         history.testMarkets + " testing, 0.05% increments")
                     runOnUiThread {
-                        if (!isFinishing && !isDestroyed &&
-                            coinSelector.selectedItem.toString() == coin)
-                            chart.show(history, null, null)
+                        if (!isFinishing && !isDestroyed) {
+                            historyByCoin[coin] = history
+                            if (!monitoring) showSelectedHistory()
+                        }
                     }
                 } catch (e: Exception) {
                     summary.add(coin + ": ERROR " + (e.message ?: "unknown"))
@@ -376,7 +408,8 @@ class HoldEdgeActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
                         report = partial
-                        output.text = partial
+                        showSelectedHistory()
+                        if (historyByCoin.isEmpty()) output.text = partial
                     }
                 }
             }
@@ -386,7 +419,7 @@ class HoldEdgeActivity : AppCompatActivity() {
                 startButton.isEnabled = true
                 if (!isFinishing && !isDestroyed) {
                     verdict.text = "HISTORY FINISHED"
-                    status.text = "Nine coins attempted; see 15m-to-1m threshold table and chart."
+                    status.text = "Nine coins tested. Choose coin and 60–90% stay goal; COPY RESULTS saves all."
                 }
             }
         }.start()
