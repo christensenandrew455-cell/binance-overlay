@@ -50,6 +50,8 @@ class BtcFunnelLevelsTest {
             BtcFunnelLevels.comparison(level, .60))
         assertEquals("KALSHI PRICE TOO HIGH FOR THIS HISTORICAL LEVEL",
             BtcFunnelLevels.comparison(level, .98))
+        assertEquals("AT/BELOW RAW HISTORY, BUT NOT SUPPORTED AFTER FEES/UNCERTAINTY",
+            BtcFunnelLevels.comparison(level, .95))
         assertEquals("NO KALSHI ASK", BtcFunnelLevels.comparison(level, null))
         assertEquals("NOT VALIDATED",
             BtcFunnelLevels.comparison(level.copy(validated = false), .10))
