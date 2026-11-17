@@ -68,7 +68,7 @@ object BtcFunnelLevels {
         var train = HoldProbabilityEngine.Rate()
         var test = HoldProbabilityEngine.Rate()
         var found: Level? = null
-        for (band in lastBand downTo 1) { {
+        for (band in lastBand downTo 1) {
             val a = history.rate(HoldProbabilityEngine.Key(minutesLeft, band, side), false)
             val b = history.rate(HoldProbabilityEngine.Key(minutesLeft, band, side), true)
             train = HoldProbabilityEngine.Rate(train.count + a.count,
