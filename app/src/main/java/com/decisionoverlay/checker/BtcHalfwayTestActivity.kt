@@ -154,6 +154,9 @@ class BtcHalfwayScanService : Service() {
             .createNotificationChannel(NotificationChannel(CHANNEL, "BTC halfway scan",
                 NotificationManager.IMPORTANCE_LOW))
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(NotificationChannel("btc_halfway_results",
+                "BTC scan results", NotificationManager.IMPORTANCE_HIGH))
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel(RESULT_CHANNEL,
                 "BTC halfway scan finished or failed", NotificationManager.IMPORTANCE_HIGH))
     }
@@ -220,6 +223,18 @@ class BtcHalfwayScanService : Service() {
             .notify(NOTIFICATION_ID + 1, notification)
     }
 
+    private fun finishedNotice(title: String, message: String) {
+        val notification = NotificationCompat.Builder(this, "btc_halfway_results")
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title).setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(this, 7194,
+                Intent(this, BtcHalfwayTestActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .build()
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(7194, notification)
+    }
     private fun save(phase: String, status: String, report: String? = null) {
         val editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString("phase", phase).putString("status", status)
