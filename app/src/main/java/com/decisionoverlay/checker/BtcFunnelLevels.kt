@@ -17,7 +17,7 @@ object BtcFunnelLevels {
     val goals = listOf(60, 70, 80)
     const val CEILING_PER_MINUTE_PCT = 0.05
     const val REQUIRED_PER_PERIOD = 100
-    const val SAMPLE_STEP_PCT = HoldProbabilityEngine.PERCENT_STEP
+    const val SAMPLE_STEP_PCT = 0.01 // 0.01 percentage-point resolution inside the funnel
 
     data class Level(
         val goal: Int, val gapPct: Double,
@@ -64,12 +64,11 @@ object BtcFunnelLevels {
         if (minutesLeft !in 1..15 || side !in listOf(1, -1) ||
             goal !in goals) return null
         val lastBand = (floor((ceilingPct(minutesLeft) - 1e-9) /
-            SAMPLE_STEP_PCT).toInt()).coerceIn(
-                0, HoldProbabilityEngine.MAX_DISTANCE_BAND - 1)
+            SAMPLE_STEP_PCT).toInt()).coerceIn(0, 149)
         var train = HoldProbabilityEngine.Rate()
         var test = HoldProbabilityEngine.Rate()
         var found: Level? = null
-        for (band in lastBand downTo 0) {
+        for (band in lastBand downTo 1) { {
             val a = history.rate(HoldProbabilityEngine.Key(minutesLeft, band, side), false)
             val b = history.rate(HoldProbabilityEngine.Key(minutesLeft, band, side), true)
             train = HoldProbabilityEngine.Rate(train.count + a.count,
