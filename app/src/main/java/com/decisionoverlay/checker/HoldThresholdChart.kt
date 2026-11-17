@@ -28,6 +28,8 @@ class HoldThresholdChart(context: Context) : View(context) {
     private var currentMinute = 15
     private var currentGap: Double? = null
     private var scenario = true
+    private var probabilityMode = false
+    private var desiredStayPct = 60
 
     init { minimumHeight = (270 * density).toInt() }
 
@@ -36,12 +38,33 @@ class HoldThresholdChart(context: Context) : View(context) {
         yesAsk: Double?, noAsk: Double?,
         minute: Int = 15, gapPct: Double? = null
     ) {
+        probabilityMode = false
         scenario = yesAsk == null || noAsk == null
         yes = (15 downTo 1).map {
             historic.threshold(it, 1, yesAsk ?: .60)
         }
         no = (15 downTo 1).map {
             historic.threshold(it, -1, noAsk ?: .60)
+        }
+        currentMinute = minute.coerceIn(1, 15)
+        currentGap = gapPct
+        invalidate()
+    }
+
+    /** Research display: 60%-90% stay-side goal, not Kalshi ask cents.
+     * Price gaps are selected on older history, then validated separately.
+     */
+    fun showChance(
+        historic: HoldProbabilityEngine.Historical,
+        desiredStay: Double, minute: Int = 15, gapPct: Double? = null
+    ) {
+        probabilityMode = true
+        desiredStayPct = (desiredStay * 100.0).toInt()
+        yes = (15 downTo 1).map {
+            historic.chanceGap(it, 1, desiredStay)?.minimumGapPct
+        }
+        no = (15 downTo 1).map {
+            historic.chanceGap(it, -1, desiredStay)?.minimumGapPct
         }
         currentMinute = minute.coerceIn(1, 15)
         currentGap = gapPct
@@ -73,11 +96,10 @@ class HoldThresholdChart(context: Context) : View(context) {
         paint.style = Paint.Style.FILL
         paint.color = Color.rgb(220, 232, 242)
         paint.textSize = labelSize * 1.12f
-        canvas.drawText("Minimum historical gap (% of target)", left, 17f * density, paint)
+        canvas.drawText(if (probabilityMode) "Price gap needed for stay-side goal"\n            else "Minimum historical gap (% of target)", left, 17f * density, paint)
         paint.textSize = labelSize
         paint.color = axis
-        canvas.drawText(if (scenario) "Illustrative 60c asks (not live quotes)"
-            else "Current Kalshi BUY asks + estimated fees", left, 31f * density, paint)
+        canvas.drawText(if (probabilityMode) "Older historical goal: " + desiredStayPct + "% • newer rate in table"\n            else if (scenario) "Illustrative 60c asks (not live quotes)"\n            else "Current Kalshi BUY asks + estimated fees", left, 31f * density, paint)
 
         paint.color = Color.rgb(49, 65, 83)
         paint.strokeWidth = density
