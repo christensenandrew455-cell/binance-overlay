@@ -98,7 +98,7 @@ object KalshiLiveSignalRules {
             if (lastUp && mid < target || !lastUp && mid > target) continue
 
             val ask = if (rule.buyYes) liveYesAsk else 1.0 - liveYesBid
-            if (ask !in .01.. .99) continue
+            if (ask !in 0.01..0.99) continue
             val fee = KalshiPatternMath.approximateFee(ask)
             val edge = rule.newestWinRate - ask - fee
             if (edge < .03) continue
