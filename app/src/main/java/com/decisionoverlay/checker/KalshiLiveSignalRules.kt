@@ -23,17 +23,23 @@ object KalshiLiveSignalRules {
         val side: String get() = if (buyYes) "UP" else "DOWN"
     }
 
-    // Retained only if BOTH older and newest 30% samples had positive
-    // fee-adjusted modeled net, the newest split had >=20 observations and
-    // occurrence >=7% of the 300 newest eligible markets.
-    // Rules overlap: they must NOT be treated as independent opportunities.
+    // The existing 8-6m rules passed a stricter older/newest research screen.
+    // Additional 5-4m candidates are marked as preliminary if samples are small.
+    // DO NOT apply historical Kalshi quote outcomes as probabilities on this
+    // Binance-derived chart: the chart is a different, custom measurement.
+    // Overlapping rules are NOT independent opportunities.
     val rules = listOf(
         Rule(listOf(40, 60), false, 6, 8, 49, 21, .429, 18.8, 11.3),
         Rule(listOf(50, 60), false, 6, 8, 65, 26, .385, 12.3, 6.0),
         Rule(listOf(40, 20), true, 6, 8, 92, 54, .204, 7.9, 3.8),
         Rule(listOf(50, 20), true, 6, 8, 69, 37, .216, 6.2, 4.9),
         Rule(listOf(30, 20), true, 6, 8, 102, 54, .185, 5.6, 2.1),
-        Rule(listOf(60, 20), true, 6, 8, 37, 22, .227, 10.5, 5.9)
+        Rule(listOf(60, 20), true, 6, 8, 37, 22, .227, 10.5, 5.9),
+        // The only additional 5-4m candidate in the supplied 700/300
+        // split with positive modeled net in BOTH groups and an ending
+        // direction compatible with the actual signed chart.
+        // Small newest split (10/300): observational WATCH only.
+        Rule(listOf(70, 60), false, 4, 5, 42, 10, .700, 9.5, 7.8)
     )
 
     data class Signal(val rule: Rule, val left: Int, val signedChartLevel: Double)
@@ -69,9 +75,10 @@ object KalshiLiveSignalRules {
     }
 
     /**
-     * Watch ONLY when a historical path shape first completes
-     * on a fully closed BTC chart minute, 8-6 minutes before settlement.
-     * No contract prices or any claimed real-world probability edge.
+     * Watch only when a supported path FIRST completes in its own historical
+     * time window. The service observes all the completed minutes from
+     * 12 to 4 left, but not every minute has an accepted alert rule.
+     * No contract prices or verified real-world probability edge.
      */
     fun matchingSignedSignals(history: List<BtcChartProxyMath.Sample>): List<Signal> {
         val samples = history.filter {
