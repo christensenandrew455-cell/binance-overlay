@@ -105,8 +105,8 @@ object KalshiPatternMath {
             z * sqrt((p * (1 - p) + z * z / (4 * count)) / count)) / denom
     }
 
-    /** Compact user-facing output; detailed path logic remains available separately. */
+    /** Expanded aggregated two-sided analysis, without dumping individual markets. */
     fun report(markets: List<Market>, skipped: Int = 0): String =
-        KalshiCompactReport.report(markets, skipped)
+        KalshiExpandedReport.report(markets, skipped)
 
 }
