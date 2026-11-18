@@ -213,6 +213,8 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             paint.textAlign = Paint.Align.CENTER
             label(canvas, time, w / 2f, timerTop + dp(46f),
                 Color.WHITE, 37f)
+            label(canvas, "UP (+) ABOVE TARGET    |    DOWN (-) BELOW TARGET",
+                w / 2f, top - dp(12f), Color.LTGRAY, 9f)
 
             // Separate boxed time axis BELOW the graph. Every minute from
             // 15 through 0 has its own gray tick, faint matching chart grid,
@@ -256,12 +258,19 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                     .getString(BtcRangeBacktestService.KEY_SNAPSHOT, "{}") ?: "{}")
             } catch (_: Exception) { JSONObject() }
             val valid = snapshot.optLong("section", -1L) == start &&
+                now - snapshot.optLong("now", -1L) in 0L..30_000L &&
                 snapshot.optDouble("target", 0.0) > 0.0 &&
                 snapshot.optDouble("acm", 0.0) > 0.0
-            // Old session vanishes immediately on the exact quarter-hour.
+            // Never show stale BTC data as if it were a live trading chart.
             if (!valid) {
                 line(canvas, left, mid, right, mid, gold, 1.8f)
                 drawPanelBorders()
+                paint.textAlign = Paint.Align.CENTER
+                label(canvas, "WAITING FOR FRESH BTC DATA",
+                    w / 2f, timelineBottom + dp(25f), Color.LTGRAY, 10f)
+                label(canvas, "Chart levels are NOT Kalshi odds",
+                    w / 2f, timelineBottom + dp(46f), Color.LTGRAY, 9f)
+                paint.textAlign = Paint.Align.LEFT
                 return
             }
             val target = snapshot.getDouble("target")
@@ -334,13 +343,13 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 val amount = acm * 15.0 * (level - 50.0) / 40.0
                 val aboveColor = if (level == 70) green else Color.LTGRAY
                 val belowColor = if (level == 70) red else Color.LTGRAY
-                label(canvas, "${level}%", percentageCenter,
+                label(canvas, "+${level}%", percentageCenter,
                     yFor(amount) + dp(4f), aboveColor, 10f)
                 label(canvas, "-${level}%", percentageCenter,
                     yFor(-amount) + dp(4f), belowColor, 10f)
             }
-            label(canvas, "50%", percentageCenter,
-                mid + dp(4f), gold, 10f)
+            label(canvas, "TARGET", percentageCenter,
+                mid + dp(4f), gold, 8f)
             paint.textAlign = Paint.Align.LEFT
 
             // Plot only the current 15-minute section, as a smooth line.
@@ -387,6 +396,27 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             canvas.restore()
             line(canvas, threeMinuteX, top, threeMinuteX, bottom,
                 Color.WHITE, 1.5f)
+
+            // Clear dollar reference: percent labels are custom distance bands,
+            // NOT BTC percentage change, Kalshi prices or win probabilities.
+            val delta = latest - target
+            val relation = when {
+                delta > 0.0 -> "ABOVE TARGET"
+                delta < 0.0 -> "BELOW TARGET"
+                else -> "AT TARGET"
+            }
+            val btcText = String.format(Locale.US, "$%,.2f", latest)
+            val targetText = String.format(Locale.US, "$%,.2f", target)
+            val gapText = String.format(Locale.US, "$%,.2f", abs(delta))
+            paint.textAlign = Paint.Align.CENTER
+            label(canvas, "BTC " + btcText + "  |  TARGET " + targetText,
+                w / 2f, timelineBottom + dp(24f), Color.WHITE, 10f)
+            label(canvas, gapText + " " + relation,
+                w / 2f, timelineBottom + dp(43f),
+                if (delta > 0) green else if (delta < 0) red else gold, 11f)
+            label(canvas, "CUSTOM CHART LEVELS - NOT KALSHI ODDS",
+                w / 2f, timelineBottom + dp(62f), Color.LTGRAY, 8f)
+            paint.textAlign = Paint.Align.LEFT
 
             // Keep all joined panel borders sharp and on top of price traces.
             drawPanelBorders()
