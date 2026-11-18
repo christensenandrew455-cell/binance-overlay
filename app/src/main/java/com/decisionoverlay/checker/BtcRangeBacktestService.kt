@@ -143,7 +143,7 @@ class BtcRangeBacktestService : Service() {
         val left = ((marketStart + QUARTER - receivedAt).toDouble() /
             MINUTE.toDouble()).coerceIn(0.001, 15.0)
         val modeledPct = BtcChartProxyMath.strength(latest, target, acm, left)
-        val chartQuotes = BtcChartProxyMath.completedMinuteQuotes(
+        val chartLevels = BtcChartProxyMath.completedMinuteSamples(
             candles, target, marketStart, completedOpen)
         val json = JSONObject().put("section", marketStart)
             .put("target", target).put("acm", acm)
@@ -155,13 +155,12 @@ class BtcRangeBacktestService : Service() {
                 series.put(JSONArray().put(dot.at).put(dot.price))
         }
         json.put("points", series)
-        // Signed YES-style proxy from the chart's own 50-90% scale.
-        // Keep this fully offline from Kalshi: only Binance BTC is queried.
+        // Signed chart levels. The monitor never requests Kalshi contract data.
         val proxy = JSONArray()
-        for (q in chartQuotes) {
-            proxy.put(JSONArray().put(q.left).put(q.strength(1)))
+        for (sample in chartLevels) {
+            proxy.put(JSONArray().put(sample.left).put(sample.signedLevel))
         }
-        json.put("proxy_quotes", proxy)
+        json.put("signed_chart_levels", proxy)
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString(KEY_SNAPSHOT, json.toString()).apply()
 
