@@ -66,7 +66,7 @@ class KalshiLiveSignalService : Service() {
     }
 
     private fun viewIntent(): PendingIntent = PendingIntent.getActivity(this, 0,
-        Intent(this, KalshiLiveAlertActivity::class.java).apply {
+        Intent(this, BtcRangeBacktestActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
@@ -81,7 +81,7 @@ class KalshiLiveSignalService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
             prefs.edit().putBoolean(ENABLED, false).putString(STATUS,
-                "Stopped. Open the Alerts screen to restart.").apply()
+                "Stopped. Re-enable notifications on the BTC chart.").apply()
             working.set(false)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
