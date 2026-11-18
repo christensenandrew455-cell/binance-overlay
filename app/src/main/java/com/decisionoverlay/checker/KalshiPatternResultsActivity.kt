@@ -23,10 +23,34 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private lateinit var start: Button
     private lateinit var stop: Button
     private lateinit var copy: Button
+    private lateinit var copyFull: Button
     private lateinit var share: Button
     private lateinit var status: TextView
     private lateinit var output: TextView
     private var shownReport = ""
+    private var partIndex = 0
+
+    // Large reports are copied in manageable line-aligned pieces so chat/paste
+    // targets do not choke on the whole historical analysis.
+    private fun reportParts(report: String): List<String> {
+        if (report.isEmpty()) return emptyList()
+        val chunks = ArrayList<String>()
+        var start = 0
+        while (start < report.length) {
+            val limit = (start + 24000).coerceAtMost(report.length)
+            val newline = if (limit == report.length) limit
+                else report.lastIndexOf('\n', limit).takeIf { it > start + 1000 }
+                    ?.plus(1) ?: limit
+            chunks.add(report.substring(start, newline))
+            start = newline
+        }
+        return chunks
+    }
+    private fun partLabel(report: String): String {
+        val count = reportParts(report).size
+        return if (count == 0) "COPY PART" else
+            "COPY PART " + (partIndex + 1) + "/" + count
+    }
     private val refresh = object : Runnable {
         override fun run() {
             val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS,
@@ -38,9 +62,12 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
+            copyFull.isEnabled = report.isNotEmpty()
             share.isEnabled = report.isNotEmpty()
             if (report != shownReport) {
                 shownReport = report
+                partIndex = 0
+                copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
                     "Results will appear here when the scan finishes.\n\n" +
                     "This scanner checks ACTUAL Kalshi YES/NO quote candles and settled outcomes. " +
@@ -49,6 +76,10 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "It covers YES/NO, all 15-to-0 minute bins, 60/70/80/90 hits, " +
                     "every lower 10%-step level, and recovery sequences (like 80-60-70).\n\n" +
                     "You can turn your screen off while it runs."
+                else if (report.length > 10000)
+                    report.take(10000) + "\n\n[PREVIEW ONLY: " + report.length +
+                        " characters. Use COPY PART to send the complete analysis in " +
+                        reportParts(report).size + " smaller chunks, or COPY FULL.]"
                 else report
             }
             handler.postDelayed(this, 1000L)
@@ -108,11 +139,23 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         addButton(commands, start)
         addButton(commands, stop)
         val actions = row(root)
-        copy = button("COPY RESULTS") {
-            val report = shownReport
-            if (report.isNotEmpty()) {
+        copy = button("COPY PART") {
+            val parts = reportParts(shownReport)
+            if (parts.isNotEmpty()) {
+                val index = partIndex.coerceIn(0, parts.lastIndex)
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi Backtest", report))
+                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi part", "PART " +
+                    (index + 1) + "/" + parts.size + "\n" + parts[index]))
+                Toast.makeText(this, "Copied part " + (index + 1) +
+                    " of " + parts.size, Toast.LENGTH_SHORT).show()
+                partIndex = (index + 1) % parts.size
+                copy.text = partLabel(shownReport)
+            }
+        }
+        copyFull = button("COPY FULL") {
+            if (shownReport.isNotEmpty()) {
+                val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi full backtest", shownReport))
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
@@ -127,6 +170,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             }
         }
         addButton(actions, copy)
+        addButton(actions, copyFull)
         addButton(actions, share)
         status = TextView(this).apply {
             textSize = 12f
