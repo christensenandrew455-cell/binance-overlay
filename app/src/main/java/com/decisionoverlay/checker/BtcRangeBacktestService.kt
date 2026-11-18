@@ -16,7 +16,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.abs
 
 /**
  * Live BTCUSDT monitor. Only a single 15-minute section is ever shown.
@@ -141,11 +140,11 @@ class BtcRangeBacktestService : Service() {
         if (points.size > 300) points.subList(1, points.size - 299).clear()
         points.sortBy { it.at }
 
-        val gapPct = abs((latest - target) / target) * 100.0
         val left = ((marketStart + QUARTER - receivedAt).toDouble() /
             MINUTE.toDouble()).coerceIn(0.001, 15.0)
-        val modeledPct = (50.0 + 40.0 *
-            (gapPct / (acm * left))).coerceIn(50.0, 90.0)
+        val modeledPct = BtcChartProxyMath.strength(latest, target, acm, left)
+        val chartQuotes = BtcChartProxyMath.completedMinuteQuotes(
+            candles, target, marketStart, completedOpen)
         val json = JSONObject().put("section", marketStart)
             .put("target", target).put("acm", acm)
             .put("latest", latest).put("now", receivedAt)
@@ -156,12 +155,17 @@ class BtcRangeBacktestService : Service() {
                 series.put(JSONArray().put(dot.at).put(dot.price))
         }
         json.put("points", series)
+        // Signed YES-style proxy from the chart's own 50-90% scale.
+        // Keep this fully offline from Kalshi: only Binance BTC is queried.
+        val proxy = JSONArray()
+        for (q in chartQuotes) {
+            proxy.put(JSONArray().put(q.left).put(q.strength(1)))
+        }
+        json.put("proxy_quotes", proxy)
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString(KEY_SNAPSHOT, json.toString()).apply()
 
-        // Legacy Binance 70% and 3-minute trade alerts were intentionally
-        // removed. Only the separate Kalshi real-quote watcher may send
-        // researched pattern alerts while notifications are enabled.
+        // Alerts read this snapshot rather than querying Kalshi contracts.
     }
 
     override fun onDestroy() {
