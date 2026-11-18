@@ -97,10 +97,13 @@ class BtcAcmLiveService : Service() {
                     "decisionoverlay:btcAcmLive")
             lock.setReferenceCounted(false)
             try {
+                val model = BtcAcmOddsHistory.load(this,
+                    { message -> save("starting", message) }, { canceled.get() })
+                save("running", "BTC odds ready. Watching Kalshi live asks.")
                 while (!canceled.get()) {
                     if (!lock.isHeld) lock.acquire(60L * 60L * 1000L)
                     try {
-                        checkLive()
+                        checkLive(model)
                     } catch (e: Exception) {
                         if (!canceled.get()) {
                             val note = (e.message ?: e.javaClass.simpleName).take(170)
@@ -151,7 +154,10 @@ class BtcAcmLiveService : Service() {
             .setContentIntent(open).setOnlyAlertOnce(true).build()
     }
 
-    private fun notifyBuy(market: Market, decision: BtcAcmSignal.Decision) {
+    private fun notifyBuy(
+        market: Market, decision: BtcAcmOdds.Decision,
+        position: BtcAcmProfitMath.Position
+    ) {
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED) return
@@ -160,24 +166,26 @@ class BtcAcmLiveService : Service() {
         val open = PendingIntent.getActivity(this, BUY_ID,
             Intent(this, BtcAcmLiveActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val lower = decision.selected?.conservative ?: return
         val body = String.format(Locale.US,
-            "%s @ %.1fc; %.1fm left; BTC $%,.2f / target $%,.2f. Fee $%.2f; " +
-                "%d/27 prior wins (unverified). RECHECK ASK.",
-            decision.direction, (decision.ask ?: 0.0) * 100.0,
-            decision.secondsLeft / 60.0, decision.spot, market.target,
-            decision.fee, BtcAcmSignal.HISTORICAL_WINS)
+            "Kalshi %s %.0fc | conservative BTC proxy %.1f%% | break-even %.1f%% | " +
+                "BTC $%,.2f / target $%,.2f | fee $%.2f | %.1fm left. RECHECK QUOTE.",
+            decision.label, (decision.ask ?: 0.0)*100.0,
+            lower*100.0,decision.breakEven*100.0,
+            decision.spot,market.target,position.fee,
+            decision.secondsLeft/60.0)
         val item = NotificationCompat.Builder(this, BUY_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("BUY " + decision.direction + " — Kalshi 60–69¢ [TEST]")
+            .setContentTitle("BUY " + decision.label + " — BTC MODEL > KALSHI ASK [TEST]")
             .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(
-                body + "\n" + market.ticker +
-                    "\nExperimental 100-market result; market may change before filling."))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body +
+                "\nExperimental, historical Binance.US proxy only. " +
+                "Kalshi strike/index may differ; do not assume this probability is exact."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true).setContentIntent(open).build()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .notify(BUY_ID, item)
-        prefs.edit().putString("last_alerted_ticker", market.ticker).apply()
+        prefs.edit().putString("last_alerted_ticker",market.ticker).apply()
     }
 
     private fun fetch(url: String): String =
@@ -285,104 +293,151 @@ class BtcAcmLiveService : Service() {
             .also { cachedHistory = it }
     }
 
-    private fun checkLive() {
-        val current = System.currentTimeMillis()
-        val market = liveMarket(current)
+    private fun checkLive(model: BtcAcmOdds.Model) {
+        val checkedAt = System.currentTimeMillis()
+        val market = liveMarket(checkedAt)
         val history = history(System.currentTimeMillis())
         val spot = JSONObject(fetch(
             "https://api.binance.us/api/v3/ticker/price?symbol=BTCUSDT"))
             .getString("price").toDouble()
-        require(spot.isFinite() && spot > 0.0) { "Invalid BTC ticker price" }
-        val left = (market.closeMs - System.currentTimeMillis()) / 1000.0
-        val decision = BtcAcmSignal.evaluate(spot, market.target,
-            history.acmPct, left, market.yesAsk, market.noAsk)
-        val quotedSize = if (decision.direction == "YES")
-            market.yesAskSize else market.noAskSize
-        val priceSize = if (quotedSize != null || !decision.buyEligible) quotedSize
+        require(spot.isFinite() && spot > 0.0) { "Invalid live BTC price" }
+        val now = System.currentTimeMillis()
+        val secondsLeft = (market.closeMs-now)/1000.0
+        val decision = BtcAcmOdds.decide(model, spot,market.target,
+            history.acmPct,secondsLeft,market.yesAsk,market.noAsk)
+        val position = decision.ask?.let { BtcAcmProfitMath.tenDollarPosition(it,true) }
+        val listedSize = when (decision.side) {
+            1 -> market.yesAskSize
+            -1 -> market.noAskSize
+            else -> null
+        }
+        val size = if (!decision.qualified || listedSize != null) listedSize
             else runCatching {
-                orderBookAskSize(market.ticker, decision.direction, decision.ask)
+                orderBookAskSize(market.ticker,decision.label,decision.ask)
             }.getOrNull()
-        val enoughAskSize = priceSize != null &&
-            decision.contracts > 0 && priceSize + 1e-8 >= decision.contracts
-        // Actual top of book must have the quoted number of contracts for $10.
-        val qualifies = decision.buyEligible && enoughAskSize &&
-            !canceled.get() && System.currentTimeMillis() < market.closeMs
-        if (qualifies) notifyBuy(market, decision)
+        val hasDepth = position != null && size != null &&
+            size+1e-8 >= position.contracts
+        val buy = decision.qualified && hasDepth &&
+            secondsLeft>60.0 && !canceled.get()
+        if (buy && position != null) notifyBuy(market,decision,position)
 
-        val bound = BtcAcmCountdown.boundaries(market.target, history.acmPct,
-            (left * 1000.0).toLong())
-        val upper = bound.first
-        val lower = bound.second
-        val curve = JSONArray()
-        for (point in BtcAcmCountdown.series(history.allCandles, market.target,
-                market.closeMs, System.currentTimeMillis(), history.acmPct, spot)) {
-            curve.put(JSONArray().apply {
-                put(point.at); put(point.upper); put(point.lower)
-                if (point.btcPrice == null) put(JSONObject.NULL) else put(point.btcPrice)
-                put(point.projected)
+        // Exactly 15 minutes on the horizontal axis:
+        // START = target; past completed 1m closes = plain price line;
+        // latest point = live ticker; future = no fabricated BTC prices.
+        // Two BUY boundaries recalculate with ACM/time/side-specific Kalshi ASK.
+        val marketStart=market.closeMs-15L*MINUTE
+        val points=JSONArray()
+        fun point(at: Long,acm: Double,btc: Double?,future: Boolean) {
+            val sleft=(market.closeMs-at)/1000.0
+            val minute=BtcAcmOdds.bucket(sleft)
+            val upE=model.minimumRatioForAsk(minute,1,market.yesAsk)
+            val downE=model.minimumRatioForAsk(minute,-1,market.noAsk)
+            fun threshold(e: BtcAcmOdds.Evidence?,direction: Int): Double? {
+                if(e==null || !e.valid || !acm.isFinite() || acm<=0) return null
+                val delta=e.ratio*acm*(sleft/60.0)/100.0
+                return market.target*(1.0+direction*delta)
+            }
+            val up = if(at==market.closeMs)market.target else threshold(upE,1)
+            val down = if(at==market.closeMs)market.target else threshold(downE,-1)
+            points.put(JSONArray().apply {
+                put(at)
+                if(up==null)put(JSONObject.NULL)else put(up)
+                if(down==null)put(JSONObject.NULL)else put(down)
+                if(btc==null)put(JSONObject.NULL)else put(btc)
+                put(future)
             })
         }
-        val description = if (decision.buyEligible && !enoughAskSize)
-            "WAIT — price qualifies but Kalshi ask size is unavailable or insufficient"
-        else if (qualifies) "BUY " + decision.direction +
-            " — alert eligible, recheck ask before order"
-        else decision.reason
-        val report = buildString {
-            appendLine("BTC / KALSHI — LIVE ACM60")
-            appendLine("Market: " + market.ticker)
+        val priorACM=BtcAcmMath.averageRange(
+            history.allCandles,marketStart-MINUTE,60) ?: history.acmPct
+        // The visual price series literally begins on the Kalshi target.
+        point(marketStart,priorACM,market.target,false)
+        var t=marketStart+MINUTE
+        val lastFinishedOpen=history.lastMinute
+        while(t<=lastFinishedOpen+MINUTE && t<now && t<market.closeMs) {
+            val price=history.allCandles[t-MINUTE]
+            val acm=BtcAcmMath.averageRange(history.allCandles,t-MINUTE,60)
+            if(price!=null && acm!=null)
+                point(t,acm,price.close,false)
+            t+=MINUTE
+        }
+        point(now,history.acmPct,spot,false)
+        var future=now+10_000L
+        while(future<market.closeMs){
+            point(future,history.acmPct,null,true)
+            future+=10_000L
+        }
+        point(market.closeMs,history.acmPct,null,true)
+
+        fun evidenceDetails(side: Int,ask: Double?): String {
+            val threshold=model.minimumRatioForAsk(decision.minute,side,ask)
+            if(threshold==null)return "NO SUPPORTED BUY ZONE"
+            val need=threshold.ratio*history.acmPct*(secondsLeft/60.0)
+            val price=market.target*(1.0+side*need/100.0)
+            return String.format(Locale.US,
+                "BTC threshold $%,.2f | model floor %.1f%% | train %d, heldout %d",
+                price,threshold.conservative*100.0,
+                threshold.train.n,threshold.holdout.n)
+        }
+
+        val status=when {
+            decision.qualified && !hasDepth ->
+                "WAIT: Kalshi quote matches model but available ask depth unverified"
+            buy -> "BUY " + decision.label + " — check Kalshi ASK NOW"
+            else -> decision.reason
+        }
+        val report=buildString {
+            appendLine("BTC / KALSHI — LIVE FAIR-VALUE BUY ZONE")
+            appendLine("Market: "+market.ticker)
             appendLine(String.format(Locale.US,
-                "BTC live $%,.2f | Kalshi TARGET $%,.2f | %s",
-                spot, market.target, decision.direction))
+                "BTC $%,.2f | TARGET $%,.2f | %s | %.1f minutes left",
+                spot,market.target,decision.label,secondsLeft/60.0))
             appendLine(String.format(Locale.US,
-                "Time remaining %.1f seconds (display bucket %d; trigger uses exact seconds)",
-                left, decision.minutesBucket))
-            appendLine(String.format(Locale.US,
-                "ACM60 (last 60 COMPLETE 1m high-low ranges): %.5f%%",
+                "ACM60 %.5f%% (last 60 COMPLETED one-minute candle ranges)",
                 history.acmPct))
             appendLine(String.format(Locale.US,
-                "K %.2f | required gap %.4f%% | actual gap %.4f%%",
-                BtcAcmSignal.MULTIPLIER, decision.requiredPct, decision.gapPct))
-            appendLine(String.format(Locale.US,
-                "BTC trigger: BUY YES if above $%,.2f; BUY NO if below $%,.2f",
-                upper, lower))
-            appendLine(String.format(Locale.US,
-                "Kalshi asks: YES %s | NO %s | selected %s",
-                cents(market.yesAsk), cents(market.noAsk), cents(decision.ask)))
-            appendLine(String.format(Locale.US,
-                "Selected order-book ask size: %s contracts | %d needed",
-                if (priceSize == null) "UNAVAILABLE" else
-                    String.format(Locale.US, "%.2f", priceSize),
-                decision.contracts))
-            appendLine("TESTED BUY RANGE: 60–69¢; Kalshi ask + fee must beat sample win rate.")
-            appendLine(String.format(Locale.US,
-                "Past K0.25 / 60–69c: %d wins / %d historical trades = %.1f%%",
-                BtcAcmSignal.HISTORICAL_WINS, BtcAcmSignal.HISTORICAL_ENTRIES,
-                BtcAcmSignal.sampleWinRate * 100.0))
-            appendLine("That 77.8% is a tiny, selected in-sample rate, NOT verified odds.")
-            if (decision.contracts > 0) {
+                "Relative distance / (ACM60 x time left): %.3f",
+                decision.ratio))
+            appendLine("BUY boundaries shift as the seconds pass; no fixed 60-69c price filter.")
+            appendLine("Kalshi asks: YES "+cents(market.yesAsk)+" | NO "+
+                cents(market.noAsk))
+            appendLine("YES BUY BOUNDARY: "+evidenceDetails(1,market.yesAsk))
+            appendLine("NO BUY BOUNDARY: "+evidenceDetails(-1,market.noAsk))
+            if(decision.selected!=null) appendLine(String.format(Locale.US,
+                "MODEL: heldout %.1f%% | conservative train/holdout lower %.1f%% " +
+                "| independent markets %d/%d",
+                decision.selected.holdout.rate*100.0,
+                decision.selected.conservative*100.0,
+                decision.selected.train.n,decision.selected.holdout.n))
+            if(decision.ask!=null && position!=null) {
                 appendLine(String.format(Locale.US,
-                    "UP TO $10: %d contracts, estimated general taker fee $%.2f, " +
-                        "total $%.2f, win profit $%.2f, loss $%.2f",
-                    decision.contracts, decision.fee, decision.totalCost,
-                    decision.estimatedProfitIfWin, decision.totalCost))
+                    "KALSHI %s ask %.1fc | fee-adjusted breakeven %.1f%% " +
+                    "| conservative edge %+.1f percentage points",
+                    decision.label,decision.ask*100.0,
+                    decision.breakEven*100.0,decision.margin*100.0))
                 appendLine(String.format(Locale.US,
-                    "Fee-adjusted break-even %.1f%% | historical-sample margin %+.1f pp " +
-                        "(needs at least %.1f pp)",
-                    decision.breakEven * 100.0, decision.rawEdgePercentagePoints,
-                    BtcAcmSignal.MIN_EDGE_PP))
-            } else appendLine("Fee/break-even unavailable without a live valid ask.")
-            appendLine()
-            appendLine("DECISION: " + description)
-            appendLine("One alert max per Kalshi 15-minute market. Final minute blocked.")
-            appendLine("No order placed; quotes can move before you act.")
-            appendLine("Kalshi's actual settlement index differs from Binance.US spot.")
-            appendLine("Prior backtest did NOT validate this edge out of sample.")
+                    "$10 budget: %d contracts, total $%.2f incl fee $%.2f",
+                    position.contracts,position.cost,position.fee))
+                appendLine("Ask depth: "+(size?.toString() ?: "UNAVAILABLE") +
+                    " contracts (must be >= "+position.contracts+")")
+            }
+            appendLine("DECISION: "+status)
+            appendLine("Chart: LEFT is market START, RIGHT is expiration.")
+            appendLine("Single line shows actual BTC prices within the current 15m market only.")
+            appendLine("Green/Red curves = dynamic fee-aware YES/NO buy boundaries.")
+            appendLine("Curves use CURRENT Kalshi asks, not historical Kalshi quotes.")
+            appendLine("Dashed future uses CURRENT ACM as an illustration, not a price forecast.")
+            appendLine("Calibrated with "+model.trainMarkets+" older markets and "+
+                model.testMarkets+" held-out newer BTC proxy markets.")
+            appendLine("Binance.US is NOT Kalshi's settlement index. No trade placed.")
         }
-        val phase = "running"
-        save(phase, if (qualifies) "BUY " + decision.direction +
-            " test condition met — see notification."
-            else "Monitoring BTC/Kalshi: " + description,
-            report, history, market.target, curve.toString(), upper, lower, spot)
+        val upper=model.minimumRatioForAsk(decision.minute,1,market.yesAsk)
+            ?.let{market.target*(1.0+it.ratio*history.acmPct*
+                secondsLeft/60.0/100.0)} ?: market.target
+        val lower=model.minimumRatioForAsk(decision.minute,-1,market.noAsk)
+            ?.let{market.target*(1.0-it.ratio*history.acmPct*
+                secondsLeft/60.0/100.0)} ?: market.target
+        save("running",status,report,history,market.target,
+            points.toString(),upper,lower,spot)
     }
 
     private fun cents(value: Double?): String =
