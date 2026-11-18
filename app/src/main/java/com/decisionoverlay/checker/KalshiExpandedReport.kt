@@ -103,8 +103,16 @@ object KalshiExpandedReport {
             var selected = -1
             for (i in searchFrom until q.size) {
                 val p = q[i].yesMid
-                if ((up && p >= level - 0.0000001) ||
-                    (!up && p <= level + 0.0000001)) {
+                val reached = if (stage == 0) {
+                    // Before a rising move start at/below A; before a falling
+                    // move start at/above A. Later stages touch the destination.
+                    if (up) p <= level + 0.0000001
+                    else p >= level - 0.0000001
+                } else {
+                    if (up) p >= level - 0.0000001
+                    else p <= level + 0.0000001
+                }
+                if (reached) {
                     selected = i
                     break
                 }
