@@ -131,6 +131,7 @@ object BtcAcmOdds {
 
     data class Decision(
         val side: Int, val label: String, val ratio: Double, val minute: Int,
+        val spot: Double, val secondsLeft: Double,
         val selected: Evidence?, val required: Evidence?,
         val ask: Double?, val breakEven: Double, val margin: Double,
         val qualified: Boolean, val reason: String
@@ -164,7 +165,8 @@ object BtcAcmOdds {
             !margin.isFinite() || margin<EXTRA_EDGE -> "WAIT: not enough edge after fees"
             else -> "BUY $label — empirical bound exceeds Kalshi cost + fees"
         }
-        return Decision(side,label,ratio,minute,selected,required,ask,breakEven,
+        return Decision(side,label,ratio,minute,spot,secondsLeft,
+            selected,required,ask,breakEven,
             margin,reason.startsWith("BUY "),reason)
     }
 }
