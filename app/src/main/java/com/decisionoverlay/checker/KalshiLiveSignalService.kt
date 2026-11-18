@@ -146,20 +146,21 @@ class KalshiLiveSignalService : Service() {
             return
         }
 
-        val array = chart.optJSONArray("proxy_quotes")
+        // Read the SAME signed, completed-minute levels used by the BTC chart.
+        // Old unsigned contract "proxy_quotes" cannot represent below-target data.
+        val array = chart.optJSONArray("signed_chart_levels")
         if (array == null || array.length() < 2) {
-            status("Waiting for completed one-minute chart percentages")
+            status("Waiting for completed signed BTC chart levels")
             return
         }
-        val history = ArrayList<KalshiPatternMath.Quote>()
+        val history = ArrayList<BtcChartProxyMath.Sample>()
         for (i in 0 until array.length()) {
             val q = array.optJSONArray(i) ?: continue
             val left = q.optInt(0, -1)
-            val percentage = q.optDouble(1, Double.NaN)
-            if (left !in 1..14 || !percentage.isFinite() ||
-                percentage !in 10.0..90.0) continue
-            val proxy = percentage / 100.0
-            history.add(KalshiPatternMath.Quote(left, proxy, proxy))
+            val level = q.optDouble(1, Double.NaN)
+            if (left !in 1..14 || !level.isFinite() ||
+                (level != 0.0 && kotlin.math.abs(level) !in 50.0..90.0)) continue
+            history.add(BtcChartProxyMath.Sample(left, level))
         }
         val latest = history.minByOrNull { it.left } ?: return
         val closeOfMinute = start + QUARTER - latest.left * MINUTE
@@ -175,22 +176,42 @@ class KalshiLiveSignalService : Service() {
             status("Alert already sent for this 15-minute market")
             return
         }
-        val matched = KalshiLiveSignalRules.matchingProxySignals(history)
+        val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
         if (matched.isEmpty()) {
             status("BTC chart | " + latest.left + "m left | no researched pattern")
             return
         }
-        val best = matched.first()
+        val price = chart.optDouble("latest", Double.NaN)
+        val target = chart.optDouble("target", Double.NaN)
+        if (!price.isFinite() || !target.isFinite() || target <= 0.0) {
+            status("Waiting for valid BTC spot and target")
+            return
+        }
+        // Require the CURRENT BTC price to agree with the completed chart
+        // direction, even if it moves across target between minute closes.
+        val best = matched.firstOrNull {
+            if (it.rule.buyYes) price < target else price > target
+        } ?: run {
+            status("BTC crossed target since last completed candle; no watch")
+            return
+        }
         if (!working.get() || !prefs.getBoolean(ENABLED, true)) return
         val rule = best.rule
-        val title = "BTC " + rule.side + " WATCH: " + rule.name
-        val signedLevel = String.format(Locale.US,
-            "%+.0f", best.signedChartLevel) + "%"
-        val detail = best.left + "m left | chart " + signedLevel +
-            " | historic " + rule.side + " won " +
-            String.format(Locale.US, "%.1f", rule.newestWinRate * 100.0) +
-            "% (" + rule.newestN + " samples) on Kalshi quotes." +
-            " Chart scale is NOT market odds; verify contract price and fees."
+        val direction = if (rule.buyYes) "ABOVE TARGET at settlement"
+            else "BELOW TARGET at settlement"
+        val position = if (price > target) "ABOVE" else "BELOW"
+        val title = "BTC " + rule.side + " WATCH ONLY"
+        val signedLevel = if (best.signedChartLevel > 0.0) "+"
+            + String.format(Locale.US, "%.0f", best.signedChartLevel) + "%"
+            else String.format(Locale.US, "%.0f", best.signedChartLevel) + "%"
+        val spotText = String.format(Locale.US, "$%,.2f", price)
+        val targetText = String.format(Locale.US, "$%,.2f", target)
+        val distanceText = String.format(Locale.US, "$%,.2f", kotlin.math.abs(price - target))
+        val detail = best.left.toString() + "m left | BTC " + spotText +
+            " (" + distanceText + " " + position + " target " + targetText + ")" +
+            " | custom chart " + signedLevel + " | " +
+            rule.side + " means finish " + direction +
+            ". NOT a buy signal: chart scale is NOT Kalshi odds."
         prefs.edit().putLong("sent_section", start)
             .putString(LAST_ALERT, title + "\n" + detail)
             .putString(STATUS, "Last watch: " + title).apply()
@@ -202,7 +223,7 @@ class KalshiLiveSignalService : Service() {
             .setContentTitle(title)
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail +
-                "\n+/- chart strength is NOT BTC percentage change or actual Kalshi odds."))
+                "\nHistorical contract quotes do NOT validate this chart proxy. Check real odds and fees before trading."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setContentIntent(viewIntent())
