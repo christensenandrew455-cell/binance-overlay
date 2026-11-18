@@ -25,7 +25,7 @@ import kotlin.math.max
 
 /**
  * Minimal live view: target in gold, BTC trace in gold, symmetric 70% lines,
- * final three minutes boxed in white, a countdown, and numeric percentages.
+ * centered square panel, first-three-minute no-trade marker and boxed countdown.
  * No 60-candle history, buttons, candlesticks, or historical backtest UI.
  */
 class BtcRangeBacktestActivity : AppCompatActivity() {
@@ -72,7 +72,9 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
     }
 
     private class BtcChart(context: Context) : View(context) {
-        private val background = Color.rgb(12, 16, 22)
+        private val background = Color.rgb(7, 10, 16)
+        private val chartFill = Color.rgb(20, 28, 39)
+        private val disabledZone = Color.argb(150, 8, 13, 20)
         private val gold = Color.rgb(242, 190, 74)
         private val green = Color.rgb(54, 214, 113)
         private val red = Color.rgb(243, 77, 84)
@@ -113,50 +115,61 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 displaySeconds / 60, displaySeconds % 60)
             val w = width.toFloat()
             val h = height.toFloat()
-            // Keep the actual plotting area square, including on tall phones.
-            val left = dp(55f)
-            val side = minOf(w - left - dp(18f), h - dp(124f))
+            // The chart is a genuinely centered square. Reserve equal
+            // horizontal margins so the percentage labels remain visible.
+            val margin = dp(56f)
+            val side = minOf(w - 2f * margin, h - dp(230f))
             if (side <= 0f) return
+            val left = (w - side) / 2f
             val right = left + side
             val top = (h - side) / 2f
             val bottom = top + side
             val mid = (top + bottom) / 2f
             val half = side / 2f
 
-            // Large countdown centered just above the square plot.
-            paint.textAlign = Paint.Align.CENTER
-            label(canvas, time, (left + right) / 2f,
-                top - dp(18f), Color.WHITE, 38f)
-            paint.textAlign = Paint.Align.LEFT
-
-            // Single white border enclosing the entire graph.
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(1.3f)
-            paint.color = Color.WHITE
+            // One continuous tinted chart panel instead of a floating border.
+            paint.style = Paint.Style.FILL
+            paint.color = chartFill
             canvas.drawRoundRect(RectF(left, top, right, bottom),
-                dp(3f), dp(3f), paint)
+                dp(5f), dp(5f), paint)
 
-            // Three minutes REMAINING = 12 minutes elapsed.
-            val threeMinuteX = left + (right - left) * (12f / 15f)
-            line(canvas, threeMinuteX, top, threeMinuteX, bottom,
-                Color.LTGRAY, 1.4f)
+            // Countdown lives in its own framed box centered above the chart.
+            val timerWidth = minOf(dp(182f), w - dp(40f))
+            val timerHeight = dp(66f)
+            val timerLeft = (w - timerWidth) / 2f
+            val timerTop = top - dp(98f)
+            val timerRect = RectF(timerLeft, timerTop,
+                timerLeft + timerWidth, timerTop + timerHeight)
+            paint.style = Paint.Style.FILL
+            paint.color = chartFill
+            canvas.drawRoundRect(timerRect, dp(11f), dp(11f), paint)
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.rgb(190, 198, 211)
+            paint.strokeWidth = dp(1.2f)
+            canvas.drawRoundRect(timerRect, dp(11f), dp(11f), paint)
+            paint.textAlign = Paint.Align.CENTER
+            label(canvas, time, w / 2f, timerTop + dp(46f),
+                Color.WHITE, 37f)
 
-            // Bottom timeline: all minute ticks, compact labels every 3.
-            val axisY = bottom + dp(9f)
-            line(canvas, left, axisY, right, axisY, Color.LTGRAY, 0.9f)
+            // Minute labels and short ticks are INSIDE the graph:
+            // no disconnected horizontal axis underneath.
             for (elapsed in 0..15) {
-                val x = left + (right - left) * (elapsed / 15f)
+                val x = left + side * (elapsed / 15f)
                 val major = elapsed % 3 == 0
-                line(canvas, x, axisY, x,
-                    axisY + dp(if (major) 8f else 4f),
-                    Color.LTGRAY, 0.9f)
+                line(canvas, x, bottom - dp(20f), x,
+                    bottom - dp(if (major) 13f else 17f),
+                    Color.rgb(136, 146, 157), 0.7f)
                 if (major) {
                     paint.textAlign = Paint.Align.CENTER
                     label(canvas, (15 - elapsed).toString(),
-                        x, axisY + dp(25f), Color.LTGRAY, 10f)
+                        x, bottom - dp(3f), Color.LTGRAY, 9f)
                 }
             }
             paint.textAlign = Paint.Align.LEFT
+
+            // The opening 3 minutes (15 -> 12 left) are excluded from
+            // the visual trading zone. Marker is at elapsed minute 3.
+            val threeMinuteX = left + side * (3f / 15f)
 
             val snapshot = try {
                 JSONObject(context.getSharedPreferences(
@@ -239,12 +252,13 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 val amount = acm * 15.0 * (level - 50.0) / 40.0
                 val aboveColor = if (level == 70) green else Color.LTGRAY
                 val belowColor = if (level == 70) red else Color.LTGRAY
-                label(canvas, "${level}%", dp(3f), yFor(amount) + dp(4f),
-                    aboveColor, 10f)
-                label(canvas, "${level}%", dp(3f), yFor(-amount) + dp(4f),
-                    belowColor, 10f)
+                label(canvas, "${level}%", left - dp(53f),
+                    yFor(amount) + dp(4f), aboveColor, 10f)
+                label(canvas, "${level}%", left - dp(53f),
+                    yFor(-amount) + dp(4f), belowColor, 10f)
             }
-            label(canvas, "50%", dp(3f), mid + dp(4f), gold, 10f)
+            label(canvas, "50%", left - dp(53f),
+                mid + dp(4f), gold, 10f)
 
             // Plot only the current 15-minute section, as a smooth line.
             if (history != null && history.length() > 0) {
@@ -279,6 +293,24 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                     canvas.drawCircle(last.first, last.second, dp(1.5f), paint)
                 }
             }
+
+            // Darken only the initial 3-minute no-trade region. Price history
+            // remains underneath but is visually deemphasized.
+            canvas.save()
+            canvas.clipRect(left, top, right, bottom)
+            paint.style = Paint.Style.FILL
+            paint.color = disabledZone
+            canvas.drawRect(left, top, threeMinuteX, bottom, paint)
+            canvas.restore()
+            line(canvas, threeMinuteX, top, threeMinuteX, bottom,
+                Color.WHITE, 1.5f)
+
+            // Finish with a crisp outline around the filled square panel.
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(1.35f)
+            paint.color = Color.rgb(202, 210, 222)
+            canvas.drawRoundRect(RectF(left, top, right, bottom),
+                dp(5f), dp(5f), paint)
         }
     }
 }
