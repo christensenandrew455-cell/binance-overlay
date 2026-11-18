@@ -18,8 +18,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".KalshiLiveAlertActivity"
+            android:exported="false" />
         <activity android:name=".KalshiPatternResultsActivity"
             android:exported="false" />
+        <service android:name=".KalshiLiveSignalService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-requested Kalshi live price-pattern notifications" />
+        </service>
         <service android:name=".KalshiPatternBacktestService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
