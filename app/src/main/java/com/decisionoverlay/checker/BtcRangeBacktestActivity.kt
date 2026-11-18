@@ -18,7 +18,6 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -36,14 +35,13 @@ import kotlin.math.max
 class BtcRangeBacktestActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var chart: BtcChart
-    private lateinit var enableAlerts: Button
-    private lateinit var disableAlerts: Button
+    private lateinit var notificationToggle: Button
 
     private fun updateAlertButtons() {
         val enabled = getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
             .getBoolean(KalshiLiveSignalService.ENABLED, true)
-        enableAlerts.isEnabled = !enabled
-        disableAlerts.isEnabled = enabled
+        notificationToggle.text = if (enabled) "DISABLE NOTIFICATIONS"
+            else "ENABLE NOTIFICATIONS"
     }
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()) {}
@@ -66,41 +64,30 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
         screen.addView(chart, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT))
-        val enable = Button(this).apply {
-            text = "ENABLE NOTIFICATIONS"
+        // The only main-screen button is a persistent enable/disable toggle.
+        notificationToggle = Button(this).apply {
             textSize = 10f
             setAllCaps(false)
             setOnClickListener {
-                getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
-                    .edit().putBoolean(KalshiLiveSignalService.ENABLED, true).apply()
-                ContextCompat.startForegroundService(this@BtcRangeBacktestActivity,
-                    Intent(this@BtcRangeBacktestActivity,
+                val prefs = getSharedPreferences(
+                    KalshiLiveSignalService.PREFS, MODE_PRIVATE)
+                val enabled = prefs.getBoolean(KalshiLiveSignalService.ENABLED, true)
+                if (enabled) {
+                    prefs.edit().putBoolean(KalshiLiveSignalService.ENABLED, false).apply()
+                    startService(Intent(this@BtcRangeBacktestActivity,
                         KalshiLiveSignalService::class.java)
-                        .setAction(KalshiLiveSignalService.START))
+                        .setAction(KalshiLiveSignalService.STOP))
+                } else {
+                    prefs.edit().putBoolean(KalshiLiveSignalService.ENABLED, true).apply()
+                    ContextCompat.startForegroundService(this@BtcRangeBacktestActivity,
+                        Intent(this@BtcRangeBacktestActivity,
+                            KalshiLiveSignalService::class.java)
+                            .setAction(KalshiLiveSignalService.START))
+                }
                 updateAlertButtons()
             }
         }
-        val disable = Button(this).apply {
-            text = "DISABLE NOTIFICATIONS"
-            textSize = 10f
-            setAllCaps(false)
-            setOnClickListener {
-                getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
-                    .edit().putBoolean(KalshiLiveSignalService.ENABLED, false).apply()
-                startService(Intent(this@BtcRangeBacktestActivity,
-                    KalshiLiveSignalService::class.java)
-                    .setAction(KalshiLiveSignalService.STOP))
-                updateAlertButtons()
-            }
-        }
-        enableAlerts = enable
-        disableAlerts = disable
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(enable)
-            addView(disable)
-        }
-        screen.addView(controls, FrameLayout.LayoutParams(
+        screen.addView(notificationToggle, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.END).apply {
