@@ -202,7 +202,11 @@ class BtcRangeBacktestService : Service() {
                     for (level in BtcRangeMath.firstCrossed(previousMax, snap.percentage)) {
                         val count = counts[level][snap.remaining]
                         count.firstHits++
-                        if (snap.qualifies) count.qualifies++
+                        if (snap.modeledAskPct in
+                            BtcRangeMath.LOW_ASK..BtcRangeMath.HIGH_ASK &&
+                            level.toDouble() + 1e-9 >=
+                                snap.modeledAskPct + snap.feePct)
+                            count.qualifies++
                     }
                     previousMax = maxOf(previousMax, snap.percentage.toInt().coerceAtMost(90))
                 }
