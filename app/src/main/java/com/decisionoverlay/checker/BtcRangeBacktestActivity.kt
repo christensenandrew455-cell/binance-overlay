@@ -14,6 +14,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.FrameLayout
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -48,7 +52,28 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN)
         chart = BtcChart(this)
-        setContentView(chart)
+        val screen = FrameLayout(this)
+        screen.addView(chart, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT))
+        val backtest = Button(this).apply {
+            text = "BACKTEST"
+            textSize = 11f
+            setAllCaps(false)
+            setOnClickListener {
+                startActivity(Intent(this@BtcRangeBacktestActivity,
+                    KalshiPatternResultsActivity::class.java))
+            }
+        }
+        screen.addView(backtest, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.END).apply {
+                val density = resources.displayMetrics.density
+                topMargin = (7f * density).toInt()
+                rightMargin = (9f * density).toInt()
+            })
+        setContentView(screen)
         ContextCompat.startForegroundService(this,
             Intent(this, BtcRangeBacktestService::class.java)
                 .setAction(BtcRangeBacktestService.START))
