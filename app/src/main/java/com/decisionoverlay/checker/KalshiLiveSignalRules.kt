@@ -19,8 +19,8 @@ object KalshiLiveSignalRules {
         val olderNetCents: Double,
         val newestNetCents: Double
     ) {
-        val name: String get() = path.joinToString(">")
-        val side: String get() = if (buyYes) "YES" else "NO"
+        val name: String get() = path.joinToString(" > ") { BtcChartProxyMath.signedPathLevel(it) }
+        val side: String get() = if (buyYes) "UP" else "DOWN"
     }
 
     // Retained only if BOTH older and newest 30% samples had positive
@@ -36,7 +36,7 @@ object KalshiLiveSignalRules {
         Rule(listOf(60, 20), true, 6, 8, 37, 22, .227, 10.5, 5.9)
     )
 
-    data class Signal(val rule: Rule, val left: Int, val chartYesProxy: Double)
+    data class Signal(val rule: Rule, val left: Int, val signedChartLevel: Double)
 
     /** Mirrors the report's earliest multi-minute threshold sequence exactly. */
     fun firstCompletion(path: List<Int>, sortedOldestFirst: List<KalshiPatternMath.Quote>):
@@ -80,13 +80,13 @@ object KalshiLiveSignalRules {
             .sortedByDescending { it.left }.distinctBy { it.left }
         if (candles.size < 2) return emptyList()
         val newest = candles.last()
-        val proxy = newest.strength(1)
+        val signedLevel = BtcChartProxyMath.signedFromProxy(newest.strength(1))
         return rules.mapNotNull { rule ->
             val completion = firstCompletion(rule.path, candles)
                 ?: return@mapNotNull null
             if (completion.left != newest.left ||
                 completion.left !in rule.earliestLeft..rule.latestLeft) null
-            else Signal(rule, completion.left, proxy)
+            else Signal(rule, completion.left, signedLevel)
         }.sortedByDescending {
             it.rule.newestN.toDouble() * it.rule.newestNetCents
         }
