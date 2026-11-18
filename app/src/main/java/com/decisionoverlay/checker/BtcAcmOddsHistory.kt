@@ -58,7 +58,7 @@ object BtcAcmOddsHistory {
                 val end=data[market+14L*MINUTE]?.close ?: continue
                 if (target<=0 || end<=0)continue
                 val samples=mutableListOf<BtcAcmOdds.Sample>()
-                for (left in 8 downTo 1) {
+                for (left in 14 downTo 1) {
                     val observedAt=market+(14L-left)*MINUTE
                     val seen=data[observedAt]?.close ?: continue
                     val acm=BtcAcmMath.averageRange(data,observedAt,60) ?: continue
