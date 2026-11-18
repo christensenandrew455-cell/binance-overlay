@@ -201,9 +201,8 @@ class KalshiLiveSignalService : Service() {
             else "BELOW TARGET at settlement"
         val position = if (price > target) "ABOVE" else "BELOW"
         val title = "BTC " + rule.side + " WATCH ONLY"
-        val signedLevel = if (best.signedChartLevel > 0.0) "+"
-            + String.format(Locale.US, "%.0f", best.signedChartLevel) + "%"
-            else String.format(Locale.US, "%.0f", best.signedChartLevel) + "%"
+        val signedLevel = String.format(Locale.US,
+            "%+.0f%%", best.signedChartLevel)
         val spotText = String.format(Locale.US, "$%,.2f", price)
         val targetText = String.format(Locale.US, "$%,.2f", target)
         val distanceText = String.format(Locale.US, "$%,.2f", kotlin.math.abs(price - target))
