@@ -34,7 +34,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Press RUN BACKTEST to check 500 settled markets.")
+                "Ready. Press RUN BACKTEST to check 1,000 settled markets.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -45,8 +45,9 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "Results will appear here when the scan finishes.\n\n" +
                     "This scanner checks ACTUAL Kalshi YES/NO quote candles and settled outcomes. " +
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
-                    "The test compares 60%, 70%, 80%, and 90% for both sides, all " +
-                    "15-to-0 minute buckets, stays, dips, and retraces.\n\n" +
+                    "The test checks 1,000 BTC markets from 10 AM to 11 PM Eastern. " +
+                    "It covers YES/NO, all 15-to-0 minute bins, 60/70/80/90 hits, " +
+                    "every lower 10%-step level, and recovery sequences (like 80-60-70).\n\n" +
                     "You can turn your screen off while it runs."
                 else report
             }
@@ -94,7 +95,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN BACKTEST (500)") {
+        start = button("RUN BACKTEST (1000)") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
