@@ -88,7 +88,8 @@ object BtcAcmOdds {
             return b.toString()
         }
         companion object {
-            fun decode(raw: String): Model? = try {
+            fun decode(raw: String): Model? {
+              return try {
                 val parts = raw.split(";")
                 val model = Model()
                 if (parts.size != model.train.size+1) return null
@@ -103,7 +104,8 @@ object BtcAcmOdds {
                     model.test[i].wins=fields[3].toInt()
                 }
                 model
-            } catch (_: Exception) { null }
+              } catch (_: Exception) { null }
+            }
         }
     }
     private fun index(minute: Int,side: Int,index: Int): Int =
