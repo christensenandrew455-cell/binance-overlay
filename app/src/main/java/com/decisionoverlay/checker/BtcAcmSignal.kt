@@ -56,8 +56,12 @@ object BtcAcmSignal {
         val direction = if (side == 1) "YES" else if (side == -1) "NO" else "WAIT"
         val minute = if (secondsRemaining.isFinite() && secondsRemaining > 0)
             ceil(secondsRemaining / 60.0).toInt().coerceIn(1, 15) else 0
-        val threshold = if (minute > 0 && acmPct.isFinite() && acmPct > 0)
-            acmPct * minute * MULTIPLIER else Double.NaN
+        // Use the ACTUAL fractional time remaining; do not round UP to
+        // a whole minute. This makes the two limits converge continuously
+        // toward the target throughout each minute, not in 60-second steps.
+        val threshold = if (secondsRemaining.isFinite() && secondsRemaining > 0.0 &&
+            acmPct.isFinite() && acmPct > 0.0)
+            acmPct * (secondsRemaining / 60.0) * MULTIPLIER else Double.NaN
         val gap = if (validPrice) abs((spot - target) / target * 100.0)
             else Double.NaN
         val ask = when(side) { 1 -> yesAsk; -1 -> noAsk; else -> null }
