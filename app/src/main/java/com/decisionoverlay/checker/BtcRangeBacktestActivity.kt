@@ -36,6 +36,15 @@ import kotlin.math.max
 class BtcRangeBacktestActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var chart: BtcChart
+    private lateinit var enableAlerts: Button
+    private lateinit var disableAlerts: Button
+
+    private fun updateAlertButtons() {
+        val enabled = getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
+            .getBoolean(KalshiLiveSignalService.ENABLED, true)
+        enableAlerts.isEnabled = !enabled
+        disableAlerts.isEnabled = enabled
+    }
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()) {}
     private val redraw = object : Runnable {
@@ -57,28 +66,39 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
         screen.addView(chart, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT))
-        val backtest = Button(this).apply {
-            text = "BACKTEST"
-            textSize = 11f
+        val enable = Button(this).apply {
+            text = "ENABLE NOTIFICATIONS"
+            textSize = 10f
             setAllCaps(false)
             setOnClickListener {
-                startActivity(Intent(this@BtcRangeBacktestActivity,
-                    KalshiPatternResultsActivity::class.java))
+                getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
+                    .edit().putBoolean(KalshiLiveSignalService.ENABLED, true).apply()
+                ContextCompat.startForegroundService(this@BtcRangeBacktestActivity,
+                    Intent(this@BtcRangeBacktestActivity,
+                        KalshiLiveSignalService::class.java)
+                        .setAction(KalshiLiveSignalService.START))
+                updateAlertButtons()
             }
         }
-        val alerts = Button(this).apply {
-            text = "ALERTS"
-            textSize = 11f
+        val disable = Button(this).apply {
+            text = "DISABLE NOTIFICATIONS"
+            textSize = 10f
             setAllCaps(false)
             setOnClickListener {
-                startActivity(Intent(this@BtcRangeBacktestActivity,
-                    KalshiLiveAlertActivity::class.java))
+                getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
+                    .edit().putBoolean(KalshiLiveSignalService.ENABLED, false).apply()
+                startService(Intent(this@BtcRangeBacktestActivity,
+                    KalshiLiveSignalService::class.java)
+                    .setAction(KalshiLiveSignalService.STOP))
+                updateAlertButtons()
             }
         }
+        enableAlerts = enable
+        disableAlerts = disable
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(alerts)
-            addView(backtest)
+            addView(enable)
+            addView(disable)
         }
         screen.addView(controls, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -89,17 +109,18 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 rightMargin = (9f * density).toInt()
             })
         setContentView(screen)
+        // Keep the Binance price/chart service independent of alert preference.
         ContextCompat.startForegroundService(this,
             Intent(this, BtcRangeBacktestService::class.java)
                 .setAction(BtcRangeBacktestService.START))
-        // Kalshi quote path alerts are separate from the Binance-based chart.
-        // They start automatically unless stopped in the Alerts screen.
+        // Restore the saved Kalshi notifications preference on launch.
         if (getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
                 .getBoolean(KalshiLiveSignalService.ENABLED, true)) {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiLiveSignalService::class.java)
                     .setAction(KalshiLiveSignalService.START))
         }
+        updateAlertButtons()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this,
                 Manifest.permission.POST_NOTIFICATIONS) !=
@@ -110,6 +131,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        updateAlertButtons()
         handler.removeCallbacks(redraw)
         handler.post(redraw)
     }
