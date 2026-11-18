@@ -284,18 +284,22 @@ object KalshiExpandedReport {
         }
         out.appendLine()
 
-        out.appendLine("6) HIGH-FREQUENCY STRATEGY CANDIDATES, SELECTED ONLY BY OLDER 70%")
-        out.appendLine("Ranking = older frequency/day * older average NET cents per contract.")
-        out.appendLine("Winner side chosen ONLY from older data; newest 30% is shown for comparison.")
+        out.appendLine("6) RANKED TRADABLE TIME RANGES (selected ONLY by older 70%)")
+        out.appendLine("Only first-completion windows 12-9, 8-6 and 5-4 minutes remain.")
+        out.appendLine("Score = older 52-market/day frequency * older net cents per 1-contract trade.")
+        out.appendLine("Winner side chosen ONLY from older data; newest 30% is evaluation, not training.")
+        out.appendLine("These overlapping rules cannot have their daily estimates summed.")
         val oldTotal = recentStart.coerceAtLeast(1)
         val newTotal = (sorted.size - recentStart).coerceAtLeast(1)
-        data class Candidate(val key: Path, val stat: Stats, val side: String,
-                             val olderDailyNet: Double)
-        val ranked = counts.mapNotNull { (key, s) ->
-            if (s.oldN < 35 || s.recentN < 15) null else {
+        data class Candidate(val key: Path, val band: String, val stat: Stats,
+                             val side: String, val olderDailyNet: Double)
+        val ranked = time.mapNotNull { (key, s) ->
+            if (key.second !in listOf("12-9", "8-6", "5-4") ||
+                s.oldN < 20 || s.recentN < 10) null else {
                 val bestYes = s.oldYesNet >= s.oldNoNet
                 val chosen = if (bestYes) s.oldYesNet else s.oldNoNet
-                Candidate(key, s, if (bestYes) "YES" else "NO", 52.0 * chosen / oldTotal)
+                Candidate(key.first, key.second, s,
+                    if (bestYes) "YES" else "NO", 52.0 * chosen / oldTotal)
             }
         }.sortedByDescending { it.olderDailyNet }.take(30)
         for (c in ranked) {
@@ -304,7 +308,7 @@ object KalshiExpandedReport {
             val recentChosen = if (c.side == "YES") s.recentYesNet else s.recentNoNet
             val winsOld = if (c.side == "YES") s.oldYesWins else s.oldN - s.oldYesWins
             val winsNew = if (c.side == "YES") s.recentYesWins else s.recentN - s.recentYesWins
-            out.appendLine(c.key.label() + " BUY " + c.side +
+            out.appendLine(c.key.label() + " @ " + c.band + "m, " + c.side +
                 " | old n=" + s.oldN + "/" + oldTotal + " (" +
                 pct(s.oldN, oldTotal) + "), wins " + pct(winsOld, s.oldN) +
                 " net " + net(oldChosen, s.oldN) +
@@ -313,7 +317,7 @@ object KalshiExpandedReport {
                 " (" + pct(s.recentN, newTotal) + "), wins " +
                 pct(winsNew, s.recentN) + " net " + net(recentChosen, s.recentN))
         }
-        if (ranked.isEmpty()) out.appendLine("No rule has enough examples for ranking.")
+        if (ranked.isEmpty()) out.appendLine("No tradable time range met the sample thresholds.")
         out.appendLine()
         out.appendLine("END REPORT. A positive historical net is NOT a verified tradable edge.")
         out.appendLine("Quotes are sparse one-minute closes, not guaranteed execution prices.")
