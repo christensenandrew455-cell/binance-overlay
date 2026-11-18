@@ -29,6 +29,27 @@ class KalshiLiveSignalRulesTest {
             listOf(q(11, -61.0), q(5, 61.0))).isEmpty())
     }
 
+    @Test fun addsFiveAndFourMinuteWatchOnlyForItsOwnRule() {
+        val five = KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(11, 74.0), q(5, 58.0)))
+        val match = five.firstOrNull { it.rule.path == listOf(70, 60) }
+        assertNotNull(match)
+        assertEquals("DOWN", match!!.rule.side)
+        assertEquals(5, match.left)
+
+        val four = KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(11, 74.0), q(4, 58.0)))
+        assertTrue(four.any { it.rule.path == listOf(70, 60) && it.left == 4 })
+
+        // The original 8-6-minute signals must not silently be
+        // reassigned performance statistics from a different time bucket.
+        assertTrue(five.none { it.rule.path == listOf(40, 60) })
+        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(11, 74.0), q(8, 58.0))).none {
+                it.rule.path == listOf(70, 60)
+            })
+    }
+
     @Test fun emitsDownWatchWhenCurrentChartAboveTarget() {
         val samples = listOf(q(11, -61.0), q(8, 61.0))
         val signals = KalshiLiveSignalRules.matchingSignedSignals(samples)
