@@ -124,6 +124,10 @@ object KalshiCompactReport {
             Key(1, 80, 50, 60), Key(1, 80, 60, 70),
             Key(-1, 80, 50, 60), Key(-1, 80, 60, 70))
         val windowStats = focus.associateWith { Array(4) { Stats() } }
+        // These aggregates span ALL recovered paths, not just the most common ones.
+        // One market may contribute several overlapping path rules.
+        val allRecoveryWindows = sides.associateWith { Array(4) { Stats() } }
+        val recoveryShapes = linkedMapOf<Triple<Int, String, String>, Stats>()
         var validQuotes = 0
 
         for (market in sorted) {
@@ -161,6 +165,16 @@ object KalshiCompactReport {
                                 .add(won, up.ask, first.left, down.left, up.left, isRecent)
                             windowStats[recoveryKey]?.get(band(up.left))?.add(
                                 won, up.ask, first.left, down.left, up.left, isRecent)
+                            allRecoveryWindows.getValue(side)[band(up.left)].add(
+                                won, up.ask, first.left, down.left, up.left, isRecent)
+                            val dropSize = when (high - low) {
+                                10 -> "10"
+                                20 -> "20"
+                                else -> "30+"
+                            }
+                            val reboundSize = if (recovery - low == 10) "10" else "20+"
+                            recoveryShapes.getOrPut(Triple(side, dropSize, reboundSize)) { Stats() }
+                                .add(won, up.ask, first.left, down.left, up.left, isRecent)
                         }
                     }
                 }
@@ -221,7 +235,34 @@ object KalshiCompactReport {
         }
         out.appendLine()
 
-        out.appendLine("6. RESEARCH CANDIDATES: ranked by OLDER 70% mean net; newest 30% shown separately")
+        out.appendLine("6. ALL RECOVERIES BY DROP/REBOUND SIZE (overlapping pattern-events)")
+        for (side in sides) for (drop in listOf("10", "20", "30+"))
+            for (rebound in listOf("10", "20+")) {
+                val key = Triple(side, drop, rebound)
+                val stat = recoveryShapes[key]
+                val name = "${if (side == 1) "YES" else "NO"} drop $drop, rebound $rebound"
+                if (stat == null || stat.n == 0) {
+                    out.appendLine("$name: n=0")
+                } else {
+                    out.appendLine("$name: ${stat.wins}/${stat.n} (${percent(stat.wins,stat.n)}), " +
+                        "ask ${cents(stat.ask,stat.n)}c, net ${cents(stat.net,stat.n,true)}c")
+                }
+            }
+        out.appendLine("These are counts of matched RULES, not unique markets; do not add to infer independent trials.")
+        out.appendLine()
+
+        out.appendLine("7. ALL RECOVERY EVENTS BY TIME LEFT (all path rules, overlapping)")
+        for (side in sides) {
+            val windows = allRecoveryWindows.getValue(side)
+            out.appendLine((if (side == 1) "YES" else "NO") + ": " +
+                windows.indices.joinToString(" | ") { i ->
+                    val stat = windows[i]
+                    "${minuteLabels[i]}m n=${stat.n} win=${percent(stat.wins,stat.n)}"
+                })
+        }
+        out.appendLine()
+
+        out.appendLine("8. RESEARCH CANDIDATES: ranked by OLDER 70% mean net; newest 30% shown separately")
         val candidates = recoveries.entries.filter {
             it.value.oldN >= 30 && it.value.recentN >= 15 &&
                 it.value.oldNet > 0 && it.value.entryMinutes / it.value.n in 4.0..12.0
