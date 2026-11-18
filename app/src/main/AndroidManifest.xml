@@ -20,8 +20,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".BtcAcmLiveActivity" android:exported="false" />
         <activity android:name=".BtcHalfwayTestActivity" android:exported="false" />
         <activity android:name=".BtcFunnelLiveActivity" android:exported="false" />
+        <service android:name=".BtcAcmLiveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
         <service android:name=".BtcAcmProfitService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
