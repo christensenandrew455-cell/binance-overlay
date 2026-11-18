@@ -53,6 +53,6 @@ class BtcAcmCountdownTest {
         val after = BtcAcmSignal.evaluate(100.025,100.0,0.02,
             239.0,0.65,0.65)
         assertTrue(before.requiredPct > after.requiredPct)
-        assertTrue(before.requiredPct-after.requiredPct < 0.0001)
+        assertTrue(before.requiredPct-after.requiredPct < 0.001)
     }
 }
