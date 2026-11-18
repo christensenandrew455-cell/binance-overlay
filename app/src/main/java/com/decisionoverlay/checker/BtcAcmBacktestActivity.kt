@@ -28,6 +28,10 @@ class BtcAcmBacktestActivity : AppCompatActivity() {
     private lateinit var results: TextView
     private lateinit var go: Button
     private lateinit var stop: Button
+    private lateinit var profitGo: Button
+    private lateinit var profitStop: Button
+    private lateinit var profitStatus: TextView
+    private lateinit var profitResults: TextView
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {}
@@ -100,6 +104,54 @@ class BtcAcmBacktestActivity : AppCompatActivity() {
                         .setPrimaryClip(ClipData.newPlainText("BTC ACM four-way test", report))
             }
         })
+        root.addView(text(
+            "NEW — KALSHI PROFIT TEST: 100 historical BTC markets, 60-candle ACM, " +
+            "K from 0 to 2, and all ten-cent entry-price bands. " +
+            "A maximum of one trade per market for each K / price-band strategy; " +
+            "$10 total entry budget including Kalshi's taker fee. " +
+            "Uses Kalshi's actual settlement result and minute quote data. " +
+            "Historical asks are indicative, not guaranteed fills. " +
+            "Background scan continues with the screen off.", 14f
+        ))
+        profitGo = Button(this).apply {
+            text = "RUN 100-MARKET PROFIT + KALSHI FEE TEST"
+            setOnClickListener {
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(
+                        this@BtcAcmBacktestActivity, Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                ContextCompat.startForegroundService(
+                    this@BtcAcmBacktestActivity,
+                    Intent(this@BtcAcmBacktestActivity, BtcAcmProfitService::class.java)
+                        .setAction(BtcAcmProfitService.START)
+                )
+                showSaved()
+            }
+        }
+        profitStop = Button(this).apply {
+            text = "STOP PROFIT TEST"
+            setOnClickListener {
+                startService(Intent(this@BtcAcmBacktestActivity,
+                    BtcAcmProfitService::class.java).setAction(BtcAcmProfitService.STOP))
+            }
+        }
+        root.addView(profitGo)
+        root.addView(profitStop)
+        root.addView(Button(this).apply {
+            text = "COPY ALL KALSHI PROFIT RESULTS"
+            setOnClickListener {
+                val content = getSharedPreferences(BtcAcmProfitService.PREFS, MODE_PRIVATE)
+                    .getString("report", "").orEmpty()
+                if (content.isNotBlank())
+                    (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("Kalshi BTC profit test", content))
+            }
+        })
+        profitStatus = text("Run profit test to compare ACM thresholds and contract prices.", 15f)
+        profitResults = text("", 13f)
+        root.addView(profitStatus)
+        root.addView(profitResults)
         root.addView(Button(this).apply {
             text = "OPEN PREVIOUS FUNNEL BACKTEST"
             setOnClickListener {
@@ -134,5 +186,12 @@ class BtcAcmBacktestActivity : AppCompatActivity() {
         results.text = p.getString("report", "")
         go.isEnabled = phase != "running" && phase != "stopping"
         stop.isEnabled = phase == "running" || phase == "stopping"
+        val profitPrefs = getSharedPreferences(BtcAcmProfitService.PREFS, MODE_PRIVATE)
+        val profitPhase = profitPrefs.getString("phase", "idle")
+        profitStatus.text = profitPrefs.getString("status",
+            "Press RUN 100-MARKET PROFIT TEST to scan Kalshi quotes.")
+        profitResults.text = profitPrefs.getString("report", "")
+        profitGo.isEnabled = profitPhase != "running" && profitPhase != "stopping"
+        profitStop.isEnabled = profitPhase == "running" || profitPhase == "stopping"
     }
 }
