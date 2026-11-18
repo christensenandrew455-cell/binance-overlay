@@ -58,7 +58,8 @@ class BtcAcmLiveService : Service() {
     )
     private data class History(
         val lastMinute: Long, val candles: List<BtcAcmMath.Candle>,
-        val acmPct: Double, val chart: String
+        val acmPct: Double, val chart: String,
+        val allCandles: Map<Long, BtcAcmMath.Candle>
     )
     private var cachedHistory: History? = null
 
@@ -124,12 +125,14 @@ class BtcAcmLiveService : Service() {
 
     private fun save(phase: String, status: String, report: String? = null,
         history: History? = null, target: Double? = null,
+        curve: String? = null,
         upper: Double? = null, lower: Double? = null, spot: Double? = null
     ) {
         val editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString("phase", phase).putString("status", status)
         if (report != null) editor.putString("report", report)
         if (history != null) editor.putString("chart", history.chart)
+        if (curve != null) editor.putString("curve", curve)
         if (target != null) editor.putFloat("target", target.toFloat())
         if (upper != null) editor.putFloat("up", upper.toFloat())
         if (lower != null) editor.putFloat("down", lower.toFloat())
@@ -228,7 +231,7 @@ class BtcAcmLiveService : Service() {
         val end = lastCompletedMinute + MINUTE - 1L
         val data = JSONArray(fetch(
             "https://api.binance.us/api/v3/klines" +
-                "?symbol=BTCUSDT&interval=1m&limit=65&endTime=$end"))
+                "?symbol=BTCUSDT&interval=1m&limit=90&endTime=$end"))
         val map = mutableMapOf<Long, BtcAcmMath.Candle>()
         for (i in 0 until data.length()) {
             val a = data.getJSONArray(i)
@@ -247,7 +250,7 @@ class BtcAcmLiveService : Service() {
         for (c in candles) plot.put(JSONArray().apply {
             put(c.at); put(c.open); put(c.high); put(c.low); put(c.close)
         })
-        return History(lastCompletedMinute, candles, acm, plot.toString())
+        return History(lastCompletedMinute, candles, acm, plot.toString(), map)
             .also { cachedHistory = it }
     }
 
@@ -271,9 +274,19 @@ class BtcAcmLiveService : Service() {
             !canceled.get() && System.currentTimeMillis() < market.closeMs
         if (qualifies) notifyBuy(market, decision)
 
-        val upPct = history.acmPct * decision.minutesBucket * BtcAcmSignal.MULTIPLIER
-        val upper = market.target * (1.0 + upPct / 100.0)
-        val lower = market.target * (1.0 - upPct / 100.0)
+        val bound = BtcAcmCountdown.boundaries(market.target, history.acmPct,
+            (left * 1000.0).toLong())
+        val upper = bound.first
+        val lower = bound.second
+        val curve = JSONArray()
+        for (point in BtcAcmCountdown.series(history.allCandles, market.target,
+                market.closeMs, System.currentTimeMillis(), history.acmPct, spot)) {
+            curve.put(JSONArray().apply {
+                put(point.at); put(point.upper); put(point.lower)
+                if (point.btcPrice == null) put(JSONObject.NULL) else put(point.btcPrice)
+                put(point.projected)
+            })
+        }
         val description = if (decision.buyEligible && !enoughAskSize)
             "WAIT — price qualifies but Kalshi ask size is unavailable or insufficient"
         else if (qualifies) "BUY " + decision.direction +
@@ -286,7 +299,7 @@ class BtcAcmLiveService : Service() {
                 "BTC live $%,.2f | Kalshi TARGET $%,.2f | %s",
                 spot, market.target, decision.direction))
             appendLine(String.format(Locale.US,
-                "Time remaining %.1f seconds (bucket %d minutes)",
+                "Time remaining %.1f seconds (display bucket %d; trigger uses exact seconds)",
                 left, decision.minutesBucket))
             appendLine(String.format(Locale.US,
                 "ACM60 (last 60 COMPLETE 1m high-low ranges): %.5f%%",
@@ -305,7 +318,7 @@ class BtcAcmLiveService : Service() {
                 if (priceSize == null) "UNAVAILABLE" else
                     String.format(Locale.US, "%.2f", priceSize),
                 decision.contracts))
-            appendLine("TESTED BUY RANGE: 60–69¢, same or cheaper than sample model.")
+            appendLine("TESTED BUY RANGE: 60–69¢; Kalshi ask + fee must beat sample win rate.")
             appendLine(String.format(Locale.US,
                 "Past K0.25 / 60–69c: %d wins / %d historical trades = %.1f%%",
                 BtcAcmSignal.HISTORICAL_WINS, BtcAcmSignal.HISTORICAL_ENTRIES,
@@ -334,7 +347,7 @@ class BtcAcmLiveService : Service() {
         save(phase, if (qualifies) "BUY " + decision.direction +
             " test condition met — see notification."
             else "Monitoring BTC/Kalshi: " + description,
-            report, history, market.target, upper, lower, spot)
+            report, history, market.target, curve.toString(), upper, lower, spot)
     }
 
     private fun cents(value: Double?): String =
