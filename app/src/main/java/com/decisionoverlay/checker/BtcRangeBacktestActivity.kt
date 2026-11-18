@@ -336,7 +336,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 val belowColor = if (level == 70) red else Color.LTGRAY
                 label(canvas, "${level}%", percentageCenter,
                     yFor(amount) + dp(4f), aboveColor, 10f)
-                label(canvas, "${level}%", percentageCenter,
+                label(canvas, "-${level}%", percentageCenter,
                     yFor(-amount) + dp(4f), belowColor, 10f)
             }
             label(canvas, "50%", percentageCenter,
