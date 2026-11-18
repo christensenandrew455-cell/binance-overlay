@@ -59,12 +59,26 @@ class KalshiPatternMathTest {
         assertTrue(KalshiPatternMath.analyze(market).reaches.isEmpty())
     }
 
-    @Test fun outputIncludesAllMinutesAndBothSides() {
+    @Test fun reportIsCompactAndKeepsBothSidesAndSampleSizes() {
         val markets = listOf(KalshiPatternMath.Market("A", 900L, true,
             listOf(quote(2, 60.0), quote(1, 70.0))))
         val result = KalshiPatternMath.report(markets)
-        assertTrue(result.contains("YES,60,15,0"))
-        assertTrue(result.contains("NO,90,0,0"))
-        assertTrue(result.contains("NONE validated"))
+        assertTrue(result.contains("=== COMPACT BTC 15-MINUTE KALSHI BACKTEST ==="))
+        assertTrue(result.contains("YES 60: wins 1/1 (100.0%)"))
+        assertTrue(result.contains("NO 90: 0 observed"))
+        assertTrue(result.contains("No recovery path passed"))
+        assertTrue(result.length < 15000)
+    }
+
+    @Test fun reportPreservesOrderedRecoveryStatisticsAndTimeBuckets() {
+        val market = KalshiPatternMath.Market(
+            "R", 900L, true, listOf(
+                KalshiPatternMath.Quote(14, 0.81, 0.83),
+                KalshiPatternMath.Quote(12, 0.59, 0.61),
+                KalshiPatternMath.Quote(9, 0.70, 0.72)))
+        val result = KalshiPatternMath.report(listOf(market))
+        assertTrue(result.contains("YES 80->60->70: 1/1 (100.0%)"))
+        assertTrue(result.contains("avg minutes left high/drop/recovery: 14.0/12.0/9.0"))
+        assertTrue(result.contains("10-6m n=1 win=100.0%"))
     }
 }
