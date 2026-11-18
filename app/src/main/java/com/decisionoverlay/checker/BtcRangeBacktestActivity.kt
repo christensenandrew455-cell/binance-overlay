@@ -24,7 +24,7 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Minimal live view: target in gold, BTC trace in gold, symmetric 71% lines,
+ * Minimal live view: target in gold, BTC trace in gold, symmetric 70% lines,
  * final three minutes boxed in white, a countdown, and numeric percentages.
  * No 60-candle history, buttons, candlesticks, or historical backtest UI.
  */
@@ -107,21 +107,21 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             val now = System.currentTimeMillis()
             val start = now / quarter * quarter
             val remainingMs = (start + quarter - now).coerceIn(0L, quarter)
-            val minutes = remainingMs / minute
-            val seconds = (remainingMs % minute + 999L) / 1000L
             // Ceiling rounding carries a second into the previous minute.
             val displaySeconds = (remainingMs + 999L) / 1000L
             val time = String.format(Locale.US, "%02d:%02d",
                 displaySeconds / 60, displaySeconds % 60)
             val w = width.toFloat()
             val h = height.toFloat()
+            // Keep the actual plotting area square, including on tall phones.
             val left = dp(55f)
-            val right = w - dp(18f)
-            val top = dp(98f)
-            val bottom = h - dp(58f)
+            val side = minOf(w - left - dp(18f), h - dp(124f))
+            if (side <= 0f) return
+            val right = left + side
+            val top = (h - side) / 2f
+            val bottom = top + side
             val mid = (top + bottom) / 2f
-            val half = (bottom - top) / 2f
-            if (right <= left || half <= 0f) return
+            val half = side / 2f
 
             paint.textAlign = Paint.Align.RIGHT
             label(canvas, time, w - dp(18f), dp(47f), Color.WHITE, 26f)
@@ -153,6 +153,27 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 left + (ms - start).toFloat() / quarter * (right - left)
             fun guardY(y: Float) = y.coerceIn(top, bottom)
 
+            // Thin gray guides on both sides: 60, 70, 80 and 90.
+            // These follow the same 60-candle calculation as the main band.
+            fun grayGuide(level: Int, direction: Double): Path {
+                val path = Path()
+                val fraction = (level - 50.0) / 40.0
+                for (i in 0..60) {
+                    val x = left + (right - left) * (i / 60f)
+                    val minutesLeft = 15.0 * (1.0 - i / 60.0)
+                    val y = guardY(yFor(direction * acm * minutesLeft * fraction))
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                return path
+            }
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(1f)
+            paint.color = Color.rgb(115, 121, 130)
+            for (level in intArrayOf(60, 70, 80, 90)) {
+                canvas.drawPath(grayGuide(level, 1.0), paint)
+                canvas.drawPath(grayGuide(level, -1.0), paint)
+            }
+
             // White final-three-minute area: independent boxes above and
             // below the target line, matching both YES and NO cases.
             val boxLeft = xFor(start + 12L * minute)
@@ -167,7 +188,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             // Fixed custom percentage level 71: 21/40 of the remaining
             // distance between the user's 50% target and 90% ceiling.
             // ACM60 is hidden; these lines move toward target as time runs out.
-            val fraction = (71.0 - 50.0) / 40.0
+            val fraction = (70.0 - 50.0) / 40.0
             val up = Path()
             val down = Path()
             for (i in 0..60) {
@@ -194,15 +215,16 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             line(canvas, left, mid, right, mid, gold, 1.8f)
 
             paint.textAlign = Paint.Align.LEFT
-            label(canvas, "90%", dp(4f), yFor(acm * 15.0) + dp(4f),
-                Color.LTGRAY, 11f)
-            label(canvas, "71%", dp(4f), yFor(acm * 15.0 * fraction)
-                + dp(4f), green, 11f)
-            label(canvas, "50%", dp(4f), mid + dp(4f), gold, 11f)
-            label(canvas, "71%", dp(4f), yFor(-acm * 15.0 * fraction)
-                + dp(4f), red, 11f)
-            label(canvas, "90%", dp(4f), yFor(-acm * 15.0) + dp(4f),
-                Color.LTGRAY, 11f)
+            for (level in intArrayOf(90, 80, 70, 60)) {
+                val amount = acm * 15.0 * (level - 50.0) / 40.0
+                val aboveColor = if (level == 70) green else Color.LTGRAY
+                val belowColor = if (level == 70) red else Color.LTGRAY
+                label(canvas, "${level}%", dp(3f), yFor(amount) + dp(4f),
+                    aboveColor, 10f)
+                label(canvas, "${level}%", dp(3f), yFor(-amount) + dp(4f),
+                    belowColor, 10f)
+            }
+            label(canvas, "50%", dp(3f), mid + dp(4f), gold, 10f)
 
             // Plot only the current 15-minute section, as a smooth line.
             if (history != null && history.length() > 0) {
