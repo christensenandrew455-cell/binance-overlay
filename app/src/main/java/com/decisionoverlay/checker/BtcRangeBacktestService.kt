@@ -25,7 +25,7 @@ import kotlin.math.abs
 /**
  * Live BTCUSDT monitor. Only a single 15-minute section is ever shown.
  * Binance.US klines supply the most recent 60 *completed* one-minute ranges
- * (hidden) and the current section's price. 71% is the user's custom
+ * (hidden) and the current section's price. 70% is the user's custom
  * 50%-90% distance scale, not an empirically calibrated probability.
  */
 class BtcRangeBacktestService : Service() {
@@ -35,7 +35,7 @@ class BtcRangeBacktestService : Service() {
         const val STOP = "btc.chart.STOP"
         const val KEY_SNAPSHOT = "snapshot"
         private const val CHANNEL_RUNNING = "btc_live_running_v2"
-        private const val CHANNEL_ALERT = "btc_live_alerts_v2"
+        private const val CHANNEL_ALERT = "btc_live_alerts_v3"
         private const val FOREGROUND_ID = 7801
         private const val THREE_ID = 7802
         private const val NEAR_UP_ID = 7803
@@ -44,8 +44,8 @@ class BtcRangeBacktestService : Service() {
         private const val HIT_DOWN_ID = 7806
         private const val MINUTE = 60_000L
         private const val QUARTER = 15L * MINUTE
-        private const val THRESHOLD = 71.0
-        private const val APPROACH = 68.0
+        private const val THRESHOLD = 70.0
+        private const val APPROACH = 67.0
     }
 
     private data class Dot(val at: Long, val price: Double)
@@ -66,7 +66,7 @@ class BtcRangeBacktestService : Service() {
         nm.createNotificationChannel(NotificationChannel(
             CHANNEL_RUNNING, "BTC chart running", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(NotificationChannel(
-            CHANNEL_ALERT, "BTC 71% alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+            CHANNEL_ALERT, "BTC 70% alerts", NotificationManager.IMPORTANCE_HIGH).apply {
             enableVibration(true)
         })
     }
@@ -205,16 +205,16 @@ class BtcRangeBacktestService : Service() {
         val hour = Instant.ofEpochMilli(receivedAt).atZone(ny).hour
         if (hour !in 10..22 || remaining !in 1..180_000L) return
         once("three", marketStart, THREE_ID, "BTC: 3 minutes left",
-            "Watch for 71% on the BTC chart")
+            "Watch for 70% on the BTC chart")
         val up = side == "UP"
         if (modeledPct >= THRESHOLD) {
             once(if (up) "hit_up" else "hit_down", marketStart,
                 if (up) HIT_UP_ID else HIT_DOWN_ID,
-                "BTC ${side}: 71% reached", "Open Kalshi to review the market")
+                "BTC ${side}: 70% reached", "Open Kalshi to review the market")
         } else if (modeledPct >= APPROACH) {
             once(if (up) "near_up" else "near_down", marketStart,
                 if (up) NEAR_UP_ID else NEAR_DOWN_ID,
-                "BTC ${side}: approaching 71%", "3-minute entry zone")
+                "BTC ${side}: approaching 70%", "3-minute entry zone")
         }
     }
 
