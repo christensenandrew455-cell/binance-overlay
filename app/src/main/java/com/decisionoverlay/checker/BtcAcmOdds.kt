@@ -41,8 +41,8 @@ object BtcAcmOdds {
     }
     data class Sample(val minute: Int,val side: Int,val ratio: Double,val won: Boolean)
     class Model {
-        private val train = Array(8*2*RATIOS.size) { Counter() }
-        private val test = Array(8*2*RATIOS.size) { Counter() }
+        private val train = Array(14*2*RATIOS.size) { Counter() }
+        private val test = Array(14*2*RATIOS.size) { Counter() }
         var trainMarkets: Int = 0; private set
         var testMarkets: Int = 0; private set
         fun addMarket(samples: List<Sample>, holdout: Boolean) {
@@ -50,7 +50,7 @@ object BtcAcmOdds {
             val arr = if (holdout) test else train
             // Each elapsed-minute snapshot occurs at most once per market.
             for (s in samples.distinctBy { it.minute }) {
-                if (s.minute !in 1..8 || s.side !in listOf(1,-1) ||
+                if (s.minute !in 1..14 || s.side !in listOf(1,-1) ||
                     !s.ratio.isFinite() || s.ratio < 0.0) continue
                 for (i in RATIOS.indices) {
                     if (s.ratio + 1e-10 >= RATIOS[i])
@@ -59,7 +59,7 @@ object BtcAcmOdds {
             }
         }
         fun evidence(minute: Int,side: Int,ratioIndex: Int): Evidence? {
-            if (minute !in 1..8 || side !in listOf(1,-1) ||
+            if (minute !in 1..14 || side !in listOf(1,-1) ||
                 ratioIndex !in RATIOS.indices) return null
             val ix = index(minute,side,ratioIndex)
             return Evidence(minute,side,RATIOS[ratioIndex],train[ix],test[ix])
