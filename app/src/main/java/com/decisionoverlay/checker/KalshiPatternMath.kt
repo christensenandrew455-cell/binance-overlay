@@ -189,6 +189,8 @@ object KalshiPatternMath {
         for (c in promising) b.appendLine("${c.title}: holdout ${c.holdoutWins}/${c.holdoutN} (${pct(c.holdoutWins, c.holdoutN)}), lower Wilson 95% ${fmt(100*wilsonLower(c.holdoutWins, c.holdoutN))}%, mean net ${net(c.net * c.holdoutN, c.holdoutN)}")
         b.appendLine("Many patterns and time buckets are checked. Multiple-testing bias and changing markets can create false discoveries.")
         b.appendLine("Use this to formulate a hypothesis; verify on a later untouched sample before risking money.")
-        return b.appendLine().append(KalshiPathExplorer.report(sorted)).toString()
+        return KalshiPathExplorer.report(sorted) +
+            "\n=== ADDITIONAL FIRST-REACH AND STAY/DIP DIAGNOSTICS ===\n" +
+            b.toString()
     }
 }
