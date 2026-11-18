@@ -28,6 +28,39 @@ object BtcChartProxyMath {
         return if (price >= target) strength else 100.0 - strength
     }
 
+    /** Signed chart-scale level: above target +60..+90,
+     * below target -60..-90, and exact target zero.
+     * This is a chart index, NOT Bitcoin's percent return.
+     */
+    fun signedStrength(price: Double, target: Double, acmPct: Double,
+        minutesLeft: Double): Double {
+        val magnitude = strength(price, target, acmPct, minutesLeft)
+        if (!magnitude.isFinite()) return Double.NaN
+        return when {
+            price > target -> magnitude
+            price < target -> -magnitude
+            else -> 0.0
+        }
+    }
+
+    /** Translate legacy market-quote 20/40/60 thresholds for display ONLY. */
+    fun signedFromProxy(yesProxy: Double): Double =
+        when {
+            !yesProxy.isFinite() -> Double.NaN
+            yesProxy > 50.0 -> yesProxy
+            yesProxy < 50.0 -> yesProxy - 100.0
+            else -> 0.0
+        }
+
+    fun signedPathLevel(oldLevel: Int): String {
+        val signed = signedFromProxy(oldLevel.toDouble()).toInt()
+        return when {
+            signed > 0 -> "+${signed}%"
+            signed < 0 -> "${signed}%"
+            else -> "TARGET"
+        }
+    }
+
     /**
      * Recompute the percent displayed by the chart at each finished minute.
      * Use only its then-available 60 completed candles, with no future data.
