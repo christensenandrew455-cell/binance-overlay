@@ -29,7 +29,8 @@ object KalshiPatternMath {
         val yesWon: Boolean, val quotes: List<Quote>)
 
     data class Reach(val ticker: String, val side: Int, val level: Int,
-        val left: Int, val won: Boolean, val fellBelow: Boolean?)
+        val left: Int, val won: Boolean, val fellBelow: Boolean?,
+        val touchCount: Int)
 
     data class Pullback(val ticker: String, val side: Int, val level: Int,
         val retrace: Int, val firstLeft: Int, val left: Int,
@@ -65,7 +66,15 @@ object KalshiPatternMath {
                     complete -> false
                     else -> null
                 }
-                reaches.add(Reach(market.ticker, side, level, first.left, won, fell))
+                // One touch at first observation >= line, then an additional touch
+                // each time subsequent minute closes cross up from below.
+                // These are NOT independent markets or independent outcomes.
+                val touchCount = quotes.indices.count { idx ->
+                    quotes[idx].strength(side) >= level - 1e-8 &&
+                        (idx == 0 || quotes[idx - 1].strength(side) < level - 1e-8)
+                }
+                reaches.add(Reach(market.ticker, side, level, first.left, won, fell,
+                    touchCount))
                 for (retrace in (level - 10) downTo 10 step 10) {
                     val at = future.firstOrNull {
                         it.strength(side) <= retrace + 1e-8
@@ -112,7 +121,8 @@ object KalshiPatternMath {
         b.appendLine("YES=Kalshi contract YES; NO=Kalshi contract NO. YES/NO winner from settlement.")
         b.appendLine("Signal at >=60/70/80/90 uses YES quote midpoint for YES, complementary midpoint for NO.")
         b.appendLine("Only one-minute CLOSING quotes are observed; shorter spikes and exact crossing order are unknown.")
-        b.appendLine("One first observed reach per side/line/market. Dip means a later observed CLOSE below the same line.")
+        b.appendLine("One FIRST reach per side/line/market; repeat crossings counted separately, NOT as independent wins.")
+        b.appendLine("Dip means a later observed CLOSE below the same line.")
         b.appendLine("STAY requires every remaining minute to have a valid quote; otherwise UNKNOWN unless a dip was seen.")
         b.appendLine("First three minutes (15..13 left) are research only, NOT suggested trade entries.")
         b.appendLine("Left=minutes to expiry after the observation; 0=settlement, no new entry.")
@@ -129,14 +139,14 @@ object KalshiPatternMath {
             val dip = items.filter { it.fellBelow == true }
             val stay = items.filter { it.fellBelow == false }
             val unknown = items.count { it.fellBelow == null }
-            b.appendLine("${if (side == 1) "YES" else "NO"} $level% reached=${items.size}, final wins=${items.count { it.won }}/${items.size} (${pct(items.count { it.won }, items.size)}) | stayed=${stay.count { it.won }}/${stay.size} (${pct(stay.count { it.won }, stay.size)}) | dipped=${dip.count { it.won }}/${dip.size} (${pct(dip.count { it.won }, dip.size)}) | unknown=$unknown")
+            b.appendLine("${if (side == 1) "YES" else "NO"} $level% reached=${items.size}, repeat crossings total=${items.sumOf { it.touchCount }}, final wins=${items.count { it.won }}/${items.size} (${pct(items.count { it.won }, items.size)}) | stayed=${stay.count { it.won }}/${stay.size} (${pct(stay.count { it.won }, stay.size)}) | dipped=${dip.count { it.won }}/${dip.size} (${pct(dip.count { it.won }, dip.size)}) | unknown=$unknown")
         }
         b.appendLine()
         b.appendLine("2) FIRST REACH BY MINUTE LEFT, BOTH SIDES, ALL LEVELS")
-        b.appendLine("side,line,left,markets,wins,win%,dips,stays,unknown")
+        b.appendLine("side,line,left,markets,wins,win%,dips,stays,unknown,repeat_crossings")
         for (side in listOf(1, -1)) for (level in LEVELS) for (left in 15 downTo 0) {
             val x = reaches.filter { it.side == side && it.level == level && it.left == left }
-            b.appendLine("${if (side == 1) "YES" else "NO"},$level,$left,${x.size},${x.count { it.won }},${pct(x.count { it.won }, x.size)},${x.count { it.fellBelow == true }},${x.count { it.fellBelow == false }},${x.count { it.fellBelow == null }}")
+            b.appendLine("${if (side == 1) "YES" else "NO"},$level,$left,${x.size},${x.count { it.won }},${pct(x.count { it.won }, x.size)},${x.count { it.fellBelow == true }},${x.count { it.fellBelow == false }},${x.count { it.fellBelow == null }},${x.sumOf { it.touchCount }}")
         }
         b.appendLine()
         b.appendLine("3) PULLBACKS: FIRST REACHED LINE, THEN RETRACED TO A LOWER LEVEL")
