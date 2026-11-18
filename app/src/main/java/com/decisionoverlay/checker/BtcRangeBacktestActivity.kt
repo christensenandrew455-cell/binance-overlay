@@ -123,8 +123,39 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             val mid = (top + bottom) / 2f
             val half = side / 2f
 
-            paint.textAlign = Paint.Align.RIGHT
-            label(canvas, time, w - dp(18f), dp(47f), Color.WHITE, 26f)
+            // Large countdown centered just above the square plot.
+            paint.textAlign = Paint.Align.CENTER
+            label(canvas, time, (left + right) / 2f,
+                top - dp(18f), Color.WHITE, 38f)
+            paint.textAlign = Paint.Align.LEFT
+
+            // Single white border enclosing the entire graph.
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(1.3f)
+            paint.color = Color.WHITE
+            canvas.drawRoundRect(RectF(left, top, right, bottom),
+                dp(3f), dp(3f), paint)
+
+            // Three minutes REMAINING = 12 minutes elapsed.
+            val threeMinuteX = left + (right - left) * (12f / 15f)
+            line(canvas, threeMinuteX, top, threeMinuteX, bottom,
+                Color.LTGRAY, 1.4f)
+
+            // Bottom timeline: all minute ticks, compact labels every 3.
+            val axisY = bottom + dp(9f)
+            line(canvas, left, axisY, right, axisY, Color.LTGRAY, 0.9f)
+            for (elapsed in 0..15) {
+                val x = left + (right - left) * (elapsed / 15f)
+                val major = elapsed % 3 == 0
+                line(canvas, x, axisY, x,
+                    axisY + dp(if (major) 8f else 4f),
+                    Color.LTGRAY, 0.9f)
+                if (major) {
+                    paint.textAlign = Paint.Align.CENTER
+                    label(canvas, (15 - elapsed).toString(),
+                        x, axisY + dp(25f), Color.LTGRAY, 10f)
+                }
+            }
             paint.textAlign = Paint.Align.LEFT
 
             val snapshot = try {
@@ -174,18 +205,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 canvas.drawPath(grayGuide(level, -1.0), paint)
             }
 
-            // White final-three-minute area: independent boxes above and
-            // below the target line, matching both YES and NO cases.
-            val boxLeft = xFor(start + 12L * minute)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(1.3f)
-            paint.color = Color.WHITE
-            canvas.drawRoundRect(RectF(boxLeft, top, right, mid),
-                dp(3f), dp(3f), paint)
-            canvas.drawRoundRect(RectF(boxLeft, mid, right, bottom),
-                dp(3f), dp(3f), paint)
-
-            // Fixed custom percentage level 71: 21/40 of the remaining
+            // Fixed custom percentage level 70: 20/40 of the remaining
             // distance between the user's 50% target and 90% ceiling.
             // ACM60 is hidden; these lines move toward target as time runs out.
             val fraction = (70.0 - 50.0) / 40.0
