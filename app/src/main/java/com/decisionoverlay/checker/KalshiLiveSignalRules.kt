@@ -1,11 +1,11 @@
 package com.decisionoverlay.checker
 
-import kotlin.math.sqrt
 
 /**
- * Live screening of paths selected from the user's 1,000-market historical report.
- * The older/newer numbers are exploratory, not calibrated probabilities or proof.
- * Levels always refer to the REAL Kalshi YES bid/ask midpoint, never Binance.
+ * Research path screening against the BTC chart's custom signed percentage.
+ * No live Kalshi market data is available or requested.
+ * Historical contract-based outcomes are NOT transferable probabilities
+ * for these approximate chart levels. Notifications are research watch alerts.
  */
 object KalshiLiveSignalRules {
     data class Rule(
@@ -36,10 +36,7 @@ object KalshiLiveSignalRules {
         Rule(listOf(60, 20), true, 6, 8, 37, 22, .227, 10.5, 5.9)
     )
 
-    data class Signal(
-        val rule: Rule, val left: Int, val liveAsk: Double, val fee: Double,
-        val estimatedEdge: Double
-    )
+    data class Signal(val rule: Rule, val left: Int, val chartYesProxy: Double)
 
     /** Mirrors the report's earliest multi-minute threshold sequence exactly. */
     fun firstCompletion(path: List<Int>, sortedOldestFirst: List<KalshiPatternMath.Quote>):
@@ -68,46 +65,30 @@ object KalshiLiveSignalRules {
     }
 
     /**
-     * Evaluate only after the latest one-minute candle finishes.
-     * A fresh live ask (not a candle ask) is the actual price comparison.
-     * Require a 3 percentage-point edge ABOVE the modeled one-contract fee.
+     * Match a completed chart minute to the six previously researched paths.
+     * Each input quote is the chart's signed 50-90% strength proxy, NOT a
+     * Kalshi bid/ask or an executable price. No odds/edge claims are made.
+     *
+     * Only the first completion in 8-6 minutes is eligible. Overlapping
+     * paths are ranked by sample-weighted newer historical net as a
+     * heuristic, never as a valid predicted return for chart prices.
      */
-    fun matchingSignals(
-        history: List<KalshiPatternMath.Quote>,
-        liveYesBid: Double,
-        liveYesAsk: Double
+    fun matchingProxySignals(
+        history: List<KalshiPatternMath.Quote>
     ): List<Signal> {
-        if (!liveYesBid.isFinite() || !liveYesAsk.isFinite() ||
-            liveYesBid < .01 || liveYesAsk > .99 ||
-            liveYesBid > liveYesAsk || liveYesAsk - liveYesBid > .08)
-            return emptyList()
         val candles = history.filter { it.valid() }
             .sortedByDescending { it.left }.distinctBy { it.left }
         if (candles.size < 2) return emptyList()
         val newest = candles.last()
-        val mid = 50 * (liveYesBid + liveYesAsk)
-        // The minute candle's threshold still needs to hold in the live quote.
-        if (kotlin.math.abs(newest.strength(1) - mid) > 10.0) return emptyList()
-        val signals = ArrayList<Signal>()
-        for (rule in rules) {
-            val completion = firstCompletion(rule.path, candles) ?: continue
+        val proxy = newest.strength(1)
+        return rules.mapNotNull { rule ->
+            val completion = firstCompletion(rule.path, candles)
+                ?: return@mapNotNull null
             if (completion.left != newest.left ||
-                completion.left !in rule.earliestLeft..rule.latestLeft) continue
-            val lastUp = rule.path.last() > rule.path[rule.path.lastIndex - 1]
-            val target = rule.path.last().toDouble()
-            if (lastUp && mid < target || !lastUp && mid > target) continue
-
-            val ask = if (rule.buyYes) liveYesAsk else 1.0 - liveYesBid
-            if (ask !in 0.01..0.99) continue
-            val fee = KalshiPatternMath.approximateFee(ask)
-            val edge = rule.newestWinRate - ask - fee
-            if (edge < .03) continue
-            signals.add(Signal(rule, completion.left, ask, fee, edge))
-        }
-        // Prefer high live margin and penalize noisy small historical samples.
-        return signals.sortedByDescending {
-            val p = it.rule.newestWinRate
-            it.estimatedEdge - .5 * sqrt(p * (1 - p) / it.rule.newestN)
+                completion.left !in rule.earliestLeft..rule.latestLeft) null
+            else Signal(rule, completion.left, proxy)
+        }.sortedByDescending {
+            it.rule.newestN.toDouble() * it.rule.newestNetCents
         }
     }
 }
