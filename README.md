@@ -22,7 +22,22 @@ GitHub Actions runs tests and builds an APK on push to main.
 
 ## Historical Kalshi Pattern Backtest (new)
 
-Tap **BACKTEST** on the BTC chart, then **RUN BACKTEST (500)**.
+Tap **BACKTEST** on the BTC chart, then **RUN BACKTEST (1000)**.
+The scanner looks back through **up to 1,000 usable settled markets** whose
+15-minute session START falls between **10:00 AM and 11:00 PM Eastern** (10:00
+through 22:45 starts; DST handled). It may examine up to 1,800 candidates to
+replace missing/invalid quote histories.
+
+The report includes both YES and NO, every minute-left bucket **15 through 0**,
+first hits of **60/70/80/90**, subsequent observed pullbacks to lower 10%-step
+levels, and three-stage paths such as **80 -> 60 -> 70**. For each path it
+reports market count, settlement wins, empirical win rate, observed entry
+ask, approximate taker fee, estimated net return, and the newest-30% subset.
+Minute-pair and minute-triple tables preserve when each event first happened.
+It also includes every current midpoint 10%-bin for each minute. 0 minutes
+is settlement, not an executable entry. Copy/share includes ALL tables.
+Historical paths indicate conditional outcomes, not guaranteed profitable
+fills or probability estimates.
 The scan runs in its own foreground service, even with the screen off.
 **COPY RESULTS** and **SHARE REPORT** include the complete raw tables.
 
@@ -32,12 +47,8 @@ Unlike the chart's custom synthetic percentage lines, the scanner queries
 archived market/candlestick APIs and does not need a Kalshi account or API key.
 It never simulates missing prices or calls synthetic lines "Kalshi odds".
 
-It analyzes each side's first observed attainment of 60%, 70%, 80%, and 90%,
-then whether observed minute-close quotes stayed at/above or fell below that
-line by expiration. Unknown quote gaps are counted separately. It also records
-first pullbacks (e.g. 70 -> 60 and 70 -> 50), entry asks, final outcomes,
-minute-left bins from 15 to 0, tentative one-contract net returns after an
-approximate general Kalshi taker fee, and a newest-30% chronological holdout.
+It records original first reaches and observed dips, plus the detailed path
+and minute-matrix analysis described above.
 Low sample sizes and results not validated on unseen data are identified.
 
 **Limitations:** Each recorded point is a 1-minute closing quote, not the
