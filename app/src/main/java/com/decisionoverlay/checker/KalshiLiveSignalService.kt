@@ -183,13 +183,14 @@ class KalshiLiveSignalService : Service() {
         val best = matched.first()
         if (!working.get() || !prefs.getBoolean(ENABLED, true)) return
         val rule = best.rule
-        val title = "BTC CHART WATCH: " + rule.side + " " + rule.name
-        val detail = best.left + "m left | chart YES proxy " +
-            String.format(Locale.US, "%.0f", best.chartYesProxy) +
-            "% | earlier Kalshi report " +
+        val title = "BTC " + rule.side + " WATCH: " + rule.name
+        val signedLevel = String.format(Locale.US,
+            "%+.0f", best.signedChartLevel) + "%"
+        val detail = best.left + "m left | chart " + signedLevel +
+            " | historic " + rule.side + " won " +
             String.format(Locale.US, "%.1f", rule.newestWinRate * 100.0) +
-            "% " + rule.side + " wins (" + rule.newestN +
-            " examples). Kalshi price NOT checked; confirm ask and fees."
+            "% (" + rule.newestN + " samples) on Kalshi quotes." +
+            " Chart scale is NOT market odds; verify contract price and fees."
         prefs.edit().putLong("sent_section", start)
             .putString(LAST_ALERT, title + "\n" + detail)
             .putString(STATUS, "Last watch: " + title).apply()
@@ -201,7 +202,7 @@ class KalshiLiveSignalService : Service() {
             .setContentTitle(title)
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail +
-                "\nChart percentages are not actual Kalshi odds; research only."))
+                "\n+/- chart strength is NOT BTC percentage change or actual Kalshi odds."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setContentIntent(viewIntent())
