@@ -15,6 +15,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -32,7 +33,8 @@ class KalshiPatternBacktestService : Service() {
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://external-api.kalshi.com/trade-api/v2"
         private const val SERIES = "KXBTC15M"
-        private const val TARGET = 500
+        private const val TARGET = 1000
+        private const val CANDIDATE_TARGET = 1800
         private const val CHANNEL = "kalshi_pattern_backtest"
         private const val NOTIFICATION_ID = 7877
     }
@@ -128,8 +130,8 @@ class KalshiPatternBacktestService : Service() {
         val result = ArrayList<Listing>()
         var cursor = ""
         // Paginate if necessary, but never loop indefinitely.
-        repeat(5) {
-            if (!active.get() || result.size >= TARGET) return result
+        repeat(12) {
+            if (!active.get() || result.size >= CANDIDATE_TARGET) return result
             val base = "$BASE/$endpoint?series_ticker=$SERIES&limit=1000"
             val url = buildString {
                 append(base)
@@ -149,6 +151,11 @@ class KalshiPatternBacktestService : Service() {
                     Instant.parse(market.optString("close_time")).epochSecond
                 } catch (_: Exception) { continue }
                 if (closeTs < 900) continue
+                // Include 10:00 AM through 10:45 PM market starts, in Eastern time.
+                // DST is handled by the America/New_York IANA time zone.
+                val localHour = Instant.ofEpochSecond(closeTs - 900L)
+                    .atZone(ZoneId.of("America/New_York")).hour
+                if (localHour !in 10..22) continue
                 result.add(Listing(ticker, closeTs, resultString == "yes", archived))
             }
             val next = json.optString("cursor")
@@ -192,7 +199,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan() {
-        status("Finding settled BTC 15-minute markets...")
+        status("Finding 1,000 settled BTC markets (10 AM-11 PM ET)...")
         val candidates = LinkedHashMap<String, Listing>()
         var discoveryFailure = ""
         try {
@@ -200,7 +207,7 @@ class KalshiPatternBacktestService : Service() {
         } catch (e: Exception) {
             discoveryFailure = e.message ?: "Recent market listing unavailable"
         }
-        if (candidates.size < TARGET && active.get()) {
+        if (candidates.size < CANDIDATE_TARGET && active.get()) {
             status("Checking the Kalshi historical archive...")
             try {
                 for (m in listMarkets(true)) candidates.putIfAbsent(m.ticker, m)
@@ -209,14 +216,14 @@ class KalshiPatternBacktestService : Service() {
                     e.message ?: "Historical market listing unavailable"
             }
         }
-        val chosen = candidates.values.sortedByDescending { it.closeTs }.take(TARGET)
+        val chosen = candidates.values.sortedByDescending { it.closeTs }.take(CANDIDATE_TARGET)
         if (chosen.isEmpty()) error("No settled $SERIES markets returned. $discoveryFailure")
         val observed = ArrayList<KalshiPatternMath.Market>()
         var skipped = 0
         var errors = 0
         var firstError = ""
         for ((index, item) in chosen.withIndex()) {
-            if (!active.get()) break
+            if (!active.get() || observed.size >= TARGET) break
             try {
                 val market = load(item)
                 if (market != null) observed.add(market) else skipped++
