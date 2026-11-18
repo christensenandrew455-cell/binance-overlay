@@ -339,11 +339,16 @@ class BtcAcmProfitService : Service() {
         appendLine("K | PRICE | TRADES | WIN% | NET $ | ROI% | AVG MIN LEFT")
         for (k in ks) for (b in 0..9) {
             val s = stats.getValue(k to b)
-            if (s.trades == 0) continue
-            appendLine(String.format(Locale.US,
-                "%.2f | %s | %d | %s | %s | %s | %.1f",
-                k,priceLabel(b),s.trades,pct(s.winRate()),cash(s.pnl),
-                pct(s.roi()),s.leftSum.toDouble()/s.trades))
+            if (s.trades == 0) {
+                appendLine(String.format(Locale.US,
+                    "%.2f | %s | 0 | N/A | +0.00 | N/A | N/A",
+                    k,priceLabel(b)))
+            } else {
+                appendLine(String.format(Locale.US,
+                    "%.2f | %s | %d | %s | %s | %s | %.1f",
+                    k,priceLabel(b),s.trades,pct(s.winRate()),cash(s.pnl),
+                    pct(s.roi()),s.leftSum.toDouble()/s.trades))
+            }
         }
         appendLine()
         appendLine("=== BEST SAMPLE NET PROFIT: MINIMUM 20 ACTUAL TRIGGERS ===")
