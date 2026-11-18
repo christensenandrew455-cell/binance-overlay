@@ -222,6 +222,37 @@ class BtcAcmLiveService : Service() {
             ?: error("No active BTC15M with Kalshi target during 10 AM–11 PM ET")
     }
 
+    /** Derive ask-side depth from the OPPOSITE bids in Kalshi's order book.
+     * YES ask = 1 - best NO bid; NO ask = 1 - best YES bid.
+     * Only accept depth at a price consistent with the market quote.
+     * The public order-book endpoint can require authorization; if missing,
+     * return null and do NOT assert that the full $10 order is executable.
+     */
+    private fun orderBookAskSize(ticker: String, side: String, askPrice: Double?): Double? {
+        if (askPrice == null || side !in listOf("YES", "NO")) return null
+        val book = JSONObject(fetch(
+            "https://external-api.kalshi.com/trade-api/v2/markets/" +
+                ticker + "/orderbook"))
+        val levels = book.optJSONObject("orderbook_fp") ?: return null
+        val name = if (side == "YES") "no_dollars" else "yes_dollars"
+        val bids = levels.optJSONArray(name) ?: return null
+        var best = -1.0
+        var bestSize: Double? = null
+        for (i in 0 until bids.length()) {
+            val level = bids.optJSONArray(i) ?: continue
+            if (level.length() < 2) continue
+            val bid = level.optString(0).toDoubleOrNull() ?: continue
+            val quantity = level.optString(1).toDoubleOrNull() ?: continue
+            if (bid in 0.01..0.99 && quantity >= 0.0 && bid > best) {
+                best = bid
+                bestSize = quantity
+            }
+        }
+        if (best < 0.0 || kotlin.math.abs(1.0 - best - askPrice) > 0.0051)
+            return null
+        return bestSize
+    }
+
     private fun history(now: Long): History {
         // Current 1m candle is still open, and must NOT be used for ACM.
         val lastCompletedMinute = now / MINUTE * MINUTE - MINUTE
@@ -265,8 +296,12 @@ class BtcAcmLiveService : Service() {
         val left = (market.closeMs - System.currentTimeMillis()) / 1000.0
         val decision = BtcAcmSignal.evaluate(spot, market.target,
             history.acmPct, left, market.yesAsk, market.noAsk)
-        val priceSize = if (decision.direction == "YES")
+        val quotedSize = if (decision.direction == "YES")
             market.yesAskSize else market.noAskSize
+        val priceSize = if (quotedSize != null || !decision.buyEligible) quotedSize
+            else runCatching {
+                orderBookAskSize(market.ticker, decision.direction, decision.ask)
+            }.getOrNull()
         val enoughAskSize = priceSize != null &&
             decision.contracts > 0 && priceSize + 1e-8 >= decision.contracts
         // Actual top of book must have the quoted number of contracts for $10.
