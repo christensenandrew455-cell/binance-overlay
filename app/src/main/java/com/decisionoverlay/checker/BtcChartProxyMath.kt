@@ -3,14 +3,13 @@ package com.decisionoverlay.checker
 import kotlin.math.abs
 
 /**
- * Recreates the chart's custom distance-to-target 50–90% scale for any
- * completed minute. It is NOT a Kalshi market probability or a contract quote.
- *
- * The chart draws the same 50–90% scale on both sides of the target.
- * To screen historical YES-style paths we express below-target values as
- * 100 - chartStrength (10–50) and above-target as chartStrength (50–90).
+ * Signed values in the live BTC chart's CUSTOM distance-to-target scale.
+ * A positive level is above target; a negative level is below target.
+ * +/-60..90 is an index, NOT actual BTC returns or Kalshi contract odds.
  */
 object BtcChartProxyMath {
+    data class Sample(val left: Int, val signedLevel: Double)
+
     fun strength(price: Double, target: Double, acmPct: Double,
         minutesLeft: Double): Double {
         if (!price.isFinite() || !target.isFinite() || target <= 0.0 ||
@@ -21,17 +20,6 @@ object BtcChartProxyMath {
             .coerceIn(50.0, 90.0)
     }
 
-    fun yesProxy(price: Double, target: Double, acmPct: Double,
-        minutesLeft: Double): Double {
-        val strength = strength(price, target, acmPct, minutesLeft)
-        if (!strength.isFinite()) return Double.NaN
-        return if (price >= target) strength else 100.0 - strength
-    }
-
-    /** Signed chart-scale level: above target +60..+90,
-     * below target -60..-90, and exact target zero.
-     * This is a chart index, NOT Bitcoin's percent return.
-     */
     fun signedStrength(price: Double, target: Double, acmPct: Double,
         minutesLeft: Double): Double {
         val magnitude = strength(price, target, acmPct, minutesLeft)
@@ -43,46 +31,50 @@ object BtcChartProxyMath {
         }
     }
 
-    /** Translate legacy market-quote 20/40/60 thresholds for display ONLY. */
-    fun signedFromProxy(yesProxy: Double): Double =
-        when {
-            !yesProxy.isFinite() -> Double.NaN
-            yesProxy > 50.0 -> yesProxy
-            yesProxy < 50.0 -> yesProxy - 100.0
-            else -> 0.0
-        }
+    /**
+     * Old report thresholds were Kalshi YES quote levels. These are now
+     * translated to signed chart thresholds only as an approximation:
+     * 20 => -80, 40 => -60, 50 => target, 60 => +60.
+     * Historical win rates do NOT apply automatically to these thresholds.
+     */
+    fun signedFromProxy(oldLevel: Double): Double = when {
+        !oldLevel.isFinite() -> Double.NaN
+        oldLevel > 50.0 -> oldLevel
+        oldLevel < 50.0 -> oldLevel - 100.0
+        else -> 0.0
+    }
 
     fun signedPathLevel(oldLevel: Int): String {
-        val signed = signedFromProxy(oldLevel.toDouble()).toInt()
+        val level = signedFromProxy(oldLevel.toDouble()).toInt()
         return when {
-            signed > 0 -> "+${signed}%"
-            signed < 0 -> "${signed}%"
+            level > 0 -> "+${level}%"
+            level < 0 -> "${level}%"
             else -> "TARGET"
         }
     }
 
     /**
-     * Recompute the percent displayed by the chart at each finished minute.
-     * Use only its then-available 60 completed candles, with no future data.
-     * The latest candle is t and its observation occurs at t+60 seconds.
+     * One SIGNED observation for each fully closed 1-minute chart candle.
+     * Recompute its ACM60 using only candles completed at that time, so
+     * no future data leaks into earlier pattern stages.
      */
-    fun completedMinuteQuotes(candles: Map<Long, BtcAcmMath.Candle>,
+    fun completedMinuteSamples(candles: Map<Long, BtcAcmMath.Candle>,
         target: Double, marketStart: Long, completedOpen: Long
-    ): List<KalshiPatternMath.Quote> {
+    ): List<Sample> {
         val minute = BtcAcmMath.MINUTE_MS
         val close = marketStart + 15L * minute
-        val quotes = ArrayList<KalshiPatternMath.Quote>()
-        if (completedOpen < marketStart) return quotes
+        val samples = ArrayList<Sample>()
+        if (completedOpen < marketStart) return samples
         for (t in marketStart..completedOpen step minute) {
             val c = candles[t] ?: continue
-            val secondsLeft = close - (t + minute)
-            if (secondsLeft < minute || secondsLeft >= 15L * minute) continue
+            val minutesLeft = (close - (t + minute)).toDouble() / minute
+            if (minutesLeft < 1.0 || minutesLeft >= 15.0) continue
             val acm = BtcAcmMath.averageRange(candles, t, 60) ?: continue
-            val yes = yesProxy(c.close, target, acm, secondsLeft.toDouble() / minute)
-            if (!yes.isFinite()) continue
-            quotes.add(KalshiPatternMath.Quote(
-                (secondsLeft / minute).toInt(), yes / 100.0, yes / 100.0))
+            val signed = signedStrength(c.close, target, acm, minutesLeft)
+            if (signed.isFinite()) {
+                samples.add(Sample(minutesLeft.toInt(), signed))
+            }
         }
-        return quotes
+        return samples
     }
 }
