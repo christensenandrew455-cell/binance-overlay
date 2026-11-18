@@ -57,6 +57,13 @@ class BtcAcmBacktestActivity : AppCompatActivity() {
             setTextIsSelectable(true)
         }
         root.addView(text("BTC — 3 / 15 / 30 / 60 CANDLE ACM TEST", 21f))
+        root.addView(Button(this).apply {
+            text = "LIVE BTC ACM60 CHART + KALSHI BUY ALERTS"
+            setOnClickListener {
+                startActivity(Intent(this@BtcAcmBacktestActivity,
+                    BtcAcmLiveActivity::class.java))
+            }
+        })
         root.addView(text(
             "ACM = average of (high minus low) / open, as a percentage, " +
             "over the last 3, 15, 30 or 60 COMPLETED 1-minute candles. " +
