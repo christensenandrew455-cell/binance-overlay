@@ -38,55 +38,55 @@ object KalshiLiveSignalRules {
 
     data class Signal(val rule: Rule, val left: Int, val signedChartLevel: Double)
 
-    /** Mirrors the report's earliest multi-minute threshold sequence exactly. */
-    fun firstCompletion(path: List<Int>, sortedOldestFirst: List<KalshiPatternMath.Quote>):
-        KalshiPatternMath.Quote? {
+    /**
+     * Match actual signed chart levels in chronological minute order.
+     * Old historical threshold 20 becomes -80 on this custom scale.
+     * Every stage must occur in a later COMPLETED minute.
+     */
+    fun firstCompletion(path: List<Int>,
+        sortedOldestFirst: List<BtcChartProxyMath.Sample>
+    ): BtcChartProxyMath.Sample? {
         if (path.size < 2) return null
         var from = 0
-        var last: KalshiPatternMath.Quote? = null
+        var last: BtcChartProxyMath.Sample? = null
         for (stage in path.indices) {
+            val current = BtcChartProxyMath.signedFromProxy(path[stage].toDouble())
             val rising = if (stage == 0) path[1] > path[0]
                 else path[stage] > path[stage - 1]
-            val level = path[stage].toDouble()
             val index = (from until sortedOldestFirst.size).firstOrNull { i ->
-                val midpoint = sortedOldestFirst[i].strength(1)
-                if (rising) {
-                    if (stage == 0) midpoint <= level + 1e-7
-                    else midpoint >= level - 1e-7
-                } else {
-                    if (stage == 0) midpoint >= level - 1e-7
-                    else midpoint <= level + 1e-7
+                val value = sortedOldestFirst[i].signedLevel
+                when {
+                    stage == 0 && rising -> value <= current + 1e-7
+                    stage == 0 -> value >= current - 1e-7
+                    rising -> value >= current - 1e-7
+                    else -> value <= current + 1e-7
                 }
             } ?: return null
             last = sortedOldestFirst[index]
-            from = index + 1 // Every stage must happen in a later minute.
+            from = index + 1
         }
         return last
     }
 
     /**
-     * Match a completed chart minute to the six previously researched paths.
-     * Each input quote is the chart's signed 50-90% strength proxy, NOT a
-     * Kalshi bid/ask or an executable price. No odds/edge claims are made.
-     *
-     * Only the first completion in 8-6 minutes is eligible. Overlapping
-     * paths are ranked by sample-weighted newer historical net as a
-     * heuristic, never as a valid predicted return for chart prices.
+     * Watch ONLY when a historical path shape first completes
+     * on a fully closed BTC chart minute, 8-6 minutes before settlement.
+     * No contract prices or any claimed real-world probability edge.
      */
-    fun matchingProxySignals(
-        history: List<KalshiPatternMath.Quote>
-    ): List<Signal> {
-        val candles = history.filter { it.valid() }
-            .sortedByDescending { it.left }.distinctBy { it.left }
-        if (candles.size < 2) return emptyList()
-        val newest = candles.last()
-        val signedLevel = BtcChartProxyMath.signedFromProxy(newest.strength(1))
+    fun matchingSignedSignals(history: List<BtcChartProxyMath.Sample>): List<Signal> {
+        val samples = history.filter {
+            it.left in 1..14 && it.signedLevel.isFinite() &&
+                (it.signedLevel == 0.0 ||
+                 kotlin.math.abs(it.signedLevel) in 50.0..90.0)
+        }.sortedByDescending { it.left }.distinctBy { it.left }
+        if (samples.size < 2) return emptyList()
+        val newest = samples.last()
         return rules.mapNotNull { rule ->
-            val completion = firstCompletion(rule.path, candles)
+            val completion = firstCompletion(rule.path, samples)
                 ?: return@mapNotNull null
             if (completion.left != newest.left ||
                 completion.left !in rule.earliestLeft..rule.latestLeft) null
-            else Signal(rule, completion.left, signedLevel)
+            else Signal(rule, completion.left, newest.signedLevel)
         }.sortedByDescending {
             it.rule.newestN.toDouble() * it.rule.newestNetCents
         }
