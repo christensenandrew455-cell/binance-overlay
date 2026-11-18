@@ -18,7 +18,6 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
-import kotlin.math.ceil
 
 /**
  * Read-only study; no orders. Binance.US drives signals, Kalshi market result
@@ -238,18 +237,8 @@ class BtcAcmProfitService : Service() {
         return map
     }
     private fun trade(p: Double, winner: Boolean): Trade? {
-        if (!p.isFinite() || p < 0.01 || p > 0.99) return null
-        var count = 0
-        var fee = 0.0
-        while (count < 1000) {
-            val c = count + 1
-            val f = ceil(0.07*c*p*(1-p)*100.0-1e-9)/100.0
-            if (c*p+f > 10.0+1e-9) break
-            count = c; fee = f
-        }
-        if (count == 0) return null
-        val spent = count*p+fee
-        return Trade(p, fee, spent, (if (winner) count.toDouble() else 0.0)-spent)
+        val position = BtcAcmProfitMath.tenDollarPosition(p, winner) ?: return null
+        return Trade(p, position.fee, position.cost, position.pnl)
     }
     private fun scan(): String {
         val marketMap = mutableMapOf<String,Market>()
