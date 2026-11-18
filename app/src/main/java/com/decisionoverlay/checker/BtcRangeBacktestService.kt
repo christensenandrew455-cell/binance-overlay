@@ -1,13 +1,11 @@
 package com.decisionoverlay.checker
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -16,8 +14,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.Instant
-import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
@@ -35,17 +31,9 @@ class BtcRangeBacktestService : Service() {
         const val STOP = "btc.chart.STOP"
         const val KEY_SNAPSHOT = "snapshot"
         private const val CHANNEL_RUNNING = "btc_live_running_v2"
-        private const val CHANNEL_ALERT = "btc_live_alerts_v3"
         private const val FOREGROUND_ID = 7801
-        private const val THREE_ID = 7802
-        private const val NEAR_UP_ID = 7803
-        private const val NEAR_DOWN_ID = 7804
-        private const val HIT_UP_ID = 7805
-        private const val HIT_DOWN_ID = 7806
         private const val MINUTE = 60_000L
         private const val QUARTER = 15L * MINUTE
-        private const val THRESHOLD = 70.0
-        private const val APPROACH = 67.0
     }
 
     private data class Dot(val at: Long, val price: Double)
@@ -54,7 +42,6 @@ class BtcRangeBacktestService : Service() {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS).build()
-    private val ny = ZoneId.of("America/New_York")
     private var section = -1L
     private val points = ArrayList<Dot>()
 
@@ -65,10 +52,6 @@ class BtcRangeBacktestService : Service() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(
             CHANNEL_RUNNING, "BTC chart running", NotificationManager.IMPORTANCE_LOW))
-        nm.createNotificationChannel(NotificationChannel(
-            CHANNEL_ALERT, "BTC 70% alerts", NotificationManager.IMPORTANCE_HIGH).apply {
-            enableVibration(true)
-        })
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -113,30 +96,6 @@ class BtcRangeBacktestService : Service() {
             Intent(this, BtcRangeBacktestActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-    private fun alert(id: Int, title: String, message: String) {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED) return
-        val note = NotificationCompat.Builder(this, CHANNEL_ALERT)
-            .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle(title).setContentText(message)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_EVENT)
-            .setContentIntent(openIntent(id))
-            .setAutoCancel(true).build()
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(id, note)
-    }
-
-    private fun once(key: String, sectionStart: Long, id: Int,
-        title: String, message: String) {
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        if (prefs.getLong(key, -1L) == sectionStart) return
-        // Save the gate even if notifications are disabled, avoiding repeated
-        // notification bursts when a running service restarts.
-        prefs.edit().putLong(key, sectionStart).apply()
-        alert(id, title, message)
-    }
 
     private fun update() {
         val receivedAt = System.currentTimeMillis()
@@ -187,8 +146,6 @@ class BtcRangeBacktestService : Service() {
             MINUTE.toDouble()).coerceIn(0.001, 15.0)
         val modeledPct = (50.0 + 40.0 *
             (gapPct / (acm * left))).coerceIn(50.0, 90.0)
-        val side = if (latest >= target) "UP" else "DOWN"
-        val remaining = marketStart + QUARTER - receivedAt
         val json = JSONObject().put("section", marketStart)
             .put("target", target).put("acm", acm)
             .put("latest", latest).put("now", receivedAt)
@@ -202,20 +159,9 @@ class BtcRangeBacktestService : Service() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString(KEY_SNAPSHOT, json.toString()).apply()
 
-        val hour = Instant.ofEpochMilli(receivedAt).atZone(ny).hour
-        if (hour !in 10..22 || remaining !in 1..180_000L) return
-        once("three", marketStart, THREE_ID, "BTC: 3 minutes left",
-            "Watch for 70% on the BTC chart")
-        val up = side == "UP"
-        if (modeledPct >= THRESHOLD) {
-            once(if (up) "hit_up" else "hit_down", marketStart,
-                if (up) HIT_UP_ID else HIT_DOWN_ID,
-                "BTC ${side}: 70% reached", "Open Kalshi to review the market")
-        } else if (modeledPct >= APPROACH) {
-            once(if (up) "near_up" else "near_down", marketStart,
-                if (up) NEAR_UP_ID else NEAR_DOWN_ID,
-                "BTC ${side}: approaching 70%", "3-minute entry zone")
-        }
+        // Legacy Binance 70% and 3-minute trade alerts were intentionally
+        // removed. Only the separate Kalshi real-quote watcher may send
+        // researched pattern alerts while notifications are enabled.
     }
 
     override fun onDestroy() {
