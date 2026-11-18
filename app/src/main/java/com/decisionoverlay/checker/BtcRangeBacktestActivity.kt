@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -65,7 +66,21 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                     KalshiPatternResultsActivity::class.java))
             }
         }
-        screen.addView(backtest, FrameLayout.LayoutParams(
+        val alerts = Button(this).apply {
+            text = "ALERTS"
+            textSize = 11f
+            setAllCaps(false)
+            setOnClickListener {
+                startActivity(Intent(this@BtcRangeBacktestActivity,
+                    KalshiLiveAlertActivity::class.java))
+            }
+        }
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(alerts)
+            addView(backtest)
+        }
+        screen.addView(controls, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.END).apply {
@@ -77,6 +92,14 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
         ContextCompat.startForegroundService(this,
             Intent(this, BtcRangeBacktestService::class.java)
                 .setAction(BtcRangeBacktestService.START))
+        // Kalshi quote path alerts are separate from the Binance-based chart.
+        // They start automatically unless stopped in the Alerts screen.
+        if (getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
+                .getBoolean(KalshiLiveSignalService.ENABLED, true)) {
+            ContextCompat.startForegroundService(this,
+                Intent(this, KalshiLiveSignalService::class.java)
+                    .setAction(KalshiLiveSignalService.START))
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this,
                 Manifest.permission.POST_NOTIFICATIONS) !=
