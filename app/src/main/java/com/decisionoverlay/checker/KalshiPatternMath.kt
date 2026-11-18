@@ -139,11 +139,15 @@ object KalshiPatternMath {
             val dip = items.filter { it.fellBelow == true }
             val stay = items.filter { it.fellBelow == false }
             val unknown = items.count { it.fellBelow == null }
-            b.appendLine("${if (side == 1) "YES" else "NO"} $level% reached=${items.size}, repeat crossings total=${items.sumOf { it.touchCount }}, final wins=${items.count { it.won }}/${items.size} (${pct(items.count { it.won }, items.size)}) | stayed=${stay.count { it.won }}/${stay.size} (${pct(stay.count { it.won }, stay.size)}) | dipped=${dip.count { it.won }}/${dip.size} (${pct(dip.count { it.won }, dip.size)}) | unknown=$unknown")
+            val winners = items.filter { it.won }
+            val winnersStayed = winners.count { it.fellBelow == false }
+            val winnersDipped = winners.count { it.fellBelow == true }
+            b.appendLine("Among actual WINNERS of this side/line: stayed $winnersStayed/${winners.size} (${pct(winnersStayed, winners.size)}), dipped $winnersDipped/${winners.size} (${pct(winnersDipped, winners.size)}), unknown ${winners.size - winnersStayed - winnersDipped}")
+            b.appendLine("${if (side == 1) "YES" else "NO"} $level% reached=${items.size}, observed crossing events=${items.sumOf { it.touchCount }}, final wins=${items.count { it.won }}/${items.size} (${pct(items.count { it.won }, items.size)}) | stayed=${stay.count { it.won }}/${stay.size} (${pct(stay.count { it.won }, stay.size)}) | dipped=${dip.count { it.won }}/${dip.size} (${pct(dip.count { it.won }, dip.size)}) | unknown=$unknown")
         }
         b.appendLine()
         b.appendLine("2) FIRST REACH BY MINUTE LEFT, BOTH SIDES, ALL LEVELS")
-        b.appendLine("side,line,left,markets,wins,win%,dips,stays,unknown,repeat_crossings")
+        b.appendLine("side,line,left,markets,wins,win%,dips,stays,unknown,observed_crossings")
         for (side in listOf(1, -1)) for (level in LEVELS) for (left in 15 downTo 0) {
             val x = reaches.filter { it.side == side && it.level == level && it.left == left }
             b.appendLine("${if (side == 1) "YES" else "NO"},$level,$left,${x.size},${x.count { it.won }},${pct(x.count { it.won }, x.size)},${x.count { it.fellBelow == true }},${x.count { it.fellBelow == false }},${x.count { it.fellBelow == null }},${x.sumOf { it.touchCount }}")
