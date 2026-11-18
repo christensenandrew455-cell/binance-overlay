@@ -8,17 +8,17 @@
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
-        android:label="BTC ACM60 Live"
+        android:label="BTC Range Check"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.DecisionOverlay">
-        <activity android:name=".BtcAcmLiveActivity" android:exported="true">
+        <activity android:name=".BtcRangeBacktestActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".BtcAcmLiveService"
+        <service android:name=".BtcRangeBacktestService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
