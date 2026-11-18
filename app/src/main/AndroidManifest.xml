@@ -2,61 +2,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
-        android:label="BTC Funnel Test"
+        android:label="BTC ACM60 Live"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.DecisionOverlay">
-        <activity android:name=".BtcAcmBacktestActivity" android:exported="true">
+        <activity android:name=".BtcAcmLiveActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".BtcAcmLiveActivity" android:exported="false" />
-        <activity android:name=".BtcHalfwayTestActivity" android:exported="false" />
-        <activity android:name=".BtcFunnelLiveActivity" android:exported="false" />
         <service android:name=".BtcAcmLiveService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
-        <service android:name=".BtcAcmProfitService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
-        <service android:name=".BtcAcmBacktestService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
-        <service android:name=".BtcFunnelLiveService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
-        <service android:name=".BtcHalfwayScanService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
-        <activity android:name=".HoldEdgeActivity" android:exported="false" />
-        <activity android:name=".LiveSignalActivity" android:exported="false" />
-        <activity android:name=".KalshiEdgeActivity" android:exported="false" />
-        <activity android:name=".TrendOpportunityActivity" android:exported="false" />
-        <activity
-            android:name=".HistoricalAccuracyActivity"
-            android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="false" />
-        <receiver android:name=".BuyAlarmReceiver" android:exported="false" />
-        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>
