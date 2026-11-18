@@ -82,6 +82,12 @@ object KalshiLiveSignalRules {
         if (samples.size < 2) return emptyList()
         val newest = samples.last()
         return rules.mapNotNull { rule ->
+            // UP watches must still be BELOW target; DOWN watches ABOVE.
+            // An old historical quote pattern is not a live trade signal.
+            if ((rule.buyYes && newest.signedLevel >= 0.0) ||
+                (!rule.buyYes && newest.signedLevel <= 0.0)) {
+                return@mapNotNull null
+            }
             val completion = firstCompletion(rule.path, samples)
                 ?: return@mapNotNull null
             if (completion.left != newest.left ||
