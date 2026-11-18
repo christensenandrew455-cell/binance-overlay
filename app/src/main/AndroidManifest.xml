@@ -18,6 +18,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".KalshiPatternResultsActivity"
+            android:exported="false" />
+        <service android:name=".KalshiPatternBacktestService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated historical quote analysis with progress notification" />
+        </service>
         <service android:name=".BtcRangeBacktestService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
