@@ -3,8 +3,8 @@ package com.decisionoverlay.checker
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.pm.PackageManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
@@ -26,293 +26,226 @@ import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
-/** The entire app opens to this ONE live screen. The old testing menus are gone. */
+/**
+ * ONE screen: current 15-minute market, no legacy backtests, no
+ * 60-candle plot. The 60 completed candles are for ACM only.
+ */
 class BtcAcmLiveActivity : AppCompatActivity() {
-    private val handler = Handler(Looper.getMainLooper())
-    private lateinit var start: Button
-    private lateinit var stop: Button
-    private lateinit var status: TextView
-    private lateinit var details: TextView
-    private lateinit var chart: BtcAcmTimeChart
-    private val permission = registerForActivityResult(
+    private val handler=Handler(Looper.getMainLooper())
+    private lateinit var start:Button
+    private lateinit var stop:Button
+    private lateinit var status:TextView
+    private lateinit var detail:TextView
+    private lateinit var graph:BtcKalshiQuarterChart
+    private val notificationPermission=registerForActivityResult(
         ActivityResultContracts.RequestPermission()) {}
-    private val updater = object : Runnable {
-        override fun run() { refresh(); handler.postDelayed(this, 1500L) }
+    private val refresher=object:Runnable {
+        override fun run() { refresh(); handler.postDelayed(this,1200L) }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 12, 16, 18)
-            setBackgroundColor(Color.rgb(16, 21, 29))
+        val root=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL
+            setPadding(16,12,16,20)
+            setBackgroundColor(Color.rgb(15,22,31))
         }
-        fun label(value: String, size: Float): TextView = TextView(this).apply {
-            text = value; textSize = size; setTextColor(Color.WHITE)
-            setTextIsSelectable(true); setPadding(0, 5, 0, 7)
+        fun label(s:String,size:Float):TextView=TextView(this).apply{
+            text=s; textSize=size;setTextColor(Color.WHITE)
+            setTextIsSelectable(true);setPadding(0,7,0,7)
         }
-        panel.addView(label("BTC / KALSHI — LIVE ACM60", 21f))
-        panel.addView(label(
-            "60 completed BTC candles + 15m countdown curves. " +
-            "The green/red limits shrink toward the yellow target as time runs out. " +
-            "Curves recalculate using the latest ACM; dashed = forward projection. " +
-            "Experimental K 0.25 / 60–69¢ alert rule; no orders placed.", 12f))
-        chart = BtcAcmTimeChart(this)
-        panel.addView(chart, LinearLayout.LayoutParams(
+        root.addView(label("BTC / KALSHI — LIVE 15-MINUTE MARKET",19f))
+        root.addView(label(
+            "WHITE: BTC price since market start. YELLOW: Kalshi target. " +
+            "GREEN/RED: the moving YES/NO buy boundaries where BTC's calibrated " +
+            "historical odds may exceed Kalshi's actual ask plus fees. " +
+            "Only the last 60 COMPLETE candles are used for ACM calculations; " +
+            "they are not plotted. Dashed boundaries use the latest ACM and " +
+            "current Kalshi asks, not future BTC prices.",12f))
+        graph=BtcKalshiQuarterChart(this)
+        root.addView(graph,LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            (resources.displayMetrics.density * 490f).toInt()))
-        status = label("Press START to monitor BTC and Kalshi.", 16f)
-        details = label("", 13f)
-        panel.addView(status)
-        start = Button(this).apply {
-            text = "START LIVE BUY ALERTS"
-            setOnClickListener {
-                if (Build.VERSION.SDK_INT >= 33 &&
-                    ContextCompat.checkSelfPermission(
-                        this@BtcAcmLiveActivity, Manifest.permission.POST_NOTIFICATIONS
-                    ) != PackageManager.PERMISSION_GRANTED)
-                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            (resources.displayMetrics.density*370).toInt()))
+        status=label("Press START to load probability calibration.",15f)
+        root.addView(status)
+        start=Button(this).apply {
+            text="START BTC BUY NOTIFICATIONS"
+            setOnClickListener{
+                if(Build.VERSION.SDK_INT>=33 &&
+                    ContextCompat.checkSelfPermission(this@BtcAcmLiveActivity,
+                        Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 ContextCompat.startForegroundService(this@BtcAcmLiveActivity,
                     Intent(this@BtcAcmLiveActivity,
                         BtcAcmLiveService::class.java).setAction(BtcAcmLiveService.START))
                 refresh()
             }
         }
-        stop = Button(this).apply {
-            text = "STOP ALERTS"
+        stop=Button(this).apply {
+            text="STOP"
             setOnClickListener {
                 startService(Intent(this@BtcAcmLiveActivity,
                     BtcAcmLiveService::class.java).setAction(BtcAcmLiveService.STOP))
             }
         }
-        panel.addView(start)
-        panel.addView(stop)
-        panel.addView(details)
-        panel.addView(Button(this).apply {
-            text = "COPY CURRENT BTC / KALSHI DATA"
+        root.addView(start)
+        root.addView(stop)
+        detail=label("",13f)
+        root.addView(detail)
+        root.addView(Button(this).apply {
+            text="COPY LIVE VALUES"
             setOnClickListener {
-                val data = getSharedPreferences(BtcAcmLiveService.PREFS, MODE_PRIVATE)
-                    .getString("report", "").orEmpty()
-                if (data.isNotBlank())
+                val report=getSharedPreferences(BtcAcmLiveService.PREFS,MODE_PRIVATE)
+                    .getString("report","").orEmpty()
+                if(report.isNotBlank())
                     (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText("BTC ACM live", data))
+                        .setPrimaryClip(ClipData.newPlainText("BTC/Kalshi live",report))
             }
         })
-        setContentView(ScrollView(this).apply { addView(panel) })
+        setContentView(ScrollView(this).apply{addView(root)})
         refresh()
     }
-
-    override fun onResume() {
+    override fun onResume(){
         super.onResume()
-        handler.removeCallbacks(updater)
-        handler.post(updater)
+        handler.removeCallbacks(refresher)
+        handler.post(refresher)
     }
-
-    override fun onPause() {
-        handler.removeCallbacks(updater)
+    override fun onPause(){
+        handler.removeCallbacks(refresher)
         super.onPause()
     }
-
-    private fun refresh() {
-        if (!::status.isInitialized) return
-        val p = getSharedPreferences(BtcAcmLiveService.PREFS, MODE_PRIVATE)
-        val state = p.getString("phase", "idle")
-        status.text = p.getString("status", "Press START to monitor.")
-        details.text = p.getString("report", "")
-        start.isEnabled = state != "starting" && state != "running"
-        stop.isEnabled = state == "starting" || state == "running"
-        chart.load(
-            p.getString("chart", "").orEmpty(),
-            p.getString("curve", "").orEmpty(),
-            p.getFloat("target", 0f).toDouble(),
-            p.getFloat("spot", 0f).toDouble())
+    private fun refresh(){
+        if(!::status.isInitialized)return
+        val p=getSharedPreferences(BtcAcmLiveService.PREFS,MODE_PRIVATE)
+        val state=p.getString("phase","idle")
+        status.text=p.getString("status","START monitoring to see live prices.")
+        detail.text=p.getString("report","")
+        start.isEnabled=state!="starting" && state!="running"
+        stop.isEnabled=state=="starting" || state=="running"
+        graph.load(p.getString("curve","").orEmpty(),
+            p.getFloat("target",0f).toDouble())
     }
 }
 
-/**
- * TOP: rolling 60 completed OHLC candle chart.
- * BOTTOM: 15-minute clock x-axis, historical 60-candle ACM bands
- *         and future projected convergence. No flat trigger lines.
- */
-class BtcAcmTimeChart(context: android.content.Context) : View(context) {
-    private data class Curve(
-        val at: Long, val up: Double, val down: Double,
-        val btc: Double?, val projected: Boolean
+class BtcKalshiQuarterChart(context:android.content.Context):View(context){
+    private data class Point(
+        val at:Long,val up:Double?,val down:Double?,
+        val btc:Double?,val future:Boolean
     )
-    private var candles = emptyList<BtcAcmMath.Candle>()
-    private var curves = emptyList<Curve>()
-    private var target = 0.0
-    private var spot = 0.0
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val white = Color.rgb(226, 234, 242)
-    private val dim = Color.rgb(140, 158, 178)
-    private val upColor = Color.rgb(54, 215, 143)
-    private val downColor = Color.rgb(245, 113, 119)
-    private val yellow = Color.rgb(250, 199, 94)
-    private val bg = Color.rgb(22, 31, 43)
-    private val density = resources.displayMetrics.density
-    private fun dp(value: Float) = density * value
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+    private var data=emptyList<Point>()
+    private var target=0.0
+    private val density=resources.displayMetrics.density
+    private val white=Color.rgb(230,240,248)
+    private val green=Color.rgb(52,226,153)
+    private val red=Color.rgb(253,109,115)
+    private val yellow=Color.rgb(255,207,99)
+    private val dim=Color.rgb(141,160,182)
+    private fun dp(v:Float)=v*density
 
-    fun load(bars: String, curve: String, t: Double, live: Double) {
-        candles = try {
-            val j = JSONArray(bars)
-            (0 until j.length()).map { i ->
-                val a = j.getJSONArray(i)
-                BtcAcmMath.Candle(a.getLong(0), a.getDouble(1),
-                    a.getDouble(2), a.getDouble(3), a.getDouble(4))
-            }.filter { it.valid() }.takeLast(60)
-        } catch (_: Exception) { emptyList() }
-        curves = try {
-            val j = JSONArray(curve)
-            (0 until j.length()).map { i ->
-                val a = j.getJSONArray(i)
-                Curve(a.getLong(0), a.getDouble(1), a.getDouble(2),
-                    if (a.isNull(3)) null else a.getDouble(3),
-                    a.getBoolean(4))
-            }
-        } catch (_: Exception) { emptyList() }
-        target = t; spot = live
+    fun load(raw:String,t:Double){
+        data=try{
+            val arr=JSONArray(raw)
+            (0 until arr.length()).map { i->
+                val row=arr.getJSONArray(i)
+                Point(row.getLong(0),
+                    if(row.isNull(1))null else row.getDouble(1),
+                    if(row.isNull(2))null else row.getDouble(2),
+                    if(row.isNull(3))null else row.getDouble(3),
+                    row.getBoolean(4))
+            }.sortedBy{it.at}
+        }catch(_:Exception){emptyList()}
+        target=t
         invalidate()
     }
-
-    private fun text(canvas: Canvas, s: String, x: Float, y: Float,
-        color: Int = white, size: Float = 12f) {
-        paint.style = Paint.Style.FILL
-        paint.color = color
-        paint.textSize = dp(size)
-        paint.strokeWidth = dp(1f)
-        paint.pathEffect = null
-        canvas.drawText(s, x, y, paint)
+    private fun write(c:Canvas,label:String,x:Float,y:Float,
+        color:Int=white,size:Float=12f){
+        paint.pathEffect=null
+        paint.color=color
+        paint.style=Paint.Style.FILL
+        paint.textSize=dp(size)
+        c.drawText(label,x,y,paint)
     }
-    private fun grid(canvas: Canvas, l: Float, r: Float, top: Float, b: Float) {
-        paint.color = Color.rgb(48, 62, 78)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = dp(0.65f)
-        paint.pathEffect = null
-        for (i in 1..4) {
-            val y = top + (b - top) * i / 5f
-            canvas.drawLine(l, y, r, y, paint)
-        }
-        paint.style = Paint.Style.FILL
-    }
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        canvas.drawColor(bg)
-        val left = dp(11f)
-        val right = width.toFloat() - dp(12f)
-        val top1 = dp(32f)
-        val bottom1 = height * 0.43f
-        val top2 = height * 0.56f
-        val bottom2 = height - dp(46f)
-        text(canvas, "LAST 60 COMPLETED 1-MIN CANDLES", left, dp(21f), white, 13f)
-        grid(canvas, left, right, top1, bottom1)
-        drawCandles(canvas, left, right, top1, bottom1)
-        paint.color = Color.rgb(63, 77, 91)
-        paint.strokeWidth = dp(1f)
-        canvas.drawLine(left, height * 0.47f, right, height * 0.47f, paint)
-        text(canvas, "15-MINUTE TIME CURVE — CONVERGES AT EXPIRY",
-            left, height * 0.54f, white, 12f)
-        grid(canvas, left, right, top2, bottom2)
-        drawTimeCurve(canvas, left, right, top2, bottom2)
-    }
-
-    private fun drawCandles(canvas: Canvas, l: Float, r: Float, top: Float,
-        b: Float) {
-        if (candles.isEmpty()) {
-            text(canvas, "Waiting for BTC candle data", l, (top + b)/2, dim)
+    override fun onDraw(c:Canvas){
+        super.onDraw(c)
+        c.drawColor(Color.rgb(23,32,45))
+        val l=dp(15f)
+        val r=width-dp(14f)
+        val top=dp(43f)
+        val bot=height-dp(68f)
+        write(c,"CURRENT 15-MINUTE MARKET — PRICE LINE",l,dp(24f),white,13f)
+        if(data.size<2 || target<=0.0){
+            write(c,"Waiting for market / history...",l,(top+bot)/2,dim,14f)
             return
         }
-        val priceLow = candles.minOf { it.low }
-        val priceHigh = candles.maxOf { it.high }
-        val spread = max(priceHigh-priceLow, 1.0)
-        val minP = priceLow - spread*0.07
-        val maxP = priceHigh + spread*0.07
-        fun y(price: Double): Float =
-            (b - ((price - minP)/(maxP-minP)*(b-top))).toFloat()
-        val step = (r-l)/candles.size
-        for ((i,c) in candles.withIndex()) {
-            val cx = l + (i + 0.5f)*step
-            paint.color = if (c.close >= c.open) upColor else downColor
-            paint.pathEffect = null
-            paint.strokeWidth = dp(1.1f)
-            canvas.drawLine(cx, y(c.high), cx, y(c.low), paint)
-            paint.style = Paint.Style.FILL
-            canvas.drawRect(cx-step*0.3f,
-                min(y(c.open),y(c.close)),
-                cx+step*0.3f,max(y(c.open),y(c.close))+dp(1f),paint)
+        val expiry=data.last().at
+        val marketStart=expiry-15L*BtcAcmMath.MINUTE_MS
+        if(expiry<=marketStart)return
+        val prices=mutableListOf(target)
+        for(p in data){
+            p.btc?.let{prices.add(it)}
+            p.up?.let{prices.add(it)}
+            p.down?.let{prices.add(it)}
         }
-        if (target in minP..maxP) {
-            paint.color = yellow
-            paint.strokeWidth = dp(1f)
-            paint.pathEffect = DashPathEffect(floatArrayOf(dp(4f), dp(4f)), 0f)
-            canvas.drawLine(l, y(target), r, y(target), paint)
-            paint.pathEffect = null
+        val lo=prices.minOrNull() ?: target
+        val hi=prices.maxOrNull() ?: target
+        val scale=max(hi-lo,1.0)
+        val minP=lo-scale*0.16
+        val maxP=hi+scale*0.16
+        fun x(t:Long):Float=(l+(r-l)*
+            ((t-marketStart).toDouble()/(expiry-marketStart)).toFloat())
+        fun y(price:Double):Float=(bot-(price-minP)/(maxP-minP)*(bot-top)).toFloat()
+        paint.pathEffect=null
+        paint.strokeWidth=dp(0.7f)
+        paint.color=Color.rgb(51,67,85)
+        for(i in 1..4){
+            val yy=top+(bot-top)*i/5f
+            c.drawLine(l,yy,r,yy,paint)
         }
-        text(canvas, String.format(Locale.US, "BTC $%,.2f",spot),
-            l, b + dp(18f), white, 12f)
-        text(canvas, String.format(Locale.US, "Target $%,.2f",target),
-            r - dp(146f), b + dp(18f), yellow, 12f)
-    }
-
-    private fun drawTimeCurve(canvas: Canvas,l: Float,r: Float,top: Float,b: Float) {
-        if (curves.size < 2 || target <= 0.0) {
-            text(canvas, "Waiting for 15-minute market", l, (top+b)/2, dim)
-            return
-        }
-        val closeAt = curves.last().at
-        val openAt = closeAt - 15L * BtcAcmMath.MINUTE_MS
-        val prices = curves.flatMap { listOf(it.up,it.down,it.btc ?: target) } +
-            listOf(target,spot)
-        val pMin = prices.minOrNull() ?: return
-        val pMax = prices.maxOrNull() ?: return
-        val span = max(pMax-pMin, 1.0)
-        val minP = pMin-span*0.12
-        val maxP = pMax+span*0.12
-        fun x(at: Long): Float =
-            l + ((at-openAt).toDouble()/(closeAt-openAt).toDouble())
-                .toFloat()*(r-l)
-        fun y(price: Double): Float =
-            (b - (price-minP)/(maxP-minP)*(b-top)).toFloat()
-        paint.color = yellow
-        paint.strokeWidth = dp(1.1f)
-        paint.pathEffect = DashPathEffect(floatArrayOf(dp(5f),dp(3f)),0f)
-        canvas.drawLine(l,y(target),r,y(target),paint)
-        paint.pathEffect = null
-        for (i in 0 until curves.size-1) {
-            val a = curves[i]
-            val next = curves[i+1]
-            val dash = next.projected
-            paint.pathEffect = if (dash)
-                DashPathEffect(floatArrayOf(dp(4f),dp(3f)),0f)
-                else null
-            paint.strokeWidth = dp(if (dash) 1.6f else 2f)
-            paint.color = upColor
-            canvas.drawLine(x(a.at),y(a.up),x(next.at),y(next.up),paint)
-            paint.color = downColor
-            canvas.drawLine(x(a.at),y(a.down),x(next.at),y(next.down),paint)
-            if (a.btc != null && next.btc != null && !dash) {
-                paint.color = white
-                paint.strokeWidth = dp(1.7f)
-                canvas.drawLine(x(a.at),y(a.btc),x(next.at),y(next.btc),paint)
+        paint.color=yellow
+        paint.pathEffect=DashPathEffect(floatArrayOf(dp(4f),dp(4f)),0f)
+        paint.strokeWidth=dp(1.3f)
+        c.drawLine(l,y(target),r,y(target),paint)
+        paint.pathEffect=null
+        for(i in 0 until data.lastIndex){
+            val a=data[i];val b=data[i+1]
+            fun line(from:Double?,to:Double?,color:Int){
+                if(from==null || to==null)return
+                paint.color=color
+                paint.strokeWidth=dp(1.8f)
+                paint.pathEffect=if(b.future)
+                    DashPathEffect(floatArrayOf(dp(5f),dp(4f)),0f)
+                    else null
+                c.drawLine(x(a.at),y(from),x(b.at),y(to),paint)
+                paint.pathEffect=null
             }
+            line(a.up,b.up,green)
+            line(a.down,b.down,red)
+            // Only completed close prices (plus live ticker) are drawn;
+            // never connect a fabricated future price.
+            line(a.btc,b.btc,white)
         }
-        paint.pathEffect = null
-        val live = curves.lastOrNull { !it.projected } ?: return
-        paint.color = dim
-        paint.strokeWidth = dp(1f)
-        paint.pathEffect = DashPathEffect(floatArrayOf(dp(3f),dp(4f)),0f)
-        canvas.drawLine(x(live.at),top,x(live.at),b,paint)
-        paint.pathEffect = null
-        paint.color = white
-        paint.style = Paint.Style.FILL
-        canvas.drawCircle(x(live.at),y(spot),dp(4f),paint)
-        text(canvas, "15:00 LEFT",l,b+dp(18f),dim,11f)
-        val remaining = max(0L,closeAt-live.at)/1000
-        val countdown = String.format(Locale.US,"NOW %d:%02d",remaining/60,remaining%60)
-        text(canvas,countdown,
-            max(l,min(x(live.at)-dp(32f),r-dp(75f))), b+dp(18f),white,11f)
-        text(canvas,"0:00",r-dp(29f),b+dp(18f),dim,11f)
-        text(canvas,"GREEN = YES above   RED = NO below   WHITE = BTC",
-            l,b+dp(37f),white,10f)
+        val observed=data.lastOrNull{it.btc!=null}
+        if(observed!=null){
+            paint.color=white
+            paint.pathEffect=null
+            paint.style=Paint.Style.FILL
+            c.drawCircle(x(observed.at),y(observed.btc!!),dp(4f),paint)
+            paint.color=dim
+            paint.strokeWidth=dp(1f)
+            paint.pathEffect=DashPathEffect(floatArrayOf(dp(3f),dp(4f)),0f)
+            c.drawLine(x(observed.at),top,x(observed.at),bot,paint)
+            paint.pathEffect=null
+        }
+        write(c,"START",l,bot+dp(22f),dim,12f)
+        write(c,"END",r-dp(29f),bot+dp(22f),dim,12f)
+        val timeLeft=if(observed==null)0L
+            else max(0L,(expiry-observed.at)/1000)
+        write(c,String.format(Locale.US,"NOW  %d:%02d LEFT",timeLeft/60,timeLeft%60),
+            l,bot+dp(43f),white,12f)
+        write(c,String.format(Locale.US,"TARGET $%,.2f",target),
+            r-dp(147f),bot+dp(43f),yellow,11f)
+        write(c,"ABOVE GREEN → YES BUY ZONE",l,top-dp(18f),green,11f)
+        write(c,"BELOW RED → NO BUY ZONE",r-dp(171f),top-dp(18f),red,11f)
     }
 }
