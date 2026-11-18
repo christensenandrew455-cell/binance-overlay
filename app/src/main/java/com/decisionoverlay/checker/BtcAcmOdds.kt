@@ -149,8 +149,12 @@ object BtcAcmOdds {
         val ask=if(side==1)yesAsk else if(side == -1)noAsk else null
         val ratio=normalizedGap(spot,target,acmPct,secondsLeft)
         val breakEven=if (ask!=null) feeAdjustedBreakEven(ask) else Double.NaN
-        val selected=if(model!=null)model.atDistance(minute,side,ratio) else null
         val required=if(model!=null)model.minimumRatioForAsk(minute,side,ask) else null
+        // Use the SAME validated boundary for plotted crossing and BUY. A higher
+        // optional ratio bucket must not silently override the plotted rule.
+        val selected=if(required!=null && ratio.isFinite() &&
+            ratio+1e-10 >= required.ratio) required
+            else if(model!=null)model.atDistance(minute,side,ratio) else null
         val margin=if(selected!=null && selected.valid)
             selected.conservative-breakEven else Double.NaN
         val reason=when {
