@@ -40,13 +40,17 @@ class KalshiFrequentPatternReportTest {
 
     private fun markets(hits: Int): List<KalshiPatternMath.Market> =
         (0 until 1000).map { i ->
-            val matches = i < hits
+            val matches = when (hits) {
+                200 -> i % 5 == 0
+                99 -> i % 10 == 0 && i < 990
+                else -> i < hits
+            }
             val candles = if (matches)
                 listOf(quote(10, 70.0), quote(7, 60.0))
             else
                 listOf(quote(10, 55.0), quote(7, 55.0))
             // When the pattern happens, NO wins in four of every five.
-            val yesWon = if (matches) (i % 5 == 0) else (i % 2 == 0)
+            val yesWon = if (matches) (i % 25 == 0) else (i % 2 == 0)
             KalshiPatternMath.Market("MARKET-" + i, 900L * i, yesWon, candles)
         }
 
