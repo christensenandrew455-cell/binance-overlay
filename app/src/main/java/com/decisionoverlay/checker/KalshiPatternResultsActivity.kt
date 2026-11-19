@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Scan 1,000 settled BTC markets for real-price 2/3-point UP/DOWN edges.")
+                "Ready. Collect 100 settled BTC markets, 15 minute values and final outcomes.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -69,29 +69,23 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "Results will appear here when the scan finishes.\n\n" +
-                    "This scanner checks ACTUAL Kalshi YES/NO quote candles and settled outcomes. " +
-                    "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
-                    "The scanner checks 2-POINT and 3-POINT Kalshi quote paths " +
-                    "and their reversed YES/NO mirrored setups, buying either " +
-                    "UP (YES) or DOWN (NO). It uses 1,000 DISTINCT settled BTC " +
-                    "15-minute markets from 10 AM to 11 PM Eastern. " +
-                    "A pattern qualifies only if the actual buy-side historical " +
-                    "win rate beats the observed BUY ask by at least 20 " +
-                    "percentage points, with fee-adjusted positive net and " +
-                    "STRICTLY ABOVE 10% market hit rate. " +
-                    "No absolute difference against the wrong side's quote. " +
-                    "The backtest checks multiple completion-time windows from " +
-                    "12 to 1 minutes left, leaving the opening 3 minutes " +
-                    "as research only. It shows both 2- and 3-point results, " +
-                    "independent mirror checks, older 70% discovery, newest " +
-                    "30% validation numbers, actual asks, fees, returns and " +
-                    "distinct-market combined coverage. The newest sample " +
-                    "does not guarantee future returns and actual quote closes " +
-                    "do not guarantee fills. An unqualified mirrored pattern " +
-                    "is NEVER treated as profitable. No orders are placed. " +
-                    "Results are INCOMPLETE if 1,000 markets are not found.\n\n" +
-                    "You can turn your screen off while it runs."
+                    "Results will appear here when the 100-market collection finishes.\n\n" +
+                    "PHASE ONE ONLY: download 100 distinct settled BTC " +
+                    "15-minute Kalshi markets whose session starts at or after " +
+                    "10:00 AM and ends by 11:00 PM Eastern.\n\n" +
+                    "Every market becomes ONE row with fifteen chronological " +
+                    "minute columns (M01 through M15), a final UP/DOWN result, " +
+                    "and its Eastern start and end times. The primary matrix " +
+                    "groups the YES percentage into 10-point ranges. " +
+                    "A second matrix preserves each minute's average YES " +
+                    "percentage to one decimal place. Missing observations " +
+                    "are marked NA. NO is simply the complementary side.\n\n" +
+                    "No pattern discovery, hit-rate screening, win-rate " +
+                    "calculation, or 1,000-market validation is run yet. " +
+                    "Use SHARE REPORT or COPY PART to send me the dataset, " +
+                    "and we will identify recurring patterns from these " +
+                    "actual minute sequences.\n\n" +
+                    "You can turn your screen off while the collection runs."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
@@ -135,14 +129,14 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC UP/DOWN Actual-Price Edge Backtest"
+            text = "BTC 100-Market Minute Data Collector"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("START 1000 PAST MARKETS") {
+        start = button("COLLECT 100 MARKETS") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
@@ -171,7 +165,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         copyFull = button("COPY FULL") {
             if (shownReport.isNotEmpty()) {
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi full backtest", shownReport))
+                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi minute matrix", shownReport))
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
@@ -179,7 +173,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             if (shownReport.isNotEmpty()) {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Kalshi BTC historical pattern report")
+                    putExtra(Intent.EXTRA_SUBJECT, "Kalshi BTC 100-market minute matrix")
                     putExtra(Intent.EXTRA_TEXT, shownReport)
                 }
                 startActivity(Intent.createChooser(send, "Share Kalshi results"))

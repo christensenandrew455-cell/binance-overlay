@@ -20,70 +20,47 @@ determined by Kalshi trading and are not recoverable from Binance candles alone.
 No trading, live chart, alerts, subscriptions, credentials or Kalshi API required.
 GitHub Actions runs tests and builds an APK on push to main.
 
-## BTC two- and three-point actual-price edge backtest (current)
+## BACKTEST button — 100-market minute data collector (current)
 
-Tap **BACKTEST** then **START 1000 PAST MARKETS**. The download remains
-research-only; it does not place orders or change live notifications. The app
-reads settled KXBTC15M markets, observed one-minute YES bid/ask quotes and
-settlement outcomes (10 AM–11 PM Eastern). The scanner uses **Kalshi YES
-midpoint** levels, not the Binance chart's custom percentages.
+**Only phase one is active.** In the Android app, tap **BACKTEST** then
+**COLLECT 100 MARKETS**. The foreground service pulls the **100 latest distinct
+settled BTC 15-minute Kalshi markets** with each market starting at or after
+10:00 AM and ending by 11:00 PM America/New_York. The rule uses actual Eastern
+clock time, including daylight saving, and no markets outside the session.
 
-The scanner independently evaluates all ordered **two- and three-point paths**
-at 10-point levels from 10 through 90, buying either **UP (YES)** or
-**DOWN (NO)**. Each stage must be OBSERVED within 5 percentage points of
-its named level on a different valid one-minute close. Jumping over a level
-does not count as touching it. The first three minutes (15–13 minutes
-remaining) are research only; the final stage must close between 12 and 1
-minutes remaining. There is at most one qualifying entry per path per market.
+For each market, the report outputs one CSV row with a market ticker, exact
+Eastern market start and end times, the final settlement **UP** or **DOWN**,
+and **15 chronological one-minute columns** M01 through M15. M01 is the
+earliest completed 1-minute candle and M15 is the latest completed minute.
+All 15 minutes are observation data for pattern *discovery*, not executable
+trading signals.
 
-A reported setup must meet **all** these requirements:
-- Discovery historical BUY-side win rate minus average observed **BUY-side
-  ask price** is at least **+20 percentage points** (not the absolute
-  difference and not the opposing side's quote).
-- Positive modeled one-contract net after approximate taker fees, with
-  observed buy ask in the 1–99c range.
-- Strictly **more than 10% market hit rate**, both across the oldest 70%
-  discovery period and across the full scan, with at least 30 discovery
-  examples. A pattern seen in exactly 10% is rejected.
+The report contains TWO complete matrix versions:
+- **Ten-band matrix:** 10-point YES probability buckets (0 means 0–9.999%,
+  10 means 10–19.999%, ... 90 means 90–100%). The complementary NO
+  percentage is 100 minus the observed YES percentage.
+- **One-decimal matrix:** The source average YES bid/ask price for that
+  minute, before rounding to the 10-point bucket. When available, the
+  reported minute value is the mean of bid/ask **open, high, low and close**
+  (an OHLC approximation, **not** a time-weighted average). If incomplete,
+  the recorded minute bid/ask close midpoint is used as a fallback.
+  The report counts close-only fallback cells.
 
-For a YES path of 70% -> 60% and a **DOWN** trade, the cost is the observed
-NO ask (1 − YES bid), not 60c. If the real NO ask is 41c, a 60% historical
-NO win rate is only a **19-point** advantage, so this candidate **fails**
-the +20-point screen. This avoids the old scanner's false positives, which
-compared the win rate to the last YES level using an absolute difference.
+Unavailable or invalid minute observations appear as **NA**, never as
+interpolated or invented quotes. A quality header shows how many markets
+have every minute present. The collector stops at 100 usable markets (at
+least two actual observations per market); when fewer are obtained the
+report explicitly says **INCOMPLETE**.
 
-Eight predefined entry-time ranges are compared using discovery data, with
-the best window chosen by average fee-adjusted profit * opportunity
-frequency. The report shows for each qualifying path:
+Use **SHARE REPORT**, **COPY FULL**, or the **COPY PART** button to provide the
+entire dataset for pattern discovery and comparison. This version does
+**not** search patterns, apply any win-/hit-rate rules, display hypothetical
+purchase prices or fees, execute trades, or run the 1,000-market backtest.
+That validation is a **separate future phase**, after promising patterns
+have been defined without seeing those 1,000 markets.
 
-- Two vs. three stages, buy UP or DOWN, and best timeframe.
-- Discovery, newest 30%, and full-period sample counts, unique-market hit
-  rate, settlement win rate, observed buy ask, modeled fees, and net result.
-- A separately scored mirror (YES stages become 100 − each stage, and the
-  purchase side flips). **A mirror is not assumed to be profitable** simply
-  because the original qualifies; mirrored pairs are listed first.
-- For three-point paths, the two-point prefix at the **same timeframe**, so
-  you can see whether the additional stage helps the win rate enough to
-  justify any reduction in frequency.
-- Combined distinct-market coverage (all qualifying paths, each market
-  counted once) plus separately mirror-paired coverage. **50% is a target,
-  not an artificially forced output**.
-
-When no pattern qualifies, the report still prints a **FILTER AUDIT**:
-the number of path/side/time-window combinations clearing the frequency
-screen, the number clearing the large-edge screen, and those clearing both.
-It also prints the strongest frequent patterns that failed the +20-point
-pricing requirement, the highest modeled price-edge patterns that occurred
-too rarely, and an always-visible comparison of YES 70->60 BUY DOWN with its
-YES 30->40 BUY UP mirror. These rows are explicitly **NOT QUALIFIED**;
-they are diagnostic research, not instructions to trade.
-
-The historical outcomes of the newest 30% are shown separately; however,
-the full-scan frequency floor uses newest market counts, and exploring
-hundreds of paths still causes selection bias. This is **not independent
-proof of a profitable strategy**. Observed minute-close asks are not
-guaranteed executable fills, and estimates exclude slippage. Forward-test
-against new settled markets before staking real funds.
+Older research-only pattern scanners remain in source control but are
+no longer called by the BACKTEST button. Live alerts are unchanged.
 
 ## Live multi-pattern Kalshi notifications (v1.1.0)
 
