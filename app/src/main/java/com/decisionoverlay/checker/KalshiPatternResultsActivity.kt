@@ -72,9 +72,11 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "Results will appear here when the scan finishes.\n\n" +
                     "This scanner checks ACTUAL Kalshi YES/NO quote candles and settled outcomes. " +
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
-                    "The test checks 1,000 BTC markets from 10 AM to 11 PM Eastern. " +
-                    "It covers YES/NO, all 15-to-0 minute bins, 60/70/80/90 hits, " +
-                    "every lower 10%-step level, and recovery sequences (like 80-60-70).\n\n" +
+                    "The scanner searches the past for 1,000 DIFFERENT settled BTC " +
+                    "15-minute markets, using market start times from 10 AM to 11 PM Eastern. " +
+                    "It tests 7 price paths, 7 mirror paths and additional research patterns. " +
+                    "Progress shows verified usable markets out of 1,000; results are marked " +
+                    "INCOMPLETE if 1,000 cannot be found.\n\n" +
                     "You can turn your screen off while it runs."
                 else if (report.length > 10000)
                     report.take(10000) + "\n\n[PREVIEW ONLY: " + report.length +
@@ -126,7 +128,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN 1000-MARKET TEST") {
+        start = button("START 1000 PAST MARKETS") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
