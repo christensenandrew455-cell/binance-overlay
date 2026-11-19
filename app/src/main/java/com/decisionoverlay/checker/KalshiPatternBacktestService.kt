@@ -23,15 +23,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "binance_27_pattern_scan_v1"
+        const val PREFS = "binance_27_pattern_scan_v2"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://api.binance.us/api/v3/klines"
-        private const val TARGET_MARKETS = 100
-        private const val MAX_PAGES = 30
+        private const val TARGET_MARKETS = 1000
+        private const val MAX_PAGES = 80
         private const val MINUTE_MS = 60_000L
         private const val QUARTER_MS = 15L * MINUTE_MS
         private const val CHANNEL = "binance_27_pattern_backtest"
@@ -165,10 +165,14 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan() {
-        status("Downloading Binance BTC 1-minute candles for 100 markets...")
+        status("Downloading Binance BTC 1-minute candles for 1,000 markets...")
         val candles = HashMap<Long, BtcAcmMath.Candle>()
         val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
-        var endTime = System.currentTimeMillis() / MINUTE_MS * MINUTE_MS - 1L
+        // Keep the 1,000-market validation completely separate from the
+        // Nov 17-19 discovery period; do not include the discovery days.
+        var endTime = java.time.LocalDate.of(2026, 11, 17)
+            .atStartOfDay(java.time.ZoneId.of("America/New_York"))
+            .toInstant().toEpochMilli() - 1L
         var previousOldest = Long.MAX_VALUE
         var pageCount = 0
         for (page in 1..MAX_PAGES) {
@@ -207,9 +211,9 @@ class KalshiPatternBacktestService : Service() {
         val report = BinanceTwentySevenPatternReport.report(chosen)
         val complete = chosen.size == TARGET_MARKETS
         val summary = if (complete)
-            "COMPLETE: 100 Binance BTC 15-minute markets; all 27 patterns tested."
+            "COMPLETE: 1,000 Binance BTC 15-minute markets; all 27 patterns tested."
         else
-            "INCOMPLETE: ${chosen.size}/100 Binance BTC sections after " +
+            "INCOMPLETE: ${chosen.size}/1,000 Binance BTC sections after " +
                 "$pageCount download pages. Results shown provisionally."
         prefs.edit().putString(REPORT, report).putString(STATUS, summary).apply()
     }

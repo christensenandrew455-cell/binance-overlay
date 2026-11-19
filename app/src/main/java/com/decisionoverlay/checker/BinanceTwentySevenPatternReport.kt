@@ -33,7 +33,7 @@ object BinanceTwentySevenPatternReport {
     }
 
     // LOCKED 27 paths from the user's original list. Do not data-mine new
-    // candidates or change the rule list after seeing these 100 markets.
+    // candidates or change the rule list after seeing these 1,000 markets.
     val rules: List<Rule> = listOf(
         Rule(listOf(40,50),false), Rule(listOf(30,40),true),
         Rule(listOf(60,50),false), Rule(listOf(50,40,50),false),
@@ -132,11 +132,12 @@ object BinanceTwentySevenPatternReport {
         val et = ZoneId.of("America/New_York")
         fun timestamp(ms: Long) = Instant.ofEpochMilli(ms).atZone(et).toString()
         val sb = StringBuilder(20000)
-        sb.appendLine("=== BINANCE BTC 27 FIXED PATTERNS - 100 MARKET BACKTEST ===")
+        sb.appendLine("=== BINANCE BTC 27 FIXED PATTERNS - 1000 MARKET BACKTEST ===")
         sb.appendLine("SOURCE: Binance.US BTCUSDT actual 1-minute OHLC candles, NOT Kalshi.")
-        sb.appendLine("Eligible complete 15-minute markets: $total/100 | skipped: $skipped")
-        if (total != 100) sb.appendLine("INCOMPLETE: fewer than 100 qualifying sections.")
+        sb.appendLine("Eligible complete 15-minute markets: $total/1000 | skipped: $skipped")
+        if (total != 1000) sb.appendLine("INCOMPLETE: fewer than 1,000 qualifying sections.")
         sb.appendLine("Session: starts >=10:00 AM and ends <=11:00 PM America/New_York.")
+        sb.appendLine("Validation markets strictly BEFORE 2026-11-17 Eastern; Nov 17-19 discovery markets excluded.")
         sb.appendLine("First market: " + timestamp(unique.first().startMs))
         sb.appendLine("Last market: " + timestamp(unique.last().startMs))
         sb.appendLine("Market target = LAST Binance BTC close before market starts.")
@@ -180,7 +181,7 @@ object BinanceTwentySevenPatternReport {
                 if (hits.isEmpty()) "n/a" else n(100.0 * w / hits.size)
             ).joinToString(","))
         }
-        sb.appendLine("=== END BINANCE 100 MARKET REPORT ===")
+        sb.appendLine("=== END BINANCE 1000 MARKET REPORT ===")
         return sb.toString()
     }
 }
