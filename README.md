@@ -20,48 +20,50 @@ determined by Kalshi trading and are not recoverable from Binance candles alone.
 No trading, live chart, alerts, subscriptions, credentials or Kalshi API required.
 GitHub Actions runs tests and builds an APK on push to main.
 
-## Historical Kalshi Pattern Backtest (new)
+## Frequent two-point Kalshi pattern backtest (current)
 
-Tap **BACKTEST** on the BTC chart, then **RUN BACKTEST (1000)**.
-The scanner looks back through **up to 1,000 usable settled markets** whose
-15-minute session START falls between **10:00 AM and 11:00 PM Eastern** (10:00
-through 22:45 starts; DST handled). It may examine up to 1,800 candidates to
-replace missing/invalid quote histories.
+Tap **BACKTEST** on the BTC chart, then **RUN BACKTEST (1000)**. The
+existing foreground service and historical downloader still search up to 1,000
+distinct settled BTC 15-minute Kalshi markets beginning between 10 AM and 11 PM
+Eastern. Nothing about downloading, time-zone filtering, or live alerts changed.
 
-The report now analyzes the same **up to 1,000 settled markets** but displays a
-**compact, copyable aggregate summary**, rather than printing thousands of
-empty minute combinations. It includes observed first reaches (60/70/80/90),
-stays/dips/unknowns, the 10 most observed pullbacks, 12 most observed
-three-stage recoveries, and focused **80 -> 50 -> 60** and **80 -> 60 -> 70**
-paths on both YES and NO. Each path includes sample count, actual settlement
-win rate, historical observed ask, estimated fee and net cents per contract,
-average minutes of each step, and newest-30% results. Focused recoveries also
-show a four-column timeline of recovery minutes (15-11, 10-6, 5-4, 3-1 left).
-Research candidates require adequate older/newer sample counts; this is
-exploration rather than a proven strategy.
+Instead of dumping hundreds of rare combinations, the results only display
+**two-point patterns seen at least 100 times AND in at least 10% of all scanned
+markets**, with a *fresh second-point completion* at **8 to 4 minutes remaining**.
+Both stages must appear in separate completed one-minute quote candles. A
+completion before 8 minutes left is not re-counted later without first
+reaching the first level again. Each matching path counts at most once per
+market. Three-point patterns are not on the shortlist.
 
-**COPY RESULTS** and **SHARE REPORT** now output the short summary, keeping
-long raw tables out of the phone UI and clipboard. Full event analysis is
-performed internally; collapsing into aggregates intentionally does not
-preserve each individual market's chronological quote path in the export.
-The scan still runs in its foreground service with the screen off.
+The source is actual historical Kalshi YES quote bid/ask closes and final
+YES/NO settlements for KXBTC15M. The quote path's percentages are midpoints,
+not the custom BTC-distance chart percentages. A **NO 80->60** path is
+equivalent to a **YES 20->40** quote path: they refer to the *same market
+observation*, not two independent trading opportunities.
 
-Unlike the chart's custom synthetic percentage lines, the scanner queries
-**real Kalshi public 1-minute YES best bid and ask closing quotes** and
-**actual settled YES/NO outcomes** for KXBTC15M. It uses Kalshi's recent and
-archived market/candlestick APIs and does not need a Kalshi account or API key.
-It never simulates missing prices or calls synthetic lines "Kalshi odds".
+Results are ranked by *historical total estimated one-contract net return*
+across the scanned markets, rather than solely by win percentage. Each entry
+shows unique-market hit frequency, observed settlement win rate, actual
+historical buy-side ask, an approximate taker fee, net cents per hypothetical
+entry, ROI, payout/cost multiplier, and both older 70% and newest 30%
+subsamples. To qualify for display after the frequency screen, a setup must
+have positive net in both subsamples (at least 20 older and 10 newer entries)
+and its unadjusted Wilson 95% lower win-rate must exceed mean buy cost
+including estimated fees. The report shows exact-minute counts (8,7,6,5,4)
+and the best exploratory adjacent two-minute window selected from the older
+sample, checked against the newer sample.
 
-It records original first reaches and observed dips, then summarizes the full path data.
-Low sample sizes and results not validated on unseen data are identified.
+It also shows **distinct combined coverage**, without adding overlapping
+pattern counts or mirrored YES/NO counts. If nothing meets the strict
+requirements it explicitly reports **NONE QUALIFIED**, not fabricated wins.
+The report is short, scrollable and copyable.
 
-**Limitations:** Each recorded point is a 1-minute closing quote, not the
-intraminute trading path. Crossings could occur between snapshots; the actual
-price available to execute, liquidity, fees and slippage can differ from the
-historical closing ask. A quoted midpoint is not a calibrated probability.
-No trade is placed and no profit is promised. Failed or empty API data
-produces an error or a skip count, not fabricated results.
-
+**Caveats:** Minute-close quotes are not a record of an executable order or
+intraminute path. The aggregate fees are estimates, slippage is excluded, and
+searching many candidate rules can generate spurious historical edges.
+The newest sample helps check consistency but is not untouched independent
+validation. Test against future markets before relying on any pattern.
+No live order or alert strategy is automatically changed by this report.
 
 ## Live multi-pattern Kalshi notifications (v1.1.0)
 
