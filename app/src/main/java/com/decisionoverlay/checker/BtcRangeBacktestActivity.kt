@@ -87,7 +87,13 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 updateAlertButtons()
             }
         }
-        // Long-press the only visible control to open the research scanner.\n        // A normal tap still exclusively enables/disables notifications.\n        notificationToggle.setOnLongClickListener {\n            startActivity(Intent(this, KalshiPatternResultsActivity::class.java))\n            true\n        }\n        screen.addView(notificationToggle, FrameLayout.LayoutParams(
+        // Long-press the only visible control to open the research scanner.
+        // A normal tap still exclusively enables/disables notifications.
+        notificationToggle.setOnLongClickListener {
+            startActivity(Intent(this, KalshiPatternResultsActivity::class.java))
+            true
+        }
+        screen.addView(notificationToggle, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.END).apply {
