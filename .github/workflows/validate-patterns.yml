@@ -1,11 +1,6 @@
-name: Validate 27 BTC paths on 1000 older markets
+name: Legacy Kalshi research (manual only)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'research/validate_27_patterns.py'
-      - '.github/workflows/validate-patterns.yml'
   workflow_dispatch:
 
 permissions:
