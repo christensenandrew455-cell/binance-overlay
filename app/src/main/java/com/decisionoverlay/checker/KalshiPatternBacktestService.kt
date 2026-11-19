@@ -248,7 +248,7 @@ class KalshiPatternBacktestService : Service() {
         if (observed.isEmpty()) error("No valid quote candles found. $firstError")
         val count = observed.map { it.ticker }.toSet().size
         val complete = count == TARGET && observed.size == TARGET
-        val result = KalshiFrequentPatternReport.report(observed, skipped)
+        val result = KalshiTradeEdgeReport.report(observed, skipped)
         val finalStatus = if (complete)
             "COMPLETE: 1000/1000 distinct settled past BTC markets verified."
         else

@@ -20,47 +20,61 @@ determined by Kalshi trading and are not recoverable from Binance candles alone.
 No trading, live chart, alerts, subscriptions, credentials or Kalshi API required.
 GitHub Actions runs tests and builds an APK on push to main.
 
-## BTC two-point 20-percentage-point pattern backtest (current)
+## BTC two- and three-point actual-price edge backtest (current)
 
-Tap **BACKTEST** and start the historical 1,000-market scan. The existing
-downloader, 10 AM–11 PM Eastern filter, quote source, settlements and live
-alerts remain unchanged. The test uses real Kalshi YES bid/ask **midpoints**
-(not the chart's custom BTC-distance percentages) and settled YES/NO outcomes.
+Tap **BACKTEST** then **START 1000 PAST MARKETS**. The download remains
+research-only; it does not place orders or change live notifications. The app
+reads settled KXBTC15M markets, observed one-minute YES bid/ask quotes and
+settlement outcomes (10 AM–11 PM Eastern). The scanner uses **Kalshi YES
+midpoint** levels, not the Binance chart's custom percentages.
 
-The report now shows only patterns meeting **BOTH**:
+The scanner independently evaluates all ordered **two- and three-point paths**
+at 10-point levels from 10 through 90, buying either **UP (YES)** or
+**DOWN (NO)**. Each stage must be OBSERVED within 5 percentage points of
+its named level on a different valid one-minute close. Jumping over a level
+does not count as touching it. The first three minutes (15–13 minutes
+remaining) are research only; the final stage must close between 12 and 1
+minutes remaining. There is at most one qualifying entry per path per market.
 
-- **Hit rate strictly ABOVE 10% of all scanned markets**, AND **at least
-  100 distinct markets**. For exactly 1,000 scanned markets, the minimum is
-  **101**, not 100. One first fresh two-point completion per path and market
-  is counted; YES/NO mirrors are not counted as independent occurrences.
-- **At least 20 percentage points (absolute difference)** between the
-  selected buy side's observed settlement win rate and the **last YES
-  midpoint threshold** in the two-point pattern. This is the user's
-  requested raw gap definition, **not** a buy-price or trading-edge test.
+A reported setup must meet **all** these requirements:
+- Discovery historical BUY-side win rate minus average observed **BUY-side
+  ask price** is at least **+20 percentage points** (not the absolute
+  difference and not the opposing side's quote).
+- Positive modeled one-contract net after approximate taker fees, with
+  observed buy ask in the 1–99c range.
+- Strictly **more than 10% market hit rate**, both across the oldest 70%
+  discovery period and across the full scan, with at least 30 discovery
+  examples. A pattern seen in exactly 10% is rejected.
 
-The completion must occur between **8 and 4 minutes remaining**. The report
-searches contiguous time windows of 2–5 minutes inside that span and picks
-the qualifying window with the highest historical winning percentage,
-favoring more hits on ties. Each displayed pattern includes precisely:
+For a YES path of 70% -> 60% and a **DOWN** trade, the cost is the observed
+NO ask (1 − YES bid), not 60c. If the real NO ask is 41c, a 60% historical
+NO win rate is only a **19-point** advantage, so this candidate **fails**
+the +20-point screen. This avoids the old scanner's false positives, which
+compared the win rate to the last YES level using an absolute difference.
 
-    50% - 40%
-    Buy: DOWN
-    WR: 70.0% (140/200)
-    Hit rate: 20.0% (200/1000)
-    Best timeframe: 8 to 4 mins left
+Eight predefined entry-time ranges are compared using discovery data, with
+the best window chosen by average fee-adjusted profit * opportunity
+frequency. The report shows for each qualifying path:
 
-This is a **format example, not a measured result**. UP means buying YES;
-DOWN means buying NO. Candidate sides are compared using retrospective ROI
-from actual historical **buy asks** and estimated taker fees, then just the
-best side is displayed per unique two-point YES path. Timing is selected
-retrospectively, and high historical win rates can overfit.
+- Two vs. three stages, buy UP or DOWN, and best timeframe.
+- Discovery, newest 30%, and full-period sample counts, unique-market hit
+  rate, settlement win rate, observed buy ask, modeled fees, and net result.
+- A separately scored mirror (YES stages become 100 − each stage, and the
+  purchase side flips). **A mirror is not assumed to be profitable** simply
+  because the original qualifies; mirrored pairs are listed first.
+- For three-point paths, the two-point prefix at the **same timeframe**, so
+  you can see whether the additional stage helps the win rate enough to
+  justify any reduction in frequency.
+- Combined distinct-market coverage (all qualifying paths, each market
+  counted once) plus separately mirror-paired coverage. **50% is a target,
+  not an artificially forced output**.
 
-**Important:** A path ending at **YES 40%** implies approximately
-**NO 60%**, so a **70% NO win rate** is only about 10 points above the NO
-midpoint, NOT 30 points above the effective purchase price. Actual ask,
-spread, fees, and fills can make a qualifying 20-point *raw* gap pattern
-unprofitable. These filters are for exploration, not validated live
-signals. Nothing automatically places trades or changes alerts.
+The historical outcomes of the newest 30% are shown separately; however,
+the full-scan frequency floor uses newest market counts, and exploring
+hundreds of paths still causes selection bias. This is **not independent
+proof of a profitable strategy**. Observed minute-close asks are not
+guaranteed executable fills, and estimates exclude slippage. Forward-test
+against new settled markets before staking real funds.
 
 ## Live multi-pattern Kalshi notifications (v1.1.0)
 
