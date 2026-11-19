@@ -41,17 +41,18 @@ not the custom BTC-distance chart percentages. A **NO 80->60** path is
 equivalent to a **YES 20->40** quote path: they refer to the *same market
 observation*, not two independent trading opportunities.
 
-Results are ranked by *historical total estimated one-contract net return*
-across the scanned markets, rather than solely by win percentage. Each entry
-shows unique-market hit frequency, observed settlement win rate, actual
-historical buy-side ask, an approximate taker fee, net cents per hypothetical
-entry, ROI, payout/cost multiplier, and both older 70% and newest 30%
-subsamples. To qualify for display after the frequency screen, a setup must
-have positive net in both subsamples (at least 20 older and 10 newer entries)
-and its unadjusted Wilson 95% lower win-rate must exceed mean buy cost
-including estimated fees. The report shows exact-minute counts (8,7,6,5,4)
-and the best exploratory adjacent two-minute window selected from the older
-sample, checked against the newer sample.
+ALL patterns meeting the 100-market frequency requirement are visible, even
+when historically unprofitable. They are ranked by the better historical side's
+total estimated one-contract net return across scanned markets, but this is a
+descriptive ranking, not a recommendation. For each pattern the report shows
+both YES and NO settlement win rates, asks, approximate fees, expected net
+cents per hypothetical historical entry, older 70% versus newest 30% samples,
+and exact-minute counts (8,7,6,5,4). An exploratory adjacent two-minute
+range is selected on the older subsample and reported with newest results.
+A SEPARATE strict profitability flag requires positive estimated net in both
+periods (at least 20 older and 10 newer matches), plus an unadjusted Wilson
+95% lower historical win-rate above average buy cost including estimated fees.
+Zero strict passes never suppresses the 100+-hit patterns.
 
 It also shows **distinct combined coverage**, without adding overlapping
 pattern counts or mirrored YES/NO counts. If nothing meets the strict
