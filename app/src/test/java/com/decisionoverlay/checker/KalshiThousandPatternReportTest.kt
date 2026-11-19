@@ -31,9 +31,9 @@ class KalshiThousandPatternReportTest {
         assertTrue(KalshiThousandPatternReport.firstHit(m,r)!!.won)
         assertNull(KalshiThousandPatternReport.firstHit(
             market(2,mapOf(4 to 40,5 to 60)),r))
-        // 49 is the 40-band, not the 50-band.
+        // The helper adds 1, so 48 becomes 49 in the 40-band, not 50.
         assertNull(KalshiThousandPatternReport.firstHit(
-            market(3,mapOf(4 to 40,5 to 49)),r))
+            market(3,mapOf(4 to 40,5 to 48)),r))
     }
     @Test fun noTradingDuringFirstThreeOrAtSettlement() {
         val r=KalshiThousandPatternReport.rules.first()
