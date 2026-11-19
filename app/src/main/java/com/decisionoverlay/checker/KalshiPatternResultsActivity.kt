@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Run 27 fixed patterns on 1,000 Binance BTC 15-minute markets.")
+                "Ready. Run 27 fixed patterns and 7 target-centered paths on 1,000 Binance BTC 15-minute markets.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -69,7 +69,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "BINANCE BTC 27-PATTERN BACKTEST\n\n" +
+                    "BINANCE BTC PATTERN BACKTEST\n\n" +
                     "Tap RUN 1000 BINANCE MARKETS to fetch BTCUSDT real " +
                     "one-minute candles from Binance.US, only 15-minute " +
                     "sections between 10 AM and 11 PM Eastern.\n\n" +
@@ -77,7 +77,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "based on Bitcoin's distance from the 15-minute target " +
                     "and the last 60 completed one-minute candle ranges. " +
                     "This is NOT Kalshi's YES/NO price percentage.\n\n" +
-                    "It tests your SAME 27 fixed two- and three-step patterns. " +
+                    "It tests your 27 fixed patterns plus the seven chart path shapes, " +
+                    "with 50 at the target and symmetric levels above and below. " +
                     "The DOWN/UP decisions are checked against the final " +
                     "Bitcoin close relative to the 15-minute starting target. " +
                     "For each pattern it reports number of hits, hit rate, " +
@@ -166,7 +167,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         copyFull = button("COPY FULL") {
             if (shownReport.isNotEmpty()) {
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Binance 1000-market 27-pattern backtest", shownReport))
+                mgr.setPrimaryClip(ClipData.newPlainText("Binance 1000-market BTC pattern backtest", shownReport))
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
@@ -174,7 +175,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             if (shownReport.isNotEmpty()) {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Binance BTC 1000-market 27-pattern backtest")
+                    putExtra(Intent.EXTRA_SUBJECT, "Binance BTC 1000-market pattern backtest")
                     putExtra(Intent.EXTRA_TEXT, shownReport)
                 }
                 startActivity(Intent.createChooser(send, "Share Binance results"))

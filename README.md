@@ -1,4 +1,4 @@
-# BTC 15-minute BINANCE pattern backtest — 27 locked paths
+# BTC 15-minute BINANCE pattern backtest — 27 locked rules + 7 chart paths
 
 Tap **BACKTEST** then **RUN 100 BINANCE MARKETS** on the Android app. Only
 that button launches the historical scan. This version **does not request
@@ -19,8 +19,12 @@ The target is the BTC close of the candle immediately preceding each
 15-minute section. At the end of each completed section, **UP** means BTC
 closed ABOVE the target; **DOWN** means BTC closed BELOW it.
 
-The same **27 locked patterns** from the earlier reports are used. However,
-their named 10-point labels are **remapped from Kalshi YES quote bands onto
+The same **27 locked patterns** from the earlier reports are used. The report
+also tests the **seven path shapes** from the supplied chart, using the
+target-centered scale: 50 is the BTC target, above-target thresholds are
+60/70/80/90 and symmetric below-target thresholds are 40/30/20/10. Only the
+path shapes transfer; the source chart's percentages and results do not.
+The existing 27 rules' named 10-point labels are **remapped from Kalshi YES quote bands onto
 the app's own Binance signed distance-to-target chart**, since the two
 price scales are not interchangeable:
 
@@ -37,9 +41,10 @@ different minute closes; intermediate levels are allowed. First completed
 match per pattern/section only. Patterns may start in the first 3 minutes,
 but may only **complete between 11 and 1 minutes left**.
 
-The report shows **all 27**, including low-frequency and zero-occurrence
+The report shows **all 27** existing patterns and a separate seven-path table,
+including low-frequency and zero-occurrence
 rules, sorted by hit count. Fields: hits, **hit rate** (matched sections /
-all 100), **win rate** (correct BUY UP or BUY DOWN outcomes / matches),
+all eligible markets), **win rate** (correct BUY UP or BUY DOWN outcomes / matches),
 most frequent match timeframe, and a separate breakdown of hits and wins
 in the **11–9, 8–5, and 4–1 minutes-left** windows. No entry price, fees,
 Kalshi quote analysis, or automatic orders are included.

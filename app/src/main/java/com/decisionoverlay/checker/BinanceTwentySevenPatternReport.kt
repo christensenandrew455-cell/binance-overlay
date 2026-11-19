@@ -172,6 +172,8 @@ object BinanceTwentySevenPatternReport {
             ).joinToString(","))
         }
         sb.appendLine()
+        sb.append(BinanceSevenPathReport.report(unique))
+        sb.appendLine()
         sb.appendLine("=== EXACT COUNTS BY TIME LEFT ===")
         sb.appendLine("pattern,buy,time_left,hits,wins,hit_rate_pct,win_rate_pct")
         for (r in results) for ((window, hits) in r.breakdown) {

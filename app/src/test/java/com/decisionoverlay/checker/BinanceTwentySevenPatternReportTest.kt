@@ -101,4 +101,34 @@ class BinanceTwentySevenPatternReportTest {
         assertFalse(report.contains("BUY-side ask"))
         assertFalse(report.contains("INCOMPLETE:"))
     }
+
+    @Test fun sevenImagePathShapesUseTargetCenteredLevelsAndAreReported() {
+        val paths = BinanceSevenPathReport.paths
+        assertEquals(7, paths.size)
+        assertEquals(listOf(40, 60), paths[0].rule.steps)
+        assertEquals(listOf(50, 60), paths[1].rule.steps)
+        assertEquals(listOf(40, 20), paths[2].rule.steps)
+        assertEquals(listOf(50, 20), paths[3].rule.steps)
+        assertEquals(listOf(30, 20), paths[4].rule.steps)
+        assertEquals(listOf(60, 20), paths[5].rule.steps)
+        assertEquals(listOf(70, 60), paths[6].rule.steps)
+
+        val bands = listOf(
+            listOf(-65.0, 65.0), listOf(0.0, 65.0),
+            listOf(-65.0, -85.0), listOf(0.0, -85.0),
+            listOf(-75.0, -85.0), listOf(65.0, -85.0),
+            listOf(75.0, 65.0)
+        )
+        val markets = paths.mapIndexed { i, path ->
+            val buyUp = path.rule.buyUp
+            market(10_000L + i, buyUp, listOf(
+                4 to bands[i][0], 5 to bands[i][1]
+            ))
+        }
+        val results = BinanceSevenPathReport.results(markets)
+        assertEquals(7, results.size)
+        assertTrue(results.all { it.hits == 1 && it.wins == 1 })
+        assertTrue(BinanceSevenPathReport.report(markets)
+            .contains("01 40% -> 60%,DOWN,1,14.3,1,100.0"))
+    }
 }
