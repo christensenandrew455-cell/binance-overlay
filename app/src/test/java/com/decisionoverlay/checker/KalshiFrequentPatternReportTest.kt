@@ -100,6 +100,15 @@ class KalshiFrequentPatternReportTest {
         assertTrue(report.contains("Hit rate: 20.0% (200/1000)"))
     }
 
+    @Test fun lowEndPriceCanProduceBuyUpWithLowerWinRate() {
+        val report = KalshiFrequentPatternReport.report(
+            markets(200, first = 30, second = 20, noWinsPerTen = 6))
+        assertTrue(report.contains("1) 30% - 20%"))
+        assertTrue(report.contains("Buy: UP"))
+        assertTrue(report.contains("WR: 40.0% (80/200)"))
+        assertTrue(report.contains("Hit rate: 20.0% (200/1000)"))
+    }
+
     @Test fun bestTimeframeFavorsHighestWinRateWithTenPercentHitMinimum() {
         val markets = (0 until 1000).map { i ->
             val match = i < 200
