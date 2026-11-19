@@ -51,6 +51,16 @@ object BinanceTwentySevenPatternReport {
         Rule(listOf(50,70,60),false)
     )
 
+    /** Market starts at 10 AM or later, and FINISHES by 11 PM Eastern. */
+    fun isAllowedSession(startMs: Long): Boolean {
+        val zone = ZoneId.of("America/New_York")
+        val start = Instant.ofEpochMilli(startMs).atZone(zone)
+        val end = Instant.ofEpochMilli(startMs + 15L * 60_000L).atZone(zone)
+        return start.toLocalDate() == end.toLocalDate() &&
+            !start.toLocalTime().isBefore(java.time.LocalTime.of(10, 0)) &&
+            !end.toLocalTime().isAfter(java.time.LocalTime.of(23, 0))
+    }
+
     internal data class Hit(val left: Int, val won: Boolean)
     internal data class Window(val label: String, val high: Int, val low: Int) {
         fun includes(left: Int) = left in low..high
