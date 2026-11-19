@@ -20,51 +20,47 @@ determined by Kalshi trading and are not recoverable from Binance candles alone.
 No trading, live chart, alerts, subscriptions, credentials or Kalshi API required.
 GitHub Actions runs tests and builds an APK on push to main.
 
-## Frequent two-point Kalshi pattern backtest (current)
+## BTC two-point 20-percentage-point pattern backtest (current)
 
-Tap **BACKTEST** on the BTC chart, then **RUN BACKTEST (1000)**. The
-existing foreground service and historical downloader still search up to 1,000
-distinct settled BTC 15-minute Kalshi markets beginning between 10 AM and 11 PM
-Eastern. Nothing about downloading, time-zone filtering, or live alerts changed.
+Tap **BACKTEST** and start the historical 1,000-market scan. The existing
+downloader, 10 AM–11 PM Eastern filter, quote source, settlements and live
+alerts remain unchanged. The test uses real Kalshi YES bid/ask **midpoints**
+(not the chart's custom BTC-distance percentages) and settled YES/NO outcomes.
 
-Instead of dumping hundreds of rare combinations, the results only display
-**two-point patterns seen at least 100 times AND in at least 10% of all scanned
-markets**, with a *fresh second-point completion* at **8 to 4 minutes remaining**.
-Both stages must appear in separate completed one-minute quote candles. A
-completion before 8 minutes left is not re-counted later without first
-reaching the first level again. Each matching path counts at most once per
-market. Three-point patterns are not on the shortlist.
+The report now shows only patterns meeting **BOTH**:
 
-The source is actual historical Kalshi YES quote bid/ask closes and final
-YES/NO settlements for KXBTC15M. The quote path's percentages are midpoints,
-not the custom BTC-distance chart percentages. A **NO 80->60** path is
-equivalent to a **YES 20->40** quote path: they refer to the *same market
-observation*, not two independent trading opportunities.
+- **Hit rate strictly ABOVE 10% of all scanned markets**, AND **at least
+  100 distinct markets**. For exactly 1,000 scanned markets, the minimum is
+  **101**, not 100. One first fresh two-point completion per path and market
+  is counted; YES/NO mirrors are not counted as independent occurrences.
+- **At least 20 percentage points (absolute difference)** between the
+  selected buy side's observed settlement win rate and the **last YES
+  midpoint threshold** in the two-point pattern. This is the user's
+  requested raw gap definition, **not** a buy-price or trading-edge test.
 
-ALL patterns meeting the 100-market frequency requirement are visible, even
-when historically unprofitable. They are ranked by the better historical side's
-total estimated one-contract net return across scanned markets, but this is a
-descriptive ranking, not a recommendation. For each pattern the report shows
-both YES and NO settlement win rates, asks, approximate fees, expected net
-cents per hypothetical historical entry, older 70% versus newest 30% samples,
-and exact-minute counts (8,7,6,5,4). An exploratory adjacent two-minute
-range is selected on the older subsample and reported with newest results.
-A SEPARATE strict profitability flag requires positive estimated net in both
-periods (at least 20 older and 10 newer matches), plus an unadjusted Wilson
-95% lower historical win-rate above average buy cost including estimated fees.
-Zero strict passes never suppresses the 100+-hit patterns.
+The completion must occur between **8 and 4 minutes remaining**. The report
+searches contiguous time windows of 2–5 minutes inside that span and picks
+the qualifying window with the highest historical winning percentage,
+favoring more hits on ties. Each displayed pattern includes precisely:
 
-It also shows **distinct combined coverage**, without adding overlapping
-pattern counts or mirrored YES/NO counts. If nothing meets the strict
-requirements it explicitly reports **NONE QUALIFIED**, not fabricated wins.
-The report is short, scrollable and copyable.
+    50% - 40%
+    Buy: DOWN
+    WR: 70.0% (140/200)
+    Hit rate: 20.0% (200/1000)
+    Best timeframe: 8 to 4 mins left
 
-**Caveats:** Minute-close quotes are not a record of an executable order or
-intraminute path. The aggregate fees are estimates, slippage is excluded, and
-searching many candidate rules can generate spurious historical edges.
-The newest sample helps check consistency but is not untouched independent
-validation. Test against future markets before relying on any pattern.
-No live order or alert strategy is automatically changed by this report.
+This is a **format example, not a measured result**. UP means buying YES;
+DOWN means buying NO. Candidate sides are compared using retrospective ROI
+from actual historical **buy asks** and estimated taker fees, then just the
+best side is displayed per unique two-point YES path. Timing is selected
+retrospectively, and high historical win rates can overfit.
+
+**Important:** A path ending at **YES 40%** implies approximately
+**NO 60%**, so a **70% NO win rate** is only about 10 points above the NO
+midpoint, NOT 30 points above the effective purchase price. Actual ask,
+spread, fees, and fills can make a qualifying 20-point *raw* gap pattern
+unprofitable. These filters are for exploration, not validated live
+signals. Nothing automatically places trades or changes alerts.
 
 ## Live multi-pattern Kalshi notifications (v1.1.0)
 
