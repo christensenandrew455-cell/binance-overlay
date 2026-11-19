@@ -42,6 +42,7 @@ object KalshiFrequentPatternReport {
         quotes: List<KalshiPatternMath.Quote>, path: PairPath
     ): KalshiPatternMath.Quote? {
         var armed = false
+        var firstObservedLeft = 16
         val falling = path.second < path.first
         for (quote in quotes) {
             val mid = quote.strength(1)
@@ -50,13 +51,18 @@ object KalshiFrequentPatternReport {
             val atSecond = if (falling) mid <= path.second + 1e-7
                            else mid >= path.second - 1e-7
             if (armed && atSecond) {
+                val distinctLaterMinute = quote.left < firstObservedLeft
                 armed = false
-                if (quote.left in LAST_MINUTE_LEFT..FIRST_MINUTE_LEFT)
+                if (distinctLaterMinute &&
+                    quote.left in LAST_MINUTE_LEFT..FIRST_MINUTE_LEFT)
                     return quote
             }
             // The two levels are different. Observing the first level must
-            // precede observing the second level on a later candle.
-            if (atFirst) armed = true
+            // precede observing the second level on a strictly later candle.
+            if (atFirst) {
+                armed = true
+                firstObservedLeft = quote.left
+            }
         }
         return null
     }
