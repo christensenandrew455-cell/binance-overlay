@@ -171,8 +171,18 @@ object KalshiMirrorResearchReport {
 
         val out = StringBuilder()
         val total = ordered.size
-        out.appendLine("=== 1,000-MARKET BTC PATTERN + MIRROR RESEARCH ===")
-        out.appendLine("Actually analyzed: " + total + " settled markets; skipped: " + skipped)
+        val distinct = ordered.map { it.ticker }.toSet().size
+        val complete = total == 1000 && distinct == 1000
+        val oldest = java.time.Instant.ofEpochSecond(ordered.first().closeTs)
+            .atZone(java.time.ZoneId.of("America/New_York")).toLocalDate()
+        val newest = java.time.Instant.ofEpochSecond(ordered.last().closeTs)
+            .atZone(java.time.ZoneId.of("America/New_York")).toLocalDate()
+        out.appendLine("=== BTC PATTERN + MIRROR RESEARCH ===")
+        out.appendLine("SCAN: " + (if (complete) "COMPLETE 1000/1000" else "INCOMPLETE $distinct/1000") +
+            " distinct settled past markets. Do not label an incomplete scan as 1000.")
+        out.appendLine("Actually analyzed: " + total + " market records, " + distinct +
+            " distinct markets; skipped: " + skipped)
+        out.appendLine("Historical date range (Eastern): " + oldest + " through " + newest)
         out.appendLine("Source: Kalshi ONE-MINUTE YES bid/ask quote closes and actual settlements.")
         out.appendLine("IMPORTANT: THESE ARE NOT THE APP'S BINANCE CHART PERCENTAGES.")
         out.appendLine("A label +80 means Kalshi YES midpoint 80; -80 means midpoint 20.")
