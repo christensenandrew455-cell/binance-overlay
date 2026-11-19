@@ -9,7 +9,7 @@ import java.util.Locale
  * Match ordered EXACT ten-point YES price bands, not thresholds.
  */
 object KalshiThousandPatternReport {
-    internal data class Rule(val steps: List<Int>, val buyUp: Boolean) {
+    data class Rule(val steps: List<Int>, val buyUp: Boolean) {
         val label get() = steps.joinToString(" -> ") { it.toString() + "%" }
         val direction get() = if (buyUp) "UP" else "DOWN"
     }
