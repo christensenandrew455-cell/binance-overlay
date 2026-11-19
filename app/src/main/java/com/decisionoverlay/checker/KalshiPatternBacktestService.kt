@@ -32,9 +32,9 @@ class KalshiPatternBacktestService : Service() {
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://external-api.kalshi.com/trade-api/v2"
         private const val SERIES = "KXBTC15M"
-        private const val TARGET = 100
+        private const val TARGET = 1000
         // Extra candidates replace markets with missing or unusable quote history.
-        private const val CANDIDATE_TARGET = 500
+        private const val CANDIDATE_TARGET = 4000
         private const val CHANNEL = "kalshi_pattern_backtest"
         private const val NOTIFICATION_ID = 7877
     }
@@ -152,6 +152,9 @@ class KalshiPatternBacktestService : Service() {
                 } catch (_: Exception) { continue }
                 // Never include a current/future market as historical evidence.
                 if (closeTs < 900 || closeTs >= Instant.now().epochSecond) continue
+                // Nov 17-19, 2026 was used to discover these 27 patterns.
+                // Strictly exclude that whole period from independent validation.
+                if (closeTs >= Instant.parse("2026-11-17T05:00:00Z").epochSecond) continue
                 // Include 10:00 AM through 10:45 PM market starts, in Eastern time.
                 // DST is handled by the America/New_York IANA time zone.
                 if (!KalshiHundredMarketReport.isAllowedSession(closeTs)) continue
@@ -229,7 +232,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan() {
-        status("Collecting 100 settled BTC 15-minute markets (10 AM-11 PM ET)...")
+        status("Validating 27 locked patterns on 1000 older settled BTC markets...")
         val candidates = LinkedHashMap<String, Listing>()
         var discoveryFailure = ""
         try {
@@ -276,12 +279,12 @@ class KalshiPatternBacktestService : Service() {
         if (observed.isEmpty()) error("No valid quote candles found. $firstError")
         val count = observed.map { it.ticker }.toSet().size
         val complete = count == TARGET && observed.size == TARGET
-        val result = KalshiHundredMarketReport.report(observed, skipped)
+        val result = KalshiThousandPatternReport.report(observed, skipped)
         val finalStatus = if (complete)
-            "COMPLETE: 100/100 distinct settled BTC markets collected."
+            "COMPLETE: 1000/1000 older settled BTC markets; 27 patterns validated."
         else
-            "INCOMPLETE: $count/100 valid past markets; skipped $skipped. " +
-                "Do NOT treat this as a 100-market discovery dataset. " + firstError.take(90)
+            "INCOMPLETE: $count/1000 older valid past markets; skipped $skipped. " +
+                "Do NOT treat this as a 1000-market validation. " + firstError.take(90)
         prefs.edit().putString(REPORT, result)
             .putString(STATUS, finalStatus)
             .apply()
