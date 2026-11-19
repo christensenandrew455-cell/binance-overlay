@@ -74,12 +74,12 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
                     "The scanner searches the past for 1,000 DIFFERENT settled BTC " +
                     "15-minute markets, using market start times from 10 AM to 11 PM Eastern. " +
-                    "It evaluates two-point Kalshi quote moves on both YES and NO, but only shows setups seen in at least 100 distinct markets (10%) with the final step between 8 and 4 minutes left. Results are ranked by historical total net after estimated fees, and show hit count, win rate and best timing. " +
+                    "It evaluates two-point Kalshi quote moves on both YES and NO, but only shows ALL patterns seen in at least 100 distinct markets (10%) with the final step between 8 and 4 minutes left. Results are ranked by historical total net after estimated fees. BOTH YES and NO statistics are visible, and strict profit screening is shown separately; no frequent patterns are hidden. " +
                     "Progress shows verified usable markets out of 1,000; results are marked " +
                     "INCOMPLETE if 1,000 cannot be found.\n\n" +
                     "You can turn your screen off while it runs."
-                else if (report.length > 24000)
-                    report.take(24000) + "\n\n[PREVIEW ONLY: " + report.length +
+                else if (report.length > 100000)
+                    report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
                         reportParts(report).size + " smaller chunks, or COPY FULL.]"
                 else report
