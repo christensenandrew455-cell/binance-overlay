@@ -13,14 +13,16 @@ import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
-import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Background-only historical scan. Makes requests directly to Kalshi public
- * endpoints; Binance-derived chart values are never used as Kalshi odds.
+ * Historical Binance.US BTCUSDT collector, launched ONLY by the BACKTEST
+ * button. Legacy class name is preserved for Android manifest compatibility.
+ * There are NO Kalshi requests or automatic GitHub validation runs.
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
@@ -30,13 +32,14 @@ class KalshiPatternBacktestService : Service() {
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
         const val STOP = "kalshi.pattern.STOP"
-        private const val BASE = "https://external-api.kalshi.com/trade-api/v2"
-        private const val SERIES = "KXBTC15M"
-        private const val TARGET = 1000
-        // Extra candidates replace markets with missing or unusable quote history.
-        private const val CANDIDATE_TARGET = 4000
+        private const val BASE = "https://api.binance.us/api/v3/klines"
+        private const val TARGET_MARKETS = 100
+        private const val MAX_PAGES = 30
+        private const val MINUTE_MS = 60_000L
+        private const val QUARTER_MS = 15L * MINUTE_MS
         private const val CHANNEL = "kalshi_pattern_backtest"
         private const val NOTIFICATION_ID = 7877
+        private val ET = ZoneId.of("America/New_York")
     }
 
     private val active = AtomicBoolean(false)
@@ -47,17 +50,13 @@ class KalshiPatternBacktestService : Service() {
         .build()
     private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
 
-    private data class Listing(val ticker: String, val closeTs: Long,
-        val yesWon: Boolean, val archived: Boolean)
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(NotificationChannel(
-                CHANNEL, "Historical Kalshi test",
-                NotificationManager.IMPORTANCE_LOW))
+                CHANNEL, "Binance BTC backtest", NotificationManager.IMPORTANCE_LOW))
     }
 
     private fun notification(message: String): Notification {
@@ -66,7 +65,7 @@ class KalshiPatternBacktestService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Kalshi historical backtest")
+            .setContentTitle("Binance BTC historical backtest")
             .setContentText(message)
             .setContentIntent(open)
             .setOngoing(true)
@@ -82,21 +81,22 @@ class KalshiPatternBacktestService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
             active.set(false)
-            status("Stopping historical test...")
+            status("Stopping Binance BTC test...")
             return START_NOT_STICKY
         }
         if (!active.compareAndSet(false, true)) return START_NOT_STICKY
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, notification("Preparing historical scan..."),
+            startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else startForeground(NOTIFICATION_ID, notification("Preparing historical scan..."))
+        } else startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."))
         prefs.edit().putBoolean(RUNNING, true)
-            .putString(REPORT, "").putString(STATUS, "Preparing...").apply()
+            .putString(REPORT, "").putString(STATUS, "Preparing Binance BTC data...")
+            .apply()
         Thread {
             try {
                 scan()
             } catch (e: Exception) {
-                status("ERROR: ${e.message ?: e.javaClass.simpleName}")
+                status("ERROR: " + (e.message ?: e.javaClass.simpleName))
             } finally {
                 active.set(false)
                 prefs.edit().putBoolean(RUNNING, false).apply()
@@ -107,187 +107,122 @@ class KalshiPatternBacktestService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun getJson(url: String): JSONObject {
-        var last = ""
+    private fun getCandles(endTimeMs: Long): List<BtcAcmMath.Candle> {
+        var lastError = ""
         for (attempt in 0..3) {
-            if (!active.get()) error("Scan canceled")
-            val result = client.newCall(Request.Builder()
+            if (!active.get()) error("Scan stopped")
+            val url = "$BASE?symbol=BTCUSDT&interval=1m&limit=1000&endTime=$endTimeMs"
+            val response = client.newCall(Request.Builder()
                 .url(url).header("Accept", "application/json").get().build())
-                .execute().use { response ->
-                    val text = response.body?.string().orEmpty()
-                    if (response.isSuccessful) return JSONObject(text)
-                    last = "Kalshi HTTP ${response.code}: ${text.take(160)}"
-                    response.code
+                .execute().use { result ->
+                    val body = result.body?.string().orEmpty()
+                    if (result.isSuccessful) return@use Pair(result.code, body)
+                    lastError = "Binance.US HTTP ${result.code}: ${body.take(160)}"
+                    Pair(result.code, "")
                 }
-            if (result != 429 && result !in 500..599) break
+            if (response.first == 200) {
+                val arr = JSONArray(response.second)
+                val candles = ArrayList<BtcAcmMath.Candle>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val row = arr.getJSONArray(i)
+                    val candle = BtcAcmMath.Candle(
+                        row.getLong(0), row.getDouble(1), row.getDouble(2),
+                        row.getDouble(3), row.getDouble(4))
+                    if (candle.valid() && candle.at <= endTimeMs)
+                        candles.add(candle)
+                }
+                return candles
+            }
+            if (response.first != 429 && response.first !in 500..599) break
             Thread.sleep(1500L * (attempt + 1))
         }
-        error(last)
+        error(lastError.ifBlank { "Binance.US candle download failed" })
     }
 
-    private fun listMarkets(archived: Boolean): List<Listing> {
-        val endpoint = if (archived) "historical/markets" else "markets"
-        val result = ArrayList<Listing>()
-        var cursor = ""
-        // Paginate if necessary, but never loop indefinitely.
-        repeat(12) {
-            if (!active.get() || result.size >= CANDIDATE_TARGET) return result
-            val base = "$BASE/$endpoint?series_ticker=$SERIES&limit=1000"
-            val url = buildString {
-                append(base)
-                if (!archived) append("&status=settled")
-                if (cursor.isNotEmpty())
-                    append("&cursor=").append(java.net.URLEncoder.encode(cursor, "UTF-8"))
-            }
-            val json = getJson(url)
-            val items = json.optJSONArray("markets") ?: JSONArray()
-            for (i in 0 until items.length()) {
-                val market = items.optJSONObject(i) ?: continue
-                val ticker = market.optString("ticker")
-                val resultString = market.optString("result").lowercase()
-                if (!ticker.startsWith("$SERIES-") ||
-                    resultString !in listOf("yes", "no")) continue
-                val closeTs = try {
-                    Instant.parse(market.optString("close_time")).epochSecond
-                } catch (_: Exception) { continue }
-                // Never include a current/future market as historical evidence.
-                if (closeTs < 900 || closeTs >= Instant.now().epochSecond) continue
-                // Nov 17-19, 2026 was used to discover these 27 patterns.
-                // Strictly exclude that whole period from independent validation.
-                if (closeTs >= Instant.parse("2026-11-17T05:00:00Z").epochSecond) continue
-                // Include 10:00 AM through 10:45 PM market starts, in Eastern time.
-                // DST is handled by the America/New_York IANA time zone.
-                if (!KalshiHundredMarketReport.isAllowedSession(closeTs)) continue
-                result.add(Listing(ticker, closeTs, resultString == "yes", archived))
-            }
-            val next = json.optString("cursor")
-            if (next.isBlank() || next == cursor) return result
-            cursor = next
-        }
-        return result
+    private fun sessionAllowed(startMs: Long): Boolean {
+        val start = Instant.ofEpochMilli(startMs).atZone(ET)
+        val end = Instant.ofEpochMilli(startMs + QUARTER_MS).atZone(ET)
+        return start.toLocalDate() == end.toLocalDate() &&
+            !start.toLocalTime().isBefore(LocalTime.of(10, 0)) &&
+            !end.toLocalTime().isAfter(LocalTime.of(23, 0))
     }
 
-    private fun price(obj: JSONObject?, key: String): Double? {
-        if (obj == null) return null
-        // The historical API supports the newer *_dollars names, and older
-        // historical responses can still contain the unsuffixed OHLC fields.
-        val a = obj.optString("${key}_dollars", "")
-            .ifBlank { obj.optString(key, "") }
-        return a.toDoubleOrNull()?.takeIf { it.isFinite() }
-    }
-
-    /**
-     * A minute candle averages its four YES bid OHLC prices and four YES ask
-     * OHLC prices when present; when not present, keep the observed close
-     * midpoint instead. Do NOT interpolate a missing minute.
-     */
-    private fun averageYesPercent(c: JSONObject): Pair<Double, Boolean>? {
-        val yesBid = c.optJSONObject("yes_bid") ?: return null
-        val yesAsk = c.optJSONObject("yes_ask") ?: return null
-        val bidClose = price(yesBid, "close") ?: return null
-        val askClose = price(yesAsk, "close") ?: return null
-        fun good(bid: Double, ask: Double) =
-            bid in 0.0..1.0 && ask in 0.0..1.0 &&
-                bid <= ask && ask - bid <= 0.25
-        if (!good(bidClose, askClose)) return null
-
-        val fields = listOf("open", "high", "low", "close")
-        val all = fields.map { key -> price(yesBid, key) to price(yesAsk, key) }
-        val enough = all.all { (bid, ask) ->
-            bid != null && ask != null && good(bid, ask)
+    private fun buildMarket(
+        start: Long, candles: Map<Long, BtcAcmMath.Candle>
+    ): BinanceTwentySevenPatternReport.Market? {
+        if (!sessionAllowed(start)) return null
+        // Require all 60 prior warmup AND all 15 session candles.
+        // No missing candle interpolation and no future information.
+        for (offset in -60..14) {
+            if (candles[start + offset * MINUTE_MS] == null) return null
         }
-        if (enough) {
-            val averageBid = all.map { it.first!! }.average()
-            val averageAsk = all.map { it.second!! }.average()
-            return (100.0 * (averageBid + averageAsk) / 2.0) to false
+        val target = candles.getValue(start - MINUTE_MS).close
+        val finalBtc = candles.getValue(start + 14L * MINUTE_MS).close
+        if (target <= 0.0 || finalBtc == target) return null
+        val series = ArrayList<BinanceTwentySevenPatternReport.Observation>(14)
+        for (minute in 1..14) {
+            val candleOpen = start + (minute - 1L) * MINUTE_MS
+            val candle = candles.getValue(candleOpen)
+            val acm60 = BtcAcmMath.averageRange(candles, candleOpen, 60)
+                ?: return null
+            val left = (15 - minute).toDouble()
+            val signed = BtcChartProxyMath.signedStrength(
+                candle.close, target, acm60, left)
+            if (!signed.isFinite()) return null
+            series.add(BinanceTwentySevenPatternReport.Observation(minute, signed))
         }
-        return (100.0 * (bidClose + askClose) / 2.0) to true
-    }
-
-    private fun load(listing: Listing): KalshiHundredMarketReport.Market? {
-        val from = listing.closeTs - KalshiPatternMath.QUARTER_SECONDS
-        val endpoint = if (listing.archived)
-            "historical/markets/${listing.ticker}/candlesticks"
-        else "series/$SERIES/markets/${listing.ticker}/candlesticks"
-        val json = getJson("$BASE/$endpoint?start_ts=$from&end_ts=${listing.closeTs}&period_interval=1")
-        val candles = json.optJSONArray("candlesticks") ?: return null
-        val points = ArrayList<KalshiHundredMarketReport.MinutePrice>()
-        for (i in 0 until candles.length()) {
-            val c = candles.optJSONObject(i) ?: continue
-            val end = c.optLong("end_period_ts", 0L)
-            // Fifteen completed minute candles end at start+60 through close;
-            // minute 15 is the candle ending at close (not minutes left = 0).
-            val elapsed = end - from
-            if (elapsed !in 60L..900L || elapsed % 60L != 0L) continue
-            val minute = (elapsed / 60L).toInt()
-            val (percentage, usedClose) = averageYesPercent(c) ?: continue
-            if (percentage !in 0.0..100.0) continue
-            points.add(KalshiHundredMarketReport.MinutePrice(
-                minute, percentage, usedClose))
-        }
-        if (points.size < 2) return null
-        val unique = points.sortedBy { it.minute }.distinctBy { it.minute }
-        return KalshiHundredMarketReport.Market(
-            listing.ticker, listing.closeTs, listing.yesWon, unique)
+        return BinanceTwentySevenPatternReport.Market(
+            start, target, finalBtc, series)
     }
 
     private fun scan() {
-        status("Validating 27 locked patterns on 1000 older settled BTC markets...")
-        val candidates = LinkedHashMap<String, Listing>()
-        var discoveryFailure = ""
-        try {
-            for (m in listMarkets(false)) candidates[m.ticker] = m
-        } catch (e: Exception) {
-            discoveryFailure = e.message ?: "Recent market listing unavailable"
-        }
-        if (candidates.size < CANDIDATE_TARGET && active.get()) {
-            status("Checking the Kalshi historical archive...")
-            try {
-                for (m in listMarkets(true)) candidates.putIfAbsent(m.ticker, m)
-            } catch (e: Exception) {
-                if (candidates.isEmpty()) discoveryFailure =
-                    e.message ?: "Historical market listing unavailable"
+        status("Downloading Binance BTC 1-minute candles for 100 markets...")
+        val candles = HashMap<Long, BtcAcmMath.Candle>()
+        val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
+        var endTime = System.currentTimeMillis() / MINUTE_MS * MINUTE_MS - 1L
+        var previousOldest = Long.MAX_VALUE
+        var pageCount = 0
+        for (page in 1..MAX_PAGES) {
+            if (!active.get()) error("Scan stopped")
+            val batch = getCandles(endTime)
+            if (batch.isEmpty()) break
+            for (c in batch) candles[c.at] = c
+            val oldest = batch.minOf { it.at }
+            if (oldest >= previousOldest) break
+            previousOldest = oldest
+            endTime = oldest - 1L
+            pageCount = page
+
+            val starts = candles.keys.asSequence()
+                .filter { it % QUARTER_MS == 0L }
+                .sortedDescending().toList()
+            for (start in starts) {
+                if (selected.containsKey(start)) continue
+                // Market must have fully finished.
+                if (start + QUARTER_MS >
+                    System.currentTimeMillis() / MINUTE_MS * MINUTE_MS) continue
+                val market = buildMarket(start, candles) ?: continue
+                selected[start] = market
             }
+            if (selected.size >= TARGET_MARKETS) break
+            status("Binance BTC historical pages: $page; complete 15m " +
+                "markets: ${selected.size}/$TARGET_MARKETS")
+            try { Thread.sleep(140L) } catch (_: InterruptedException) { break }
         }
-        val chosen = candidates.values.sortedByDescending { it.closeTs }.take(CANDIDATE_TARGET)
-        if (chosen.isEmpty()) error("No settled $SERIES markets returned. $discoveryFailure")
-        val observed = ArrayList<KalshiHundredMarketReport.Market>()
-        var skipped = 0
-        var errors = 0
-        var firstError = ""
-        for ((index, item) in chosen.withIndex()) {
-            if (!active.get() || observed.size >= TARGET) break
-            try {
-                val market = load(item)
-                if (market != null) observed.add(market) else skipped++
-                errors = 0
-            } catch (e: Exception) {
-                skipped++
-                errors++
-                if (firstError.isBlank()) firstError = e.message.orEmpty()
-                // Don't run hundreds of failing calls when network/API is blocked.
-                if (errors >= 12) {
-                    status("Stopped after repeated Kalshi errors: $firstError")
-                    break
-                }
-            }
-            if ((index + 1) % 10 == 0 || index + 1 == chosen.size) {
-                status("Valid settled past markets: ${observed.size}/$TARGET; checked ${index + 1}/${chosen.size}; skipped $skipped")
-            }
-            try { Thread.sleep(180L) } catch (_: InterruptedException) { break }
-        }
-        if (observed.isEmpty()) error("No valid quote candles found. $firstError")
-        val count = observed.map { it.ticker }.toSet().size
-        val complete = count == TARGET && observed.size == TARGET
-        val result = KalshiThousandPatternReport.report(observed, skipped)
-        val finalStatus = if (complete)
-            "COMPLETE: 1000/1000 older settled BTC markets; 27 patterns validated."
+        if (selected.isEmpty())
+            error("No complete Binance BTC 15-minute markets found. " +
+                "Check Binance.US connectivity.")
+
+        val chosen = selected.values.sortedByDescending { it.startMs }
+            .take(TARGET_MARKETS).sortedBy { it.startMs }
+        val report = BinanceTwentySevenPatternReport.report(chosen)
+        val complete = chosen.size == TARGET_MARKETS
+        val summary = if (complete)
+            "COMPLETE: 100 Binance BTC 15-minute markets; all 27 patterns tested."
         else
-            "INCOMPLETE: $count/1000 older valid past markets; skipped $skipped. " +
-                "Do NOT treat this as a 1000-market validation. " + firstError.take(90)
-        prefs.edit().putString(REPORT, result)
-            .putString(STATUS, finalStatus)
-            .apply()
+            "INCOMPLETE: ${chosen.size}/100 Binance BTC sections after " +
+                "$pageCount download pages. Results shown provisionally."
+        prefs.edit().putString(REPORT, report).putString(STATUS, summary).apply()
     }
 
     override fun onDestroy() {
