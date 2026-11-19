@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Validate all 27 patterns on 1000 older settled BTC markets.")
+                "Ready. Run 27 fixed patterns on 100 Binance BTC 15-minute markets.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -69,18 +69,24 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "Run the 1,000-market VALIDATION of all 27 locked BTC patterns.\n\n" +
-                    "This scan uses 15-minute Kalshi YES one-minute price bands " +
-                    "and final UP/DOWN settlement outcomes. It checks 1,000 distinct " +
-                    "markets from BEFORE November 17, 2026 (Eastern), so they do not " +
-                    "overlap the 100 discovery markets from November 17-19.\n\n" +
-                    "Every pattern is counted no more than once per market, " +
-                    "with completion 11-1 minutes remaining. The report shows " +
-                    "all 27 by frequency, with hit rate, settlement win rate, " +
-                    "and fixed 11-9, 8-5, and 4-1 minute timing bands. " +
-                    "It separately lists patterns with hit rate above 10%.\n\n" +
-                    "Use COPY FULL or SHARE REPORT to send the ranked results. " +
-                    "You can turn off the screen while the scan runs."
+                    "BINANCE BTC 27-PATTERN BACKTEST\n\n" +
+                    "Tap RUN 100 BINANCE MARKETS to fetch BTCUSDT real " +
+                    "one-minute candles from Binance.US, only 15-minute " +
+                    "sections between 10 AM and 11 PM Eastern.\n\n" +
+                    "It uses the app's existing signed percentage lines " +
+                    "based on Bitcoin's distance from the 15-minute target " +
+                    "and the last 60 completed one-minute candle ranges. " +
+                    "This is NOT Kalshi's YES/NO price percentage.\n\n" +
+                    "It tests your SAME 27 fixed two- and three-step patterns. " +
+                    "The DOWN/UP decisions are checked against the final " +
+                    "Bitcoin close relative to the 15-minute starting target. " +
+                    "For each pattern it reports number of hits, hit rate, " +
+                    "win rate, and the most common timeframe, plus exact " +
+                    "counts for 11-9, 8-5 and 4-1 minutes left.\n\n" +
+                    "No Kalshi data, purchase prices, fees, automated trades " +
+                    "or GitHub historical test. The test runs only after " +
+                    "you press the button in this app.\n\n" +
+                    "Tap COPY FULL or SHARE REPORT to send me the results."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
@@ -124,14 +130,14 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC 1000-Market Pattern Validation"
+            text = "BTC Binance 27-Pattern Backtest"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN 1000-MARKET VALIDATION") {
+        start = button("RUN 100 BINANCE MARKETS") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
@@ -149,7 +155,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             if (parts.isNotEmpty()) {
                 val index = partIndex.coerceIn(0, parts.lastIndex)
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi part", "PART " +
+                mgr.setPrimaryClip(ClipData.newPlainText("Binance part", "PART " +
                     (index + 1) + "/" + parts.size + "\n" + parts[index]))
                 Toast.makeText(this, "Copied part " + (index + 1) +
                     " of " + parts.size, Toast.LENGTH_SHORT).show()
@@ -160,7 +166,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         copyFull = button("COPY FULL") {
             if (shownReport.isNotEmpty()) {
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi 1000-market pattern backtest", shownReport))
+                mgr.setPrimaryClip(ClipData.newPlainText("Binance 100-market 27-pattern backtest", shownReport))
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
@@ -168,10 +174,10 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             if (shownReport.isNotEmpty()) {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Kalshi BTC 1000-market 27-pattern validation")
+                    putExtra(Intent.EXTRA_SUBJECT, "Binance BTC 100-market 27-pattern backtest")
                     putExtra(Intent.EXTRA_TEXT, shownReport)
                 }
-                startActivity(Intent.createChooser(send, "Share Kalshi results"))
+                startActivity(Intent.createChooser(send, "Share Binance results"))
             }
         }
         addButton(actions, copy)
