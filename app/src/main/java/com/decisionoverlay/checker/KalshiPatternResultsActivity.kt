@@ -72,11 +72,18 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "Results will appear here when the scan finishes.\n\n" +
                     "This scanner checks ACTUAL Kalshi YES/NO quote candles and settled outcomes. " +
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
-                    "The scanner searches the past for 1,000 DIFFERENT settled BTC " +
-                    "15-minute markets, using market start times from 10 AM to 11 PM Eastern. " +
-                    "It evaluates two-point Kalshi quote moves on both YES and NO, but only shows ALL patterns seen in at least 100 distinct markets (10%) with the final step between 8 and 4 minutes left. Results are ranked by historical total net after estimated fees. BOTH YES and NO statistics are visible, and strict profit screening is shown separately; no frequent patterns are hidden. " +
-                    "Progress shows verified usable markets out of 1,000; results are marked " +
-                    "INCOMPLETE if 1,000 cannot be found.\n\n" +
+                    "The scanner searches 1,000 DIFFERENT settled BTC " +
+                    "15-minute markets, starting 10 AM to 11 PM Eastern. " +
+                    "Each result shows exactly: price-path percentages, BUY UP/DOWN, " +
+                    "historical win rate, hit rate, and best time range. " +
+                    "Patterns must have a hit rate ABOVE 10% (at least 100 markets) " +
+                    "and a win rate at least 20 percentage points away from the " +
+                    "last YES price percentage. It tests consecutive time ranges " +
+                    "between 8 and 4 minutes remaining, picking the highest " +
+                    "observed win rate that still clears the hit-rate floor. " +
+                    "UP means YES and DOWN means NO. This raw difference is not " +
+                    "proof of profit after the buy ask and fees. " +
+                    "Results are marked INCOMPLETE if 1,000 markets are not found.\n\n" +
                     "You can turn your screen off while it runs."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
@@ -121,7 +128,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC Frequent Pattern Backtest"
+            text = "BTC 20-Point Pattern Backtest"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
