@@ -31,7 +31,7 @@ class KalshiFourPatternReportTest {
 
     @Test fun skippedLevelsCountAtObservedPriceRatherThanInventedSixtyCentFill() {
         val r = KalshiFourPatternReport.rules[0]
-        val observed = listOf(quote(9, 72.0), quote(7, 40.0, 2.0))
+        val observed = listOf(quote(9, 72.0), quote(7, 40.0, 1.0))
         val completion = KalshiFourPatternReport.firstCompletion(observed, r)
         assertEquals(7, completion?.left)
         // YES bid 39c means observed NO ASK = 61c, NOT 40c.
