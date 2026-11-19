@@ -69,6 +69,15 @@ frequency. The report shows for each qualifying path:
   counted once) plus separately mirror-paired coverage. **50% is a target,
   not an artificially forced output**.
 
+When no pattern qualifies, the report still prints a **FILTER AUDIT**:
+the number of path/side/time-window combinations clearing the frequency
+screen, the number clearing the large-edge screen, and those clearing both.
+It also prints the strongest frequent patterns that failed the +20-point
+pricing requirement, the highest modeled price-edge patterns that occurred
+too rarely, and an always-visible comparison of YES 70->60 BUY DOWN with its
+YES 30->40 BUY UP mirror. These rows are explicitly **NOT QUALIFIED**;
+they are diagnostic research, not instructions to trade.
+
 The historical outcomes of the newest 30% are shown separately; however,
 the full-scan frequency floor uses newest market counts, and exploring
 hundreds of paths still causes selection bias. This is **not independent
