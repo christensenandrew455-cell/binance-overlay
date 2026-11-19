@@ -53,21 +53,18 @@ object KalshiTradeEdgeReport {
         var priorStageLeft = 16
         for (q in sortedQuotes) {
             if (!q.valid()) continue
+            // A stage must actually be observed in its 10-point midpoint
+            // bucket. A jump over 60 is NOT evidence of a 60% quote close.
             val mid = q.strength(1)
             if (stage == 0) {
-                val falling = path[1] < path[0]
-                val ready = if (falling) mid >= path[0] - 1e-7
-                    else mid <= path[0] + 1e-7
-                if (ready) {
+                if (kotlin.math.abs(mid - path[0]) < 5.0) {
                     stage = 1
                     priorStageLeft = q.left
                 }
                 continue
             }
-            val rising = path[stage] > path[stage - 1]
-            val reached = if (rising) mid >= path[stage] - 1e-7
-                else mid <= path[stage] + 1e-7
-            if (!reached || q.left >= priorStageLeft) continue
+            if (kotlin.math.abs(mid - path[stage]) >= 5.0 ||
+                q.left >= priorStageLeft) continue
             priorStageLeft = q.left
             stage++
             if (stage == path.size) {
@@ -242,7 +239,7 @@ object KalshiTradeEdgeReport {
             (ordered.size - split) + " markets.")
         out.appendLine("Scanned " + paths.size + " unique YES midpoint paths, " +
             "both buy sides, across " + windows.size + " preset windows.")
-        out.appendLine("Stages on successive VALID one-minute closes. 15-13 minutes " +
+        out.appendLine("Stages in observed +/-5pp YES midpoint buckets on separate VALID minute closes (skipped levels do not count). 15-13 minutes " +
             "left are research only; entry allowed 12-1 minutes left.")
         out.appendLine("BUY UP=YES ask; BUY DOWN=NO ask (1 minus YES bid). " +
             "Labels show YES quote midpoints; NOT Binance chart percentages.")
