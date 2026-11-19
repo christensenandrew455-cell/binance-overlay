@@ -76,7 +76,7 @@ class KalshiFrequentPatternReportTest {
     @Test fun frequentButUnprofitablePatternIsStillVisibleWithBothOutcomes() {
         val markets = (0 until 1000).map { i ->
             val matches = i % 5 == 0
-            KalshiPatternMath.Market("T-" + i, 900L * i, i % 2 == 0,
+            KalshiPatternMath.Market("T-" + i, 900L * i, (i / 5) % 20 < 11,
                 if (matches) listOf(quote(10, 70.0), quote(7, 60.0))
                 else listOf(quote(10, 55.0), quote(7, 55.0)))
         }
@@ -84,8 +84,8 @@ class KalshiFrequentPatternReportTest {
         assertTrue(report.contains("Frequent patterns (shown below): 1"))
         assertTrue(report.contains("0 STRICT PASSES"))
         assertTrue(report.contains("YES 70->60 / NO 30->40"))
-        assertTrue(report.contains("YES | win=100/200 (50.0%)"))
-        assertTrue(report.contains("NO | win=100/200 (50.0%)"))
+        assertTrue(report.contains("YES | win=110/200 (55.0%)"))
+        assertTrue(report.contains("NO | win=90/200 (45.0%)"))
         assertTrue(report.contains("Exact completion minute left:"))
     }
 }
