@@ -15,7 +15,6 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
-import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -33,9 +32,9 @@ class KalshiPatternBacktestService : Service() {
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://external-api.kalshi.com/trade-api/v2"
         private const val SERIES = "KXBTC15M"
-        private const val TARGET = 1000
+        private const val TARGET = 100
         // Extra candidates replace markets with missing or unusable quote history.
-        private const val CANDIDATE_TARGET = 3000
+        private const val CANDIDATE_TARGET = 500
         private const val CHANNEL = "kalshi_pattern_backtest"
         private const val NOTIFICATION_ID = 7877
     }
@@ -155,9 +154,7 @@ class KalshiPatternBacktestService : Service() {
                 if (closeTs < 900 || closeTs >= Instant.now().epochSecond) continue
                 // Include 10:00 AM through 10:45 PM market starts, in Eastern time.
                 // DST is handled by the America/New_York IANA time zone.
-                val localHour = Instant.ofEpochSecond(closeTs - 900L)
-                    .atZone(ZoneId.of("America/New_York")).hour
-                if (localHour !in 10..22) continue
+                if (!KalshiHundredMarketReport.isAllowedSession(closeTs)) continue
                 result.add(Listing(ticker, closeTs, resultString == "yes", archived))
             }
             val next = json.optString("cursor")
@@ -176,32 +173,63 @@ class KalshiPatternBacktestService : Service() {
         return a.toDoubleOrNull()?.takeIf { it.isFinite() }
     }
 
-    private fun load(listing: Listing): KalshiPatternMath.Market? {
+    /**
+     * A minute candle averages its four YES bid OHLC prices and four YES ask
+     * OHLC prices when present; when not present, keep the observed close
+     * midpoint instead. Do NOT interpolate a missing minute.
+     */
+    private fun averageYesPercent(c: JSONObject): Pair<Double, Boolean>? {
+        val yesBid = c.optJSONObject("yes_bid") ?: return null
+        val yesAsk = c.optJSONObject("yes_ask") ?: return null
+        val bidClose = price(yesBid, "close") ?: return null
+        val askClose = price(yesAsk, "close") ?: return null
+        fun good(bid: Double, ask: Double) =
+            bid in 0.0..1.0 && ask in 0.0..1.0 &&
+                bid <= ask && ask - bid <= 0.25
+        if (!good(bidClose, askClose)) return null
+
+        val fields = listOf("open", "high", "low", "close")
+        val all = fields.map { key -> price(yesBid, key) to price(yesAsk, key) }
+        val enough = all.all { (bid, ask) ->
+            bid != null && ask != null && good(bid, ask)
+        }
+        if (enough) {
+            val averageBid = all.map { it.first!! }.average()
+            val averageAsk = all.map { it.second!! }.average()
+            return (100.0 * (averageBid + averageAsk) / 2.0) to false
+        }
+        return (100.0 * (bidClose + askClose) / 2.0) to true
+    }
+
+    private fun load(listing: Listing): KalshiHundredMarketReport.Market? {
         val from = listing.closeTs - KalshiPatternMath.QUARTER_SECONDS
         val endpoint = if (listing.archived)
             "historical/markets/${listing.ticker}/candlesticks"
         else "series/$SERIES/markets/${listing.ticker}/candlesticks"
         val json = getJson("$BASE/$endpoint?start_ts=$from&end_ts=${listing.closeTs}&period_interval=1")
         val candles = json.optJSONArray("candlesticks") ?: return null
-        val points = ArrayList<KalshiPatternMath.Quote>()
+        val points = ArrayList<KalshiHundredMarketReport.MinutePrice>()
         for (i in 0 until candles.length()) {
             val c = candles.optJSONObject(i) ?: continue
             val end = c.optLong("end_period_ts", 0L)
-            val delta = listing.closeTs - end
-            if (delta % 60L != 0L) continue
-            val left = (delta / 60L).toInt()
-            val bid = price(c.optJSONObject("yes_bid"), "close") ?: continue
-            val ask = price(c.optJSONObject("yes_ask"), "close") ?: continue
-            val observation = KalshiPatternMath.Quote(left, bid, ask)
-            if (observation.valid()) points.add(observation)
+            // Fifteen completed minute candles end at start+60 through close;
+            // minute 15 is the candle ending at close (not minutes left = 0).
+            val elapsed = end - from
+            if (elapsed !in 60L..900L || elapsed % 60L != 0L) continue
+            val minute = (elapsed / 60L).toInt()
+            val (percentage, usedClose) = averageYesPercent(c) ?: continue
+            if (percentage !in 0.0..100.0) continue
+            points.add(KalshiHundredMarketReport.MinutePrice(
+                minute, percentage, usedClose))
         }
         if (points.size < 2) return null
-        return KalshiPatternMath.Market(listing.ticker,
-            listing.closeTs, listing.yesWon, points)
+        val unique = points.sortedBy { it.minute }.distinctBy { it.minute }
+        return KalshiHundredMarketReport.Market(
+            listing.ticker, listing.closeTs, listing.yesWon, unique)
     }
 
     private fun scan() {
-        status("Finding 1,000 PAST settled BTC markets (10 AM-11 PM ET)...")
+        status("Collecting 100 settled BTC 15-minute markets (10 AM-11 PM ET)...")
         val candidates = LinkedHashMap<String, Listing>()
         var discoveryFailure = ""
         try {
@@ -220,7 +248,7 @@ class KalshiPatternBacktestService : Service() {
         }
         val chosen = candidates.values.sortedByDescending { it.closeTs }.take(CANDIDATE_TARGET)
         if (chosen.isEmpty()) error("No settled $SERIES markets returned. $discoveryFailure")
-        val observed = ArrayList<KalshiPatternMath.Market>()
+        val observed = ArrayList<KalshiHundredMarketReport.Market>()
         var skipped = 0
         var errors = 0
         var firstError = ""
@@ -248,12 +276,12 @@ class KalshiPatternBacktestService : Service() {
         if (observed.isEmpty()) error("No valid quote candles found. $firstError")
         val count = observed.map { it.ticker }.toSet().size
         val complete = count == TARGET && observed.size == TARGET
-        val result = KalshiTradeEdgeReport.report(observed, skipped)
+        val result = KalshiHundredMarketReport.report(observed, skipped)
         val finalStatus = if (complete)
-            "COMPLETE: 1000/1000 distinct settled past BTC markets verified."
+            "COMPLETE: 100/100 distinct settled BTC markets collected."
         else
-            "INCOMPLETE: $count/1000 valid past markets; skipped $skipped. " +
-                "Do NOT treat this as a 1,000-market result. " + firstError.take(90)
+            "INCOMPLETE: $count/100 valid past markets; skipped $skipped. " +
+                "Do NOT treat this as a 100-market discovery dataset. " + firstError.take(90)
         prefs.edit().putString(REPORT, result)
             .putString(STATUS, finalStatus)
             .apply()
