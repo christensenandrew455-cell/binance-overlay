@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Press RUN BACKTEST to check 1,000 settled markets.")
+                "Ready. Run the 1,000-market original + mirror pattern study.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -119,14 +119,14 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "Kalshi Pattern Backtest"
+            text = "BTC Pattern + Mirror Backtest"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN BACKTEST (1000)") {
+        start = button("RUN 1000-MARKET TEST") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))

@@ -244,7 +244,7 @@ class KalshiPatternBacktestService : Service() {
             try { Thread.sleep(180L) } catch (_: InterruptedException) { break }
         }
         if (observed.isEmpty()) error("No valid quote candles found. $firstError")
-        val result = KalshiPatternMath.report(observed, skipped)
+        val result = KalshiMirrorResearchReport.report(observed, skipped)
         prefs.edit().putString(REPORT, result)
             .putString(STATUS, if (active.get())
                 "Finished: ${observed.size} markets. Tap COPY RESULTS."
