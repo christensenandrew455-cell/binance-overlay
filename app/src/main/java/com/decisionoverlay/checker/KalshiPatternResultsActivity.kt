@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Run 27 fixed patterns on 100 Binance BTC 15-minute markets.")
+                "Ready. Run 27 fixed patterns on 1,000 Binance BTC 15-minute markets.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -70,7 +70,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
                     "BINANCE BTC 27-PATTERN BACKTEST\n\n" +
-                    "Tap RUN 100 BINANCE MARKETS to fetch BTCUSDT real " +
+                    "Tap RUN 1000 BINANCE MARKETS to fetch BTCUSDT real " +
                     "one-minute candles from Binance.US, only 15-minute " +
                     "sections between 10 AM and 11 PM Eastern.\n\n" +
                     "It uses the app's existing signed percentage lines " +
@@ -137,7 +137,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN 100 BINANCE MARKETS") {
+        start = button("RUN 1000 BINANCE MARKETS") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
@@ -166,7 +166,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         copyFull = button("COPY FULL") {
             if (shownReport.isNotEmpty()) {
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Binance 100-market 27-pattern backtest", shownReport))
+                mgr.setPrimaryClip(ClipData.newPlainText("Binance 1000-market 27-pattern backtest", shownReport))
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
@@ -174,7 +174,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             if (shownReport.isNotEmpty()) {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Binance BTC 100-market 27-pattern backtest")
+                    putExtra(Intent.EXTRA_SUBJECT, "Binance BTC 1000-market 27-pattern backtest")
                     putExtra(Intent.EXTRA_TEXT, shownReport)
                 }
                 startActivity(Intent.createChooser(send, "Share Binance results"))
