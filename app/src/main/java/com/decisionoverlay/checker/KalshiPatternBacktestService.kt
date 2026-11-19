@@ -13,9 +13,6 @@ import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -26,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "kalshi_pattern_scan_v1"
+        const val PREFS = "binance_27_pattern_scan_v1"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
@@ -37,9 +34,8 @@ class KalshiPatternBacktestService : Service() {
         private const val MAX_PAGES = 30
         private const val MINUTE_MS = 60_000L
         private const val QUARTER_MS = 15L * MINUTE_MS
-        private const val CHANNEL = "kalshi_pattern_backtest"
+        private const val CHANNEL = "binance_27_pattern_backtest"
         private const val NOTIFICATION_ID = 7877
-        private val ET = ZoneId.of("America/New_York")
     }
 
     private val active = AtomicBoolean(false)
@@ -139,18 +135,11 @@ class KalshiPatternBacktestService : Service() {
         error(lastError.ifBlank { "Binance.US candle download failed" })
     }
 
-    private fun sessionAllowed(startMs: Long): Boolean {
-        val start = Instant.ofEpochMilli(startMs).atZone(ET)
-        val end = Instant.ofEpochMilli(startMs + QUARTER_MS).atZone(ET)
-        return start.toLocalDate() == end.toLocalDate() &&
-            !start.toLocalTime().isBefore(LocalTime.of(10, 0)) &&
-            !end.toLocalTime().isAfter(LocalTime.of(23, 0))
-    }
 
     private fun buildMarket(
         start: Long, candles: Map<Long, BtcAcmMath.Candle>
     ): BinanceTwentySevenPatternReport.Market? {
-        if (!sessionAllowed(start)) return null
+        if (!BinanceTwentySevenPatternReport.isAllowedSession(start)) return null
         // Require all 60 prior warmup AND all 15 session candles.
         // No missing candle interpolation and no future information.
         for (offset in -60..14) {
