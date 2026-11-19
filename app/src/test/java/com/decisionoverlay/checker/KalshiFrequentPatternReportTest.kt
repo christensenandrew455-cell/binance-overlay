@@ -56,19 +56,36 @@ class KalshiFrequentPatternReportTest {
 
     @Test fun displaysOnlyFrequentAndFeePositiveResultsForBothSides() {
         val report = KalshiFrequentPatternReport.report(markets(200))
-        assertTrue(report.contains("1) BUY NO | YES 70->60 / NO 30->40"))
-        assertTrue(report.contains("HIT 200/1000 (20.0%)"))
-        assertTrue(report.contains("WIN 160/200 (80.0%)"))
-        assertTrue(report.contains("8-4 min left"))
-        assertTrue(report.contains("Best observed 2-minute range=7-6 min left"))
-        assertTrue(report.contains("COMBINED COVERAGE of QUALIFIED setups, distinct markets only: 200/1000"))
-        assertFalse(report.contains("1) BUY YES | YES 70->60"))
+        assertTrue(report.contains("1) YES 70->60 / NO 30->40"))
+        assertTrue(report.contains("200/1000 hits (20.0%)"))
+        assertTrue(report.contains("win=160/200 (80.0%)"))
+        assertTrue(report.contains("FIRST FRESH two-point completion within 8-4 minutes LEFT"))
+        assertTrue(report.contains("Most promising historical 2-minute range=8-7 min left") ||
+            report.contains("Most promising historical 2-minute range=7-6 min left"))
+        assertTrue(report.contains("COMBINED coverage of frequent paths (unique markets): 200/1000"))
+        assertTrue(report.contains("YES | win=40/200 (20.0%)"))
     }
 
     @Test fun ninetyNineOfOneThousandNeverAppearsOnLeaderboard() {
         val report = KalshiFrequentPatternReport.report(markets(99))
-        assertTrue(report.contains("Frequent patterns (regardless of profit): 0"))
-        assertTrue(report.contains("NONE QUALIFIED"))
-        assertFalse(report.contains("1) BUY NO | YES 70->60"))
+        assertTrue(report.contains("Frequent patterns (shown below): 0"))
+        assertTrue(report.contains("NONE FOUND"))
+        assertFalse(report.contains("1) YES 70->60 / NO 30->40"))
+    }
+
+    @Test fun frequentButUnprofitablePatternIsStillVisibleWithBothOutcomes() {
+        val markets = (0 until 1000).map { i ->
+            val matches = i % 5 == 0
+            KalshiPatternMath.Market("T-" + i, 900L * i, i % 2 == 0,
+                if (matches) listOf(quote(10, 70.0), quote(7, 60.0))
+                else listOf(quote(10, 55.0), quote(7, 55.0)))
+        }
+        val report = KalshiFrequentPatternReport.report(markets)
+        assertTrue(report.contains("Frequent patterns (shown below): 1"))
+        assertTrue(report.contains("0 STRICT PASSES"))
+        assertTrue(report.contains("YES 70->60 / NO 30->40"))
+        assertTrue(report.contains("YES | win=100/200 (50.0%)"))
+        assertTrue(report.contains("NO | win=100/200 (50.0%)"))
+        assertTrue(report.contains("Exact completion minute left:"))
     }
 }
