@@ -1,0 +1,31 @@
+name: Validate 27 BTC paths on 1000 older markets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'research/validate_27_patterns.py'
+      - '.github/workflows/validate-patterns.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch settled Kalshi minute candles and compute 27 patterns
+        run: python -u research/validate_27_patterns.py
+      - name: Upload complete pattern and timeframe reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-27-pattern-1000-market-results
+          path: research/out/
+          if-no-files-found: warn
