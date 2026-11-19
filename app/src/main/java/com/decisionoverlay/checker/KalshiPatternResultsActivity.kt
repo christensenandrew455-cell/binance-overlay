@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Run the 1,000-market two-sided timing backtest.")
+                "Ready. Scan 1,000 settled markets for frequent two-point setups.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -74,7 +74,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
                     "The scanner searches the past for 1,000 DIFFERENT settled BTC " +
                     "15-minute markets, using market start times from 10 AM to 11 PM Eastern. " +
-                    "It tests your 7 original paths, both sides, all two-point trends and three-point reversals. " +
+                    "It evaluates two-point Kalshi quote moves on both YES and NO, but only shows setups seen in at least 100 distinct markets (10%) with the final step between 8 and 4 minutes left. Results are ranked by historical total net after estimated fees, and show hit count, win rate and best timing. " +
                     "Progress shows verified usable markets out of 1,000; results are marked " +
                     "INCOMPLETE if 1,000 cannot be found.\n\n" +
                     "You can turn your screen off while it runs."
@@ -121,7 +121,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC Two-Sided Timing Backtest"
+            text = "BTC Frequent Pattern Backtest"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
