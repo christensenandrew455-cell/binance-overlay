@@ -87,12 +87,25 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 updateAlertButtons()
             }
         }
-        // Long-press the only visible control to open the research scanner.
-        // A normal tap still exclusively enables/disables notifications.
-        notificationToggle.setOnLongClickListener {
-            startActivity(Intent(this, KalshiPatternResultsActivity::class.java))
-            true
+        // Backtest is a separate visible action, not a secret long-press.
+        // Leave the live notification toggle working exactly as before.
+        val backtestButton = Button(this).apply {
+            text = "BACKTEST 1000"
+            textSize = 10f
+            setAllCaps(false)
+            setOnClickListener {
+                startActivity(Intent(this@BtcRangeBacktestActivity,
+                    KalshiPatternResultsActivity::class.java))
+            }
         }
+        screen.addView(backtestButton, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.START).apply {
+                val density = resources.displayMetrics.density
+                topMargin = (7f * density).toInt()
+                leftMargin = (9f * density).toInt()
+            })
         screen.addView(notificationToggle, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
