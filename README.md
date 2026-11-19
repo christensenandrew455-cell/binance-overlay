@@ -1,41 +1,53 @@
-# BTC 15-minute Kalshi pattern validation
+# BTC 15-minute BINANCE pattern backtest — 27 locked paths
 
-The Android **BACKTEST** screen now runs the independent **1,000-market
-validation** for the **same 27 ordered price-band paths** discovered in the
-separate 100-market Nov 17-19, 2026 sample.
+Tap **BACKTEST** then **RUN 100 BINANCE MARKETS** on the Android app. Only
+that button launches the historical scan. This version **does not request
+Kalshi data or run a backtest automatically on GitHub**. GitHub Actions builds
+and tests the Android APK; the old automated Kalshi research workflow was
+disabled (manual only).
 
-Tap **BACKTEST** then **RUN 1000-MARKET VALIDATION**. The foreground service
-retrieves up to 1,000 *distinct settled* KXBTC15M markets, between 10 AM and
-11 PM Eastern, strictly **before Nov 17, 2026**. This cutoff prevents the
-100-market discovery period from leaking into the validation results. It
-does not retroactively alter the 27 fixed pattern definitions.
+Source: historical Binance.US BTCUSDT **one-minute OHLC candles**.
+The phone paginates backwards until it has up to **100 complete, distinct
+15-minute sections**. A section is eligible only if its local **Eastern**
+start is at or after **10:00 AM** and its end is no later than **11:00 PM**.
+The service requires all 60 prior warmup candles, all 15 section candles,
+and no tie between the starting target and final BTC close. Missing data
+are not fabricated. A scan with fewer than 100 eligible sections reports
+**INCOMPLETE**.
 
-Each pattern is matched on historical one-minute Kalshi YES bid/ask OHLC
-averages (midpoints). Price labels represent ten-point bands:
-40 means 40.0%-49.999...%, 50 means 50.0%-59.999...%.
-All stages must occur in **later completed one-minute observations**;
-other bands may occur between stages. Count only the FIRST full completion
-for each rule and market. A full completion at M01-M03 (first 3 minutes
-elapsed) is excluded; M04-M14 are eligible, meaning **11-1 minutes left**.
-M15 at settlement is not an eligible entry. Missing candles are never
-interpolated. Markets must have at least two usable minute observations.
+The target is the BTC close of the candle immediately preceding each
+15-minute section. At the end of each completed section, **UP** means BTC
+closed ABOVE the target; **DOWN** means BTC closed BELOW it.
 
-**Full CSV report for all 27 paths:** hit count, market hit rate, settlement
-win count, buy-UP/buy-DOWN win rate, most common 11-9 / 8-5 / 4-1 minutes
-left window, and the highest win-rate window with at least 10 hits.
-A separate section flags rules with strictly more than 10% hit rate; no
-low-frequency rule is silently removed from the full report. It also
-prints all 27 by each of the three windows to allow comparing timing.
-The timeframe metrics are retrospective and not prospective guarantees.
+The same **27 locked patterns** from the earlier reports are used. However,
+their named 10-point labels are **remapped from Kalshi YES quote bands onto
+the app's own Binance signed distance-to-target chart**, since the two
+price scales are not interchangeable:
 
-A scan that collects fewer than 1,000 eligible markets is labeled
-**INCOMPLETE**, never reported as a finished 1,000-market test. Press
-**COPY FULL** or **SHARE REPORT** to send the output. Data collection runs
-in a foreground service while the phone screen is off. Historical candles
-are not guaranteed executable entry prices. No trading or buying occurs.
+- 90 = above-target chart +90; 80 = +80; 70 = +70; 60 = +60
+- 50 = near the target (signed chart magnitude 50–59)
+- 40 = below-target chart -60; 30 = -70; 20 = -80; 10 = -90
 
-Existing live alerts are separate and unchanged. The older 100-market
-discovery collector and its tests remain in source for auditability.
+These are **custom chart levels, not calibrated win probabilities**.
+For each closed one-minute candle, the custom level uses its BTC close,
+the target price, the latest **60 completed one-minute high-low ranges**,
+and the minutes remaining. The calculation never uses future BTC data to
+produce an earlier chart observation. The sequences must occur in order on
+different minute closes; intermediate levels are allowed. First completed
+match per pattern/section only. Patterns may start in the first 3 minutes,
+but may only **complete between 11 and 1 minutes left**.
+
+The report shows **all 27**, including low-frequency and zero-occurrence
+rules, sorted by hit count. Fields: hits, **hit rate** (matched sections /
+all 100), **win rate** (correct BUY UP or BUY DOWN outcomes / matches),
+most frequent match timeframe, and a separate breakdown of hits and wins
+in the **11–9, 8–5, and 4–1 minutes-left** windows. No entry price, fees,
+Kalshi quote analysis, or automatic orders are included.
+
+The earlier Kalshi-derived rule discovery and any historical win rates from
+that source **do not carry over** to Binance chart levels. This Binance test
+produces fresh measurements under the remapped definition. Live alerts are
+separate and unchanged.
 
 ## Live multi-pattern Kalshi notifications (v1.1.0)
 
