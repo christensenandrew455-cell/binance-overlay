@@ -159,14 +159,12 @@ object KalshiFrequentPatternReport {
         data class ShortWindow(val low: Int, val high: Int, val old: Stats,
                                val recent: Stats, val combined: Stats)
         // Select timing on the OLDER portion only, then show newer results.
-        val options = (5..7).map { low ->
+        val options = (4..7).map { low ->
             ShortWindow(low, low + 1,
                 p.between(low, low + 1, p.oldMinute),
                 p.between(low, low + 1, p.newMinute),
                 p.between(low, low + 1, p.byMinute))
-        } + ShortWindow(7, 8,
-            p.between(7, 8, p.oldMinute), p.between(7, 8, p.newMinute),
-            p.between(7, 8, p.byMinute))
+        }
         val selected = options.filter {
             it.old.count >= 15 && it.recent.count >= 8 &&
                 it.old.netCents(side) > 0.0 && it.recent.netCents(side) > 0.0
