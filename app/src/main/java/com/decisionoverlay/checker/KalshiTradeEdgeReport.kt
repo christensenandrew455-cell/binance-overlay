@@ -50,19 +50,25 @@ object KalshiTradeEdgeReport {
         if (path.size !in 2..3 || path.zipWithNext().any { it.first == it.second })
             return null
         var stage = 0
+        var priorStageLeft = 16
         for (q in sortedQuotes) {
+            if (!q.valid()) continue
             val mid = q.strength(1)
             if (stage == 0) {
                 val falling = path[1] < path[0]
                 val ready = if (falling) mid >= path[0] - 1e-7
                     else mid <= path[0] + 1e-7
-                if (ready) stage = 1
+                if (ready) {
+                    stage = 1
+                    priorStageLeft = q.left
+                }
                 continue
             }
             val rising = path[stage] > path[stage - 1]
             val reached = if (rising) mid >= path[stage] - 1e-7
                 else mid <= path[stage] + 1e-7
-            if (!reached) continue
+            if (!reached || q.left >= priorStageLeft) continue
+            priorStageLeft = q.left
             stage++
             if (stage == path.size) {
                 stage = 0
