@@ -85,20 +85,20 @@ class BinanceTwentySevenPatternReportTest {
     }
 
     @Test fun reportShowsAll27WithHitRateWinRateAndTimeframe() {
-        val markets = (0 until 100).map { i ->
-            val sequence = if (i < 12)
+        val markets = (0 until 1000).map { i ->
+            val sequence = if (i < 120)
                 listOf(1 to 75.0, 7 to 65.0)
             else listOf(1 to -90.0, 7 to -90.0)
-            market(i.toLong(), i >= 9 && i < 12, sequence)
+            market(i.toLong(), i >= 90 && i < 120, sequence)
         }
         val report = BinanceTwentySevenPatternReport.report(markets)
-        assertTrue(report.contains("100/100"))
+        assertTrue(report.contains("1000/1000"))
         assertTrue(report.contains("SOURCE: Binance.US"))
-        assertTrue(report.contains("70% -> 60%,DOWN,12,12.0,9,75.0,8-5m,12"))
+        assertTrue(report.contains("70% -> 60%,DOWN,120,12.0,90,75.0,8-5m,120"))
         assertTrue(report.contains("=== EXACT COUNTS BY TIME LEFT ==="))
         assertTrue(report.contains("40% -> 50%"))
         assertTrue(report.contains("50% -> 70% -> 60%"))
         assertFalse(report.contains("BUY-side ask"))
-        assertFalse(report.contains("1000-market"))
+        assertFalse(report.contains("INCOMPLETE:"))
     }
 }
