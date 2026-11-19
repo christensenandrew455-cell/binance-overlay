@@ -77,6 +77,12 @@ class KalshiTradeEdgeReportTest {
         assertTrue(report.contains("Combined distinct-market hit: 360/1000 (36.0%)"))
         assertTrue(report.contains("Discovery:"))
         assertTrue(report.contains("Newest:"))
+        assertTrue(report.contains("=== FILTER AUDIT: WHY PATTERNS FAILED ==="))
+        assertTrue(report.contains("=== MOST FREQUENTLY ELIGIBLE: BEST PRICE EDGES ==="))
+        assertTrue(report.contains("=== LARGE-EDGE BUT TOO-RARE PATTERNS ==="))
+        assertTrue(report.contains("=== REQUESTED BASELINE AND MIRROR"))
+        assertTrue(report.contains("YES 70% -> 60% | BUY DOWN (NO)"))
+        assertTrue(report.contains("YES 30% -> 40% | BUY UP (YES)"))
     }
 
     @Test fun threePointPatternsShowSameWindowTwoPointComparison() {
