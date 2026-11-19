@@ -34,7 +34,8 @@ class KalshiPatternBacktestService : Service() {
         private const val BASE = "https://external-api.kalshi.com/trade-api/v2"
         private const val SERIES = "KXBTC15M"
         private const val TARGET = 1000
-        private const val CANDIDATE_TARGET = 1800
+        // Extra candidates replace markets with missing or unusable quote history.
+        private const val CANDIDATE_TARGET = 3000
         private const val CHANNEL = "kalshi_pattern_backtest"
         private const val NOTIFICATION_ID = 7877
     }
@@ -150,7 +151,8 @@ class KalshiPatternBacktestService : Service() {
                 val closeTs = try {
                     Instant.parse(market.optString("close_time")).epochSecond
                 } catch (_: Exception) { continue }
-                if (closeTs < 900) continue
+                // Never include a current/future market as historical evidence.
+                if (closeTs < 900 || closeTs >= Instant.now().epochSecond) continue
                 // Include 10:00 AM through 10:45 PM market starts, in Eastern time.
                 // DST is handled by the America/New_York IANA time zone.
                 val localHour = Instant.ofEpochSecond(closeTs - 900L)
@@ -199,7 +201,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan() {
-        status("Finding 1,000 settled BTC markets (10 AM-11 PM ET)...")
+        status("Finding 1,000 PAST settled BTC markets (10 AM-11 PM ET)...")
         val candidates = LinkedHashMap<String, Listing>()
         var discoveryFailure = ""
         try {
@@ -239,16 +241,21 @@ class KalshiPatternBacktestService : Service() {
                 }
             }
             if ((index + 1) % 10 == 0 || index + 1 == chosen.size) {
-                status("Scanned ${index + 1}/${chosen.size}; usable ${observed.size}; skipped $skipped")
+                status("Valid settled past markets: ${observed.size}/$TARGET; checked ${index + 1}/${chosen.size}; skipped $skipped")
             }
             try { Thread.sleep(180L) } catch (_: InterruptedException) { break }
         }
         if (observed.isEmpty()) error("No valid quote candles found. $firstError")
+        val count = observed.map { it.ticker }.toSet().size
+        val complete = count == TARGET && observed.size == TARGET
         val result = KalshiMirrorResearchReport.report(observed, skipped)
+        val finalStatus = if (complete)
+            "COMPLETE: 1000/1000 distinct settled past BTC markets verified."
+        else
+            "INCOMPLETE: $count/1000 valid past markets; skipped $skipped. " +
+                "Do NOT treat this as a 1,000-market result. " + firstError.take(90)
         prefs.edit().putString(REPORT, result)
-            .putString(STATUS, if (active.get())
-                "Finished: ${observed.size} markets. Tap COPY RESULTS."
-                else "Partial result: ${observed.size} markets. Tap COPY RESULTS.")
+            .putString(STATUS, finalStatus)
             .apply()
     }
 
