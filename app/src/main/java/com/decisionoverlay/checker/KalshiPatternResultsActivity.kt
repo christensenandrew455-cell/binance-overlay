@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Scan 1,000 settled markets for frequent two-point setups.")
+                "Ready. Scan 1,000 settled BTC markets for real-price 2/3-point UP/DOWN edges.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -72,18 +72,25 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "Results will appear here when the scan finishes.\n\n" +
                     "This scanner checks ACTUAL Kalshi YES/NO quote candles and settled outcomes. " +
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
-                    "The scanner searches 1,000 DIFFERENT settled BTC " +
-                    "15-minute markets, starting 10 AM to 11 PM Eastern. " +
-                    "Each result shows exactly: price-path percentages, BUY UP/DOWN, " +
-                    "historical win rate, hit rate, and best time range. " +
-                    "Patterns must have a hit rate ABOVE 10% (at least 100 markets) " +
-                    "and a win rate at least 20 percentage points away from the " +
-                    "last YES price percentage. It tests consecutive time ranges " +
-                    "between 8 and 4 minutes remaining, picking the highest " +
-                    "observed win rate that still clears the hit-rate floor. " +
-                    "UP means YES and DOWN means NO. This raw difference is not " +
-                    "proof of profit after the buy ask and fees. " +
-                    "Results are marked INCOMPLETE if 1,000 markets are not found.\n\n" +
+                    "The scanner checks 2-POINT and 3-POINT Kalshi quote paths " +
+                    "and their reversed YES/NO mirrored setups, buying either " +
+                    "UP (YES) or DOWN (NO). It uses 1,000 DISTINCT settled BTC " +
+                    "15-minute markets from 10 AM to 11 PM Eastern. " +
+                    "A pattern qualifies only if the actual buy-side historical " +
+                    "win rate beats the observed BUY ask by at least 20 " +
+                    "percentage points, with fee-adjusted positive net and " +
+                    "STRICTLY ABOVE 10% market hit rate. " +
+                    "No absolute difference against the wrong side's quote. " +
+                    "The backtest checks multiple completion-time windows from " +
+                    "12 to 1 minutes left, leaving the opening 3 minutes " +
+                    "as research only. It shows both 2- and 3-point results, " +
+                    "independent mirror checks, older 70% discovery, newest " +
+                    "30% validation numbers, actual asks, fees, returns and " +
+                    "distinct-market combined coverage. The newest sample " +
+                    "does not guarantee future returns and actual quote closes " +
+                    "do not guarantee fills. An unqualified mirrored pattern " +
+                    "is NEVER treated as profitable. No orders are placed. " +
+                    "Results are INCOMPLETE if 1,000 markets are not found.\n\n" +
                     "You can turn your screen off while it runs."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
@@ -128,7 +135,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC 20-Point Pattern Backtest"
+            text = "BTC UP/DOWN Actual-Price Edge Backtest"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
