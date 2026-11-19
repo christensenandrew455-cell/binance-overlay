@@ -143,6 +143,15 @@ object KalshiFrequentPatternReport {
         val totalNet get() = p.all.totalNetCents(side)
     }
 
+    private fun qualifies(p: PatternStats, side: Int): Boolean {
+        val s = p.all
+        return p.older.count >= 20 && p.newer.count >= 10 &&
+            s.netCents(side) > 0.0 &&
+            p.older.netCents(side) > 0.0 &&
+            p.newer.netCents(side) > 0.0 &&
+            s.lowerWinPct(side) > s.costCents(side)
+    }
+
     private fun num(x: Double) = String.format(Locale.US, "%.1f", x)
     private fun signed(x: Double) = String.format(Locale.US, "%+.1f", x)
     private fun money(x: Double) = String.format(Locale.US, "%+.2f", x)
@@ -155,26 +164,33 @@ object KalshiFrequentPatternReport {
         "%) | ask=" + num(s.askCents(side)) + "c | fee~" +
         num(s.feeCents(side)) + "c | net=" + signed(s.netCents(side)) + "c/entry"
 
+    /**
+     * Pick the two-minute window on the older sample, reporting the newer
+     * sample honestly even if profit is negative. This is descriptive research,
+     * not an additional pass/fail screen that hides a frequent pattern.
+     */
     private fun bestTiming(p: PatternStats, side: Int): String {
         data class ShortWindow(val low: Int, val high: Int, val old: Stats,
                                val recent: Stats, val combined: Stats)
-        // Select timing on the OLDER portion only, then show newer results.
         val options = (4..7).map { low ->
             ShortWindow(low, low + 1,
                 p.between(low, low + 1, p.oldMinute),
                 p.between(low, low + 1, p.newMinute),
                 p.between(low, low + 1, p.byMinute))
         }
-        val selected = options.filter {
-            it.old.count >= 15 && it.recent.count >= 8 &&
-                it.old.netCents(side) > 0.0 && it.recent.netCents(side) > 0.0
-        }.maxWithOrNull(compareBy<ShortWindow> { it.old.totalNetCents(side) }
-            .thenBy { it.combined.count })
-            ?: return "No narrower 2-minute window has sufficient older/newer positive-net data."
-        return "Best observed 2-minute range=" + selected.high + "-" +
-            selected.low + " min left | hits=" + selected.combined.count +
-            " | " + details(selected.combined, side) +
-            " | newest=" + signed(selected.recent.netCents(side)) + "c/entry"
+        val selected = options.filter { it.old.count > 0 }
+            .maxWithOrNull(compareBy<ShortWindow> { it.old.totalNetCents(side) }
+                .thenBy { it.old.count })
+            ?: return "No two-minute timing observations in older data."
+        return "Most promising historical 2-minute range=" +
+            selected.high + "-" + selected.low +
+            " min left | hit=" + selected.combined.count +
+            " | older n=" + selected.old.count + " net=" +
+            signed(selected.old.netCents(side)) + "c/entry" +
+            " | newest n=" + selected.recent.count + " net=" +
+            (if (selected.recent.count == 0) "n/a"
+             else signed(selected.recent.netCents(side)) + "c/entry") +
+            " (selected using older data, not independently validated)"
     }
 
     fun report(markets: List<KalshiPatternMath.Market>, skipped: Int = 0): String {
@@ -211,20 +227,20 @@ object KalshiFrequentPatternReport {
         // Strict frequency screen applies to the FULL 8..4 window, not
         // the full 15-minute market or a sum of duplicate YES/NO mirrors.
         val frequent = stats.values.filter { it.all.count >= minimum }
-        val candidates = frequent.flatMap { p ->
-            listOf(1, -1).mapNotNull { side ->
-                val s = p.all
-                if (p.older.count >= 20 && p.newer.count >= 10 &&
-                    s.netCents(side) > 0.0 &&
-                    p.older.netCents(side) > 0.0 &&
-                    p.newer.netCents(side) > 0.0 &&
-                    s.lowerWinPct(side) > s.costCents(side))
-                    Candidate(p, side)
-                else null
+        val qualified = frequent.flatMap { p ->
+            listOf(1, -1).filter { side -> qualifies(p, side) }.map { side ->
+                Candidate(p, side)
             }
+        }
+        // Every path that meets the user's frequency requirement MUST appear,
+        // even when its measured returns are negative. For ordering, choose the
+        // better historical side; always display BOTH YES and NO for each path.
+        val ranked = frequent.map { p ->
+            Candidate(p, if (p.all.totalNetCents(1) >= p.all.totalNetCents(-1)) 1 else -1)
         }.sortedWith(compareByDescending<Candidate> { it.totalNet }
             .thenByDescending { it.p.all.count }
-            .thenByDescending { it.p.all.lowerWinPct(it.side) - it.p.all.costCents(it.side) })
+            .thenBy { it.p.path.first }
+            .thenBy { it.p.path.second })
 
         val out = StringBuilder(18000)
         val oldest = Instant.ofEpochSecond(ordered.first().closeTs)
@@ -249,62 +265,75 @@ object KalshiFrequentPatternReport {
         out.appendLine("Entry price = observed buy ASK after the second point, not the named threshold.")
         out.appendLine("All entries are hypothetical; 1-minute closes do not prove orders were fillable.")
         out.appendLine("Net includes approximate one-contract taker fees, excludes slippage.")
-        out.appendLine("Screen after hit threshold: positive estimated net in BOTH chronological groups,")
+        out.appendLine("Strict pass screen AFTER display: positive estimated net in BOTH chronological groups,")
         out.appendLine("older >=20, newest >=10, and Wilson 95% lower win-rate > average all-in cost.")
         out.appendLine("Hundreds of patterns/time choices are tested: selection bias remains, even with these checks.")
         out.appendLine()
-        out.appendLine("Frequent patterns (regardless of profit): " + frequent.size +
-            " | qualified buy-side setups: " + candidates.size)
-        out.appendLine("RANKED RESULTS: historical total net across scanned markets first,")
-        out.appendLine("then pattern frequency. Do NOT rank by win percentage alone.")
+        out.appendLine("Frequent patterns (shown below): " + frequent.size +
+            " | stricter qualified buy-side setups: " + qualified.size)
+        out.appendLine("ALL frequent patterns are listed, whether profitable or not.")
+        out.appendLine("Ranking: best historical side's total one-contract net across the dataset,")
+        out.appendLine("then hit frequency. A ranking is NOT a recommendation.")
+        out.appendLine("PASS/FAIL uses positive historical net in both older/newer samples")
+        out.appendLine("and Wilson 95% lower win-rate above estimated all-in entry cost.")
         out.appendLine()
-
-        if (candidates.isEmpty()) {
-            out.appendLine("NONE QUALIFIED. No setup met both the strict 100-market frequency")
-            out.appendLine("rule and the historical net/consistency screen in the 8-4 minute window.")
-            out.appendLine("No lower-frequency patterns are shown or promoted.")
+        if (frequent.isEmpty()) {
+            out.appendLine("NONE FOUND: no two-point path completed at least " +
+                minimum + " times between 8 and 4 minutes left.")
+        } else if (qualified.isEmpty()) {
+            out.appendLine("0 STRICT PASSES. The " + frequent.size +
+                " frequent patterns are still displayed below for research.")
+            out.appendLine("Do not treat their historical win rates as profitable signals.")
+            out.appendLine()
         }
 
-        for ((index, c) in candidates.withIndex()) {
+        for ((index, c) in ranked.withIndex()) {
             val p = c.p
             val s = p.all
-            val side = c.side
-            val cost = s.costCents(side)
-            val multiplier = if (cost > 0.0) num(100.0 / cost) + "x" else "n/a"
-            val roi = if (cost > 0.0)
-                signed(100.0 * s.netCents(side) / cost) + "%" else "n/a"
-            out.appendLine((index + 1).toString() + ") BUY " +
-                (if (side == 1) "YES" else "NO") + " | " + p.path.label())
-            out.appendLine("   HIT " + s.count + "/" + ordered.size +
-                " (" + percent(s.count, ordered.size) + ") | " +
-                "WIN " + s.wins(side) + "/" + s.count +
-                " (" + num(s.winPct(side)) + "%) | 8-4 min left")
-            out.appendLine("   Historical ASK " + num(s.askCents(side)) +
-                "c + est. fee " + num(s.feeCents(side)) +
-                "c = break-even " + num(cost) + "%")
-            out.appendLine("   Estimated NET " + signed(s.netCents(side)) +
-                "c/entry | ROI " + roi +
-                " | gross payout / all-in cost ~" + multiplier)
-            out.appendLine("   Estimated historical total across scanned markets: $" +
-                money(s.totalNetCents(side) / 100.0) +
-                " for 1 hypothetical contract at each matching entry.")
-            out.appendLine("   95% Wilson lower historical win-rate=" +
-                num(s.lowerWinPct(side)) + "% (unadjusted for multiple comparisons)")
-            out.appendLine("   OLDER: n=" + p.older.count + " | " + details(p.older, side))
-            out.appendLine("   NEWEST: n=" + p.newer.count + " | " + details(p.newer, side))
-            out.appendLine("   " + bestTiming(p, side))
-            out.appendLine("   By exact minute left (count/win%): " +
+            val favoredSide = c.side
+            val bestPass = qualifies(p, favoredSide)
+            out.appendLine((index + 1).toString() + ") " + p.path.label() +
+                " | " + s.count + "/" + ordered.size + " hits (" +
+                percent(s.count, ordered.size) + ") | strongest historical side: " +
+                (if (favoredSide == 1) "YES" else "NO") +
+                " | " + (if (bestPass) "STRICT PASS" else "NOT QUALIFIED"))
+            for (side in listOf(1, -1)) {
+                val cost = s.costCents(side)
+                val multiple = if (cost > 0) num(100.0 / cost) + "x" else "n/a"
+                val roi = if (cost > 0)
+                    signed(100.0 * s.netCents(side) / cost) + "%" else "n/a"
+                val status = if (qualifies(p, side)) "PASS" else "FAIL"
+                out.appendLine("   " + (if (side == 1) "YES" else "NO") +
+                    " | " + details(s, side) +
+                    " | break-even win~" + num(cost) + "%" +
+                    " | hist. ROI=" + roi + " | all-in payout~" + multiple +
+                    " | total historical net=$" +
+                    money(s.totalNetCents(side) / 100.0) +
+                    " | " + status)
+                out.appendLine("      Older n=" + p.older.count +
+                    ": " + details(p.older, side))
+                out.appendLine("      Newest n=" + p.newer.count +
+                    ": " + details(p.newer, side))
+                out.appendLine("      " + bestTiming(p, side))
+            }
+            out.appendLine("   Exact completion minute left: " +
                 (8 downTo 4).joinToString(" | ") { minute ->
                     val b = p.byMinute[minute]
-                    minute.toString() + "m " + b.count + "/" +
-                        (if (b.count == 0) "n/a" else num(b.winPct(side)) + "%")
+                    minute.toString() + "m n=" + b.count +
+                        " YES=" + (if (b.count == 0) "n/a" else num(b.winPct(1)) + "%") +
+                        " NO=" + (if (b.count == 0) "n/a" else num(b.winPct(-1)) + "%")
                 })
             out.appendLine()
         }
 
-        val union = candidates.flatMap { it.p.marketIndexes }.toSet()
-        out.appendLine("COMBINED COVERAGE of QUALIFIED setups, distinct markets only: " +
-            union.size + "/" + ordered.size + " (" + percent(union.size, ordered.size) + ").")
+        val frequentUnion = frequent.flatMap { it.marketIndexes }.toSet()
+        val qualifiedUnion = qualified.flatMap { it.p.marketIndexes }.toSet()
+        out.appendLine("COMBINED coverage of frequent paths (unique markets): " +
+            frequentUnion.size + "/" + ordered.size + " (" +
+            percent(frequentUnion.size, ordered.size) + ").")
+        out.appendLine("COMBINED coverage of strict-pass paths (unique markets): " +
+            qualifiedUnion.size + "/" + ordered.size + " (" +
+            percent(qualifiedUnion.size, ordered.size) + ").")
         out.appendLine("Overlapping paths or YES/NO mirrors DO NOT add independent opportunities.")
         out.appendLine("Choosing one trade per market needs separate live priority and fill checks.")
         out.appendLine("A 60% historical win rate at a ~40c ask can be valuable;")
