@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Collect 100 settled BTC markets, 15 minute values and final outcomes.")
+                "Ready. Validate all 27 patterns on 1000 older settled BTC markets.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -69,23 +69,18 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "Results will appear here when the 100-market collection finishes.\n\n" +
-                    "PHASE ONE ONLY: download 100 distinct settled BTC " +
-                    "15-minute Kalshi markets whose session starts at or after " +
-                    "10:00 AM and ends by 11:00 PM Eastern.\n\n" +
-                    "Every market becomes ONE row with fifteen chronological " +
-                    "minute columns (M01 through M15), a final UP/DOWN result, " +
-                    "and its Eastern start and end times. The primary matrix " +
-                    "groups the YES percentage into 10-point ranges. " +
-                    "A second matrix preserves each minute's average YES " +
-                    "percentage to one decimal place. Missing observations " +
-                    "are marked NA. NO is simply the complementary side.\n\n" +
-                    "No pattern discovery, hit-rate screening, win-rate " +
-                    "calculation, or 1,000-market validation is run yet. " +
-                    "Use SHARE REPORT or COPY PART to send me the dataset, " +
-                    "and we will identify recurring patterns from these " +
-                    "actual minute sequences.\n\n" +
-                    "You can turn your screen off while the collection runs."
+                    "Run the 1,000-market VALIDATION of all 27 locked BTC patterns.\n\n" +
+                    "This scan uses 15-minute Kalshi YES one-minute price bands " +
+                    "and final UP/DOWN settlement outcomes. It checks 1,000 distinct " +
+                    "markets from BEFORE November 17, 2026 (Eastern), so they do not " +
+                    "overlap the 100 discovery markets from November 17-19.\n\n" +
+                    "Every pattern is counted no more than once per market, " +
+                    "with completion 11-1 minutes remaining. The report shows " +
+                    "all 27 by frequency, with hit rate, settlement win rate, " +
+                    "and fixed 11-9, 8-5, and 4-1 minute timing bands. " +
+                    "It separately lists patterns with hit rate above 10%.\n\n" +
+                    "Use COPY FULL or SHARE REPORT to send the ranked results. " +
+                    "You can turn off the screen while the scan runs."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
@@ -129,14 +124,14 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC 100-Market Minute Data Collector"
+            text = "BTC 1000-Market Pattern Validation"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("COLLECT 100 MARKETS") {
+        start = button("RUN 1000-MARKET VALIDATION") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
@@ -165,7 +160,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         copyFull = button("COPY FULL") {
             if (shownReport.isNotEmpty()) {
                 val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi minute matrix", shownReport))
+                mgr.setPrimaryClip(ClipData.newPlainText("Kalshi 1000-market pattern backtest", shownReport))
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
@@ -173,7 +168,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             if (shownReport.isNotEmpty()) {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Kalshi BTC 100-market minute matrix")
+                    putExtra(Intent.EXTRA_SUBJECT, "Kalshi BTC 1000-market 27-pattern validation")
                     putExtra(Intent.EXTRA_TEXT, shownReport)
                 }
                 startActivity(Intent.createChooser(send, "Share Kalshi results"))
