@@ -176,21 +176,46 @@ object KalshiTradeEdgeReport {
         }
 
         val candidates = ArrayList<Candidate>()
+        val frequentAudit = ArrayList<Candidate>()
+        val sparseHighEdgeAudit = ArrayList<Candidate>()
+        var frequencyPassingWindows = 0
+        var highEdgeWindows = 0
+        var fullyPassingWindows = 0
         for (path in paths) {
             val events = eventsByPath.getValue(path)
             for (side in listOf(1, -1)) {
                 var best: Candidate? = null
+                var bestFrequent: Candidate? = null
+                var bestSparse: Candidate? = null
                 for (window in windows) {
                     val (discovery, holdout, all) = score(events, side, window, split)
-                    // At least 20 percentage points BETTER, not absolute distance.
-                    // Compare to the observed ASK for the SAME contract side.
-                    if (discovery.count < MIN_DISCOVERY_SAMPLES ||
-                        discovery.hitPct(split) <= 100.0 * MIN_HIT_FRACTION ||
-                        all.hitPct(ordered.size) <= 100.0 * MIN_HIT_FRACTION ||
-                        discovery.edgePoints() + 1e-9 < MIN_EDGE_POINTS ||
-                        discovery.netCents() <= 0.0) continue
                     val candidate = Candidate(path, side, window,
                         discovery, holdout, all, split)
+                    val frequent = discovery.count >= MIN_DISCOVERY_SAMPLES &&
+                        discovery.hitPct(split) > 100.0 * MIN_HIT_FRACTION &&
+                        all.hitPct(ordered.size) > 100.0 * MIN_HIT_FRACTION
+                    val strongEdge = discovery.edgePoints() + 1e-9 >= MIN_EDGE_POINTS &&
+                        discovery.netCents() > 0.0
+                    if (frequent) {
+                        frequencyPassingWindows++
+                        if (bestFrequent == null ||
+                            discovery.edgePoints() > bestFrequent.discovery.edgePoints() ||
+                            (kotlin.math.abs(discovery.edgePoints() -
+                                bestFrequent.discovery.edgePoints()) < 1e-9 &&
+                                discovery.count > bestFrequent.discovery.count))
+                            bestFrequent = candidate
+                    }
+                    // Diagnostic ONLY: a rare 10+ sample path with a large
+                    // edge is shown but never promoted into a trading signal.
+                    if (discovery.count >= 10 && strongEdge) {
+                        highEdgeWindows++
+                        if (!frequent && (bestSparse == null ||
+                            candidate.expectedCentsPerMarket >
+                                bestSparse.expectedCentsPerMarket))
+                            bestSparse = candidate
+                    }
+                    if (!frequent || !strongEdge) continue
+                    fullyPassingWindows++
                     if (best == null ||
                         candidate.expectedCentsPerMarket > best.expectedCentsPerMarket + 1e-9 ||
                         (kotlin.math.abs(candidate.expectedCentsPerMarket -
@@ -200,6 +225,8 @@ object KalshiTradeEdgeReport {
                     }
                 }
                 if (best != null) candidates.add(best)
+                if (bestFrequent != null) frequentAudit.add(bestFrequent)
+                if (bestSparse != null) sparseHighEdgeAudit.add(bestSparse)
             }
         }
         val candidateKeys = candidates.map { it.key() }.toHashSet()
@@ -312,6 +339,77 @@ object KalshiTradeEdgeReport {
                 else "UNCONFIRMED: do not assume an edge"))
             out.appendLine()
         }
+        // Audit failures rather than reporting a content-free "zero" result.
+        // These samples are non-qualifying and MUST NOT become live signals.
+        out.appendLine("=== FILTER AUDIT: WHY PATTERNS FAILED ===")
+        out.appendLine("Evaluated " + (paths.size * 2 * windows.size) +
+            " path/BUY-side/time-window combinations.")
+        out.appendLine("Frequent windows (>10% older AND overall, older n>=30): " +
+            frequencyPassingWindows)
+        out.appendLine("Large-edge windows (older n>=10, +20pp over actual " +
+            "BUY ask, positive after fees): " + highEdgeWindows)
+        out.appendLine("Windows passing BOTH full screening rules: " +
+            fullyPassingWindows)
+        out.appendLine("The counts overlap across paths, directions and windows; " +
+            "they are NOT independent opportunities.")
+        out.appendLine()
+        out.appendLine("=== MOST FREQUENTLY ELIGIBLE: BEST PRICE EDGES ===")
+        out.appendLine("All below passed the >10% hit rule, but are NOT necessarily " +
+            "20-point edges. DO NOT TRADE FROM THIS TABLE.")
+        val frequentRank = frequentAudit.sortedWith(
+            compareByDescending<Candidate> { it.discovery.edgePoints() }
+                .thenByDescending { it.discovery.count }
+                .thenByDescending { it.discovery.netCents() }
+        )
+        if (frequentRank.isEmpty()) out.appendLine("None reached >10% hit rate.")
+        for ((i, c) in frequentRank.take(12).withIndex()) {
+            out.appendLine((i + 1).toString() + ". " +
+                (if (c.path.size == 2) "2-POINT " else "3-POINT ") +
+                pathName(c.path) + " | BUY " + sideName(c.side) +
+                " | " + c.window.label())
+            out.appendLine("   Older: " + describe(c.discovery, split))
+            out.appendLine("   Newest: " + describe(c.holdout, ordered.size - split))
+            out.appendLine("   SCREEN: " + (if (c.discovery.edgePoints() >= MIN_EDGE_POINTS &&
+                c.discovery.netCents() > 0.0) "PASS (appears above)"
+                else "FAIL: insufficient +20pp observed buy-price edge"))
+        }
+        out.appendLine()
+        out.appendLine("=== LARGE-EDGE BUT TOO-RARE PATTERNS ===")
+        out.appendLine("These failed the >10% frequency requirement; " +
+            "older n can be as small as 10. Their apparent edge may be noise.")
+        val sparseRank = sparseHighEdgeAudit.sortedWith(
+            compareByDescending<Candidate> { it.expectedCentsPerMarket }
+                .thenByDescending { it.discovery.count }
+                .thenByDescending { it.discovery.edgePoints() }
+        )
+        if (sparseRank.isEmpty()) out.appendLine("No rare >=20pp candidates " +
+            "with at least 10 older samples.")
+        for ((i, c) in sparseRank.take(12).withIndex()) {
+            out.appendLine((i + 1).toString() + ". " +
+                (if (c.path.size == 2) "2-POINT " else "3-POINT ") +
+                pathName(c.path) + " | BUY " + sideName(c.side) +
+                " | " + c.window.label())
+            out.appendLine("   Older: " + describe(c.discovery, split))
+            out.appendLine("   Newest: " + describe(c.holdout, ordered.size - split))
+            out.appendLine("   SCREEN: FAIL frequency threshold; NOT a live trade")
+        }
+        out.appendLine()
+        out.appendLine("=== REQUESTED BASELINE AND MIRROR (NOT PRE-APPROVED) ===")
+        val fullWindow = Window(12, 1)
+        for ((path, side) in listOf(
+            listOf(70, 60) to -1, listOf(30, 40) to 1
+        )) {
+            val (older, newer, all) = score(
+                eventsByPath.getValue(path), side, fullWindow, split)
+            out.appendLine(pathName(path) + " | BUY " + sideName(side))
+            out.appendLine("   Older: " + describe(older, split))
+            out.appendLine("   Newest: " + describe(newer, ordered.size - split))
+            out.appendLine("   All: " + describe(all, ordered.size))
+        }
+        out.appendLine("Quote paths are Kalshi YES midpoint buckets. " +
+            "If your app's 70->60 refers to the custom BTC-distance chart, " +
+            "it must be tested using THAT separate signal, not relabeled.")
+        out.appendLine()
         out.appendLine("END RESEARCH. This scan does not alter alerts or place orders.")
         out.appendLine("Do not trade a result without forward testing with " +
             "live executable asks, spreads, and actual fees.")
