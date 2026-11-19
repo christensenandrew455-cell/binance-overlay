@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Run the 1,000-market original + mirror pattern study.")
+                "Ready. Run the 1,000-market two-sided timing backtest.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -74,12 +74,12 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     "The chart's custom Binance-based lines are not Kalshi probabilities.\n\n" +
                     "The scanner searches the past for 1,000 DIFFERENT settled BTC " +
                     "15-minute markets, using market start times from 10 AM to 11 PM Eastern. " +
-                    "It tests 7 price paths, 7 mirror paths and additional research patterns. " +
+                    "It tests your 7 original paths, both sides, all two-point trends and three-point reversals. " +
                     "Progress shows verified usable markets out of 1,000; results are marked " +
                     "INCOMPLETE if 1,000 cannot be found.\n\n" +
                     "You can turn your screen off while it runs."
-                else if (report.length > 10000)
-                    report.take(10000) + "\n\n[PREVIEW ONLY: " + report.length +
+                else if (report.length > 24000)
+                    report.take(24000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
                         reportParts(report).size + " smaller chunks, or COPY FULL.]"
                 else report
@@ -121,7 +121,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC Pattern + Mirror Backtest"
+            text = "BTC Two-Sided Timing Backtest"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
