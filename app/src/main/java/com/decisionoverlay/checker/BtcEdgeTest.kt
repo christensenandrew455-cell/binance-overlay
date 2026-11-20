@@ -369,6 +369,7 @@ internal object BtcEdgeTest {
                 ).joinToString(","))
             }
             appendLine()
+            append(BtcFiveIndicatorEnsemble.report(ordered))
             appendLine("IMPORTANT: Indicators can be correlated with one another; rows are NOT independent trades.")
             appendLine("Tested setups were compared/ranked using the holdout, so run a later untouched forward sample before trusting a winner.")
             appendLine("Returns, fills, fees, slippage and calibration are NOT measured; a higher hit rate is not established profit.")
