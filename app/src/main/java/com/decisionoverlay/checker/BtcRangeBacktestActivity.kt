@@ -433,8 +433,38 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
             label(canvas, gapText + " " + relation,
                 w / 2f, timelineBottom + dp(43f),
                 if (delta > 0) green else if (delta < 0) red else gold, 11f)
-            label(canvas, "CUSTOM CHART LEVELS - NOT KALSHI ODDS",
-                w / 2f, timelineBottom + dp(62f), Color.LTGRAY, 8f)
+            // Live signal/order book are displayed BELOW the existing graph.
+            // Its custom bands, line plot and the countdown are unchanged.
+            val signal = snapshot.optJSONObject("five_indicator_signal")
+            val book = BtcSpotOrderBook.fromSnapshot(
+                snapshot.optJSONObject("btc_usdt_order_book"))
+            val modelReady = signal?.optBoolean("model_ready") == true
+            val unanimous = signal?.optBoolean("unanimous") == true
+            val chosenUp = signal?.optBoolean("up") == true
+            val isBookConfirmed = unanimous &&
+                book?.supports(chosenUp, now) == true
+            val signalText = when {
+                !modelReady -> "5 INDICATORS: RUN SCAN 1000 > TEST TO CALIBRATE"
+                !unanimous -> "5 INDICATORS: WAIT FOR 5/5 CONSENSUS"
+                isBookConfirmed -> "BUY " + (if (chosenUp) "UP" else "DOWN") +
+                    " WATCH | 5/5 + BTC ORDER BOOK"
+                else -> "5/5 " + (if (chosenUp) "UP" else "DOWN") +
+                    " | WAIT FOR ORDER BOOK CONFIRMATION"
+            }
+            label(canvas, signalText,
+                w / 2f, timelineBottom + dp(62f),
+                if (isBookConfirmed) (if (chosenUp) green else red)
+                else Color.LTGRAY, 9f)
+            if (h - timelineBottom >= dp(87f)) {
+                val bookText = if (book != null && book.fresh(now)) {
+                    String.format(Locale.US,
+                        "BTC/USDT BOOK: %.0f%% BIDS | %.0f%% ASKS | %.1f BPS",
+                        100.0 * book.bidShare, 100.0 * (1.0 - book.bidShare),
+                        book.spreadBps)
+                } else "BTC/USDT BOOK: WAITING FOR FRESH DEPTH"
+                label(canvas, bookText, w / 2f,
+                    timelineBottom + dp(80f), Color.LTGRAY, 8f)
+            }
             paint.textAlign = Paint.Align.LEFT
 
             // Keep all joined panel borders sharp and on top of price traces.
