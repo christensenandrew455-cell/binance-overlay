@@ -207,10 +207,16 @@ class KalshiPatternBacktestService : Service() {
             .take(TARGET_MARKETS).sortedBy { it.startMs }
         if (edge) {
             require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. A complete test needs 1,000." }
+            status("Calculating per-minute chart bands and first-touch outcomes...")
+            val levelsReport = BtcPositiveLevelStudy.report(chosen)
             status("Ranking indicator setups across all 1,000 markets...")
-            val result = BtcEdgeTest.report(chosen.map { examples.getValue(it.startMs) })
+            val studied = chosen.map { examples.getValue(it.startMs) }
+            val result = levelsReport + "\n" + BtcEdgeTest.report(studied)
+            val liveCalibration = BtcLiveCalibration.train(studied)
             if (!active.get()) error("Scan stopped")
-            prefs.edit().putString(EDGE_RESULT, result).putString(INDICATOR_STATUS, "Test complete · 1,000 markets").apply()
+            prefs.edit().putString(EDGE_RESULT, result)
+                .putString(BtcLiveCalibration.KEY, liveCalibration)
+                .putString(INDICATOR_STATUS, "Test complete · 1,000 markets · live model ready").apply()
             return
         }
         val report = BtcSequenceOutcomes.report(chosen)

@@ -19,9 +19,10 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Background pattern watch using ONLY the Binance BTC chart snapshot.
- * No Kalshi network requests, contracts, bids, asks, or trades.
- * The chart's 50-90% scale is NOT a calibrated Kalshi probability.
+ * Read-only BTC research alerts: calibrated five-indicator unanimous vote,
+ * plus fresh Binance.US BTC/USDT spot depth confirmation. NOT Kalshi bids/
+ * asks, and never any trading orders. Old service preference names retained
+ * for the existing main-graph notification enable/disable button.
  */
 class KalshiLiveSignalService : Service() {
     companion object {
@@ -32,51 +33,48 @@ class KalshiLiveSignalService : Service() {
         const val START = "kalshi.live.START"
         const val STOP = "kalshi.live.STOP"
         private const val RUNNING_CHANNEL = "btc_chart_proxy_monitor_v1"
-        private const val SIGNAL_CHANNEL = "btc_chart_proxy_signal_v1"
+        private const val SIGNAL_CHANNEL = "btc_unanimous_book_signal_v1"
         private const val RUNNING_ID = 7910
         private const val SIGNAL_ID = 8100
         private const val MINUTE = 60_000L
         private const val QUARTER = 15L * MINUTE
     }
 
-    private val working = AtomicBoolean(false)
-    private val tz = ZoneId.of("America/New_York")
+    private val active = AtomicBoolean(false)
     private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
-
+    private val timezone = ZoneId.of("America/New_York")
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(NotificationChannel(
-            RUNNING_CHANNEL, "BTC chart pattern monitoring",
-            NotificationManager.IMPORTANCE_LOW))
-        nm.createNotificationChannel(NotificationChannel(
-            SIGNAL_CHANNEL, "BTC chart pattern watch alerts",
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(NotificationChannel(
+            RUNNING_CHANNEL, "BTC chart pattern monitoring", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(
+            SIGNAL_CHANNEL, "BTC 5-of-5 research alerts",
             NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Research signals based on chart percentages, not live Kalshi contracts"
+            description = "BTC unanimous five-indicator and fresh spot book research watches"
             enableVibration(true)
         })
     }
 
-    private fun viewIntent(): PendingIntent = PendingIntent.getActivity(this, 0,
+    private fun chartIntent(): PendingIntent = PendingIntent.getActivity(this, 0,
         Intent(this, BtcRangeBacktestActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-    private fun runningNotification(message: String): Notification =
+    private fun runningNotification(detail: String): Notification =
         NotificationCompat.Builder(this, RUNNING_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("BTC chart pattern watch active")
-            .setContentText(message)
-            .setContentIntent(viewIntent())
-            .setOnlyAlertOnce(true).setOngoing(true).build()
+            .setContentTitle("BTC five-indicator watch active")
+            .setContentText(detail).setOnlyAlertOnce(true)
+            .setOngoing(true).setContentIntent(chartIntent()).build()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
             prefs.edit().putBoolean(ENABLED, false)
-                .putString(STATUS, "Off. Enable notifications on the BTC chart.").apply()
-            working.set(false)
+                .putString(STATUS, "Notifications disabled").apply()
+            active.set(false)
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(SIGNAL_ID)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -87,28 +85,23 @@ class KalshiLiveSignalService : Service() {
             return START_NOT_STICKY
         }
         prefs.edit().putBoolean(ENABLED, true).apply()
-        if (!working.compareAndSet(false, true)) return START_STICKY
+        if (!active.compareAndSet(false, true)) return START_STICKY
+        val foreground = runningNotification("Watching five votes and BTC/USDT depth")
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(RUNNING_ID,
-                runningNotification("Reading BTC chart percentages"),
+            startForeground(RUNNING_ID, foreground,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(RUNNING_ID,
-                runningNotification("Reading BTC chart percentages"))
-        }
+        } else startForeground(RUNNING_ID, foreground)
         Thread {
             try {
-                while (working.get()) {
-                    try { inspect() }
-                    catch (e: Exception) {
-                        status("Chart snapshot: " +
-                            (e.message ?: e.javaClass.simpleName).take(120))
+                while (active.get()) {
+                    try { inspect() } catch (e: Exception) {
+                        status("BTC signal: " + (e.message ?: "unavailable").take(100))
                     }
                     try { Thread.sleep(7_000L) }
                     catch (_: InterruptedException) { break }
                 }
             } finally {
-                working.set(false)
+                active.set(false)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -116,138 +109,110 @@ class KalshiLiveSignalService : Service() {
         return START_STICKY
     }
 
-    private fun status(message: String) {
-        if (!working.get() || !prefs.getBoolean(ENABLED, true)) return
-        prefs.edit().putString(STATUS, message).apply()
+    private fun status(detail: String) {
+        if (!active.get() || !prefs.getBoolean(ENABLED, true)) return
+        prefs.edit().putString(STATUS, detail).apply()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .notify(RUNNING_ID, runningNotification(message))
+            .notify(RUNNING_ID, runningNotification(detail))
     }
 
     private fun inspect() {
         if (!prefs.getBoolean(ENABLED, true)) return
         val now = System.currentTimeMillis()
-        val start = now / QUARTER * QUARTER
-        val hour = Instant.ofEpochMilli(start).atZone(tz).hour
-        if (hour !in 10..22) {
-            status("Watching 10 AM–11 PM Eastern markets only")
+        val section = now / QUARTER * QUARTER
+        if (Instant.ofEpochMilli(section).atZone(timezone).hour !in 10..22) {
+            status("Research alerts only from 10 AM to 11 PM Eastern")
             return
         }
-
         val raw = getSharedPreferences(BtcRangeBacktestService.PREFS, MODE_PRIVATE)
             .getString(BtcRangeBacktestService.KEY_SNAPSHOT, null)
-        if (raw.isNullOrBlank()) {
-            status("Waiting for BTC chart")
-            return
-        }
+        if (raw.isNullOrBlank()) { status("Waiting for BTC chart"); return }
         val chart = JSONObject(raw)
-        if (chart.optLong("section", -1L) != start ||
-            now - chart.optLong("now", 0L) !in 0L..30_000L) {
-            status("Waiting for fresh BTC chart data")
+        if (chart.optLong("section", -1L) != section ||
+            now - chart.optLong("now", -1L) !in 0L..30_000L) {
+            status("Waiting for fresh BTC chart")
             return
         }
-
-        // Read the SAME signed, completed-minute levels used by the BTC chart.
-        // Old unsigned contract "proxy_quotes" cannot represent below-target data.
-        val array = chart.optJSONArray("signed_chart_levels")
-        if (array == null || array.length() < 2) {
-            status("Waiting for completed signed BTC chart levels")
+        val signal = chart.optJSONObject("five_indicator_signal")
+        if (signal == null || !signal.optBoolean("model_ready")) {
+            status("Tap SCAN 1000 > Test once to train the live signal")
             return
         }
-        val history = ArrayList<BtcChartProxyMath.Sample>()
-        for (i in 0 until array.length()) {
-            val q = array.optJSONArray(i) ?: continue
-            val left = q.optInt(0, -1)
-            val level = q.optDouble(1, Double.NaN)
-            if (left !in 1..14 || !level.isFinite() ||
-                (level != 0.0 && kotlin.math.abs(level) !in 50.0..90.0)) continue
-            history.add(BtcChartProxyMath.Sample(left, level))
-        }
-        val latest = history.minByOrNull { it.left } ?: return
-        val closeOfMinute = start + QUARTER - latest.left * MINUTE
-        if (now - closeOfMinute !in 0L..90_000L) {
-            status("Waiting for the next chart minute close")
+        val left = signal.optInt("left", -1)
+        if (left !in listOf(11, 8, 5)) {
+            status("Watching 5/5 signals at 11, 8 and 5 min left")
             return
         }
-        // Watch the entire useful part of the quarter-hour. Each
-        // pattern keeps its own evidence-supported entry window.
-        if (latest.left !in 4..12) {
-            status("BTC chart running | " + latest.left +
-                "m left | watch 12-4m (skip first/last 3m)")
+        val closeAt = signal.optLong("closed_at", -1L)
+        if (closeAt != section + (15 - left) * MINUTE ||
+            now - closeAt !in 0L..90_000L) {
+            status("Waiting for latest fully closed one-minute candle")
             return
         }
-        // At most one alert per fully closed minute. Distinct pattern
-        // alerts in other minutes are allowed within the same market.
-        if (prefs.getLong("sent_minute_close", -1L) == closeOfMinute) {
-            status("BTC chart | " + latest.left + "m left | already alerted this minute")
+        if (prefs.getLong("sent_five_signal_section", -1L) == section) {
+            status("Already alerted for this BTC market")
             return
         }
-        val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
-        if (matched.isEmpty()) {
-            status("BTC chart | " + latest.left +
-                "m left | no eligible pattern (rule times: 8-6m, 5-4m)")
+        if (!signal.optBoolean("unanimous")) {
+            status("BTC chart | " + left + "m left | five votes not unanimous")
             return
         }
-        val price = chart.optDouble("latest", Double.NaN)
-        val target = chart.optDouble("target", Double.NaN)
-        if (!price.isFinite() || !target.isFinite() || target <= 0.0) {
-            status("Waiting for valid BTC spot and target")
+        val up = signal.optBoolean("up")
+        val book = BtcSpotOrderBook.fromSnapshot(
+            chart.optJSONObject("btc_usdt_order_book"))
+        if (book == null || !book.supports(up, now)) {
+            val share = if (book == null) "unavailable" else
+                String.format(Locale.US, "%.0f%% bids", 100 * book.bidShare)
+            status("5/5 " + (if (up) "UP" else "DOWN") +
+                " | BTC/USDT book not confirming: " + share)
             return
         }
-        // Require the CURRENT BTC price to agree with the completed chart
-        // direction, even if it moves across target between minute closes.
-        val best = matched.firstOrNull {
-            val correctSide = if (it.rule.buyYes) price < target else price > target
-            val key = "sent_rule_" + it.rule.path.joinToString("_") +
-                "_" + it.rule.earliestLeft + "_" + it.rule.side
-            correctSide && prefs.getLong(key, -1L) != start
-        } ?: run {
-            status("BTC chart | no new eligible watch, or price crossed target")
-            return
-        }
-        if (!working.get() || !prefs.getBoolean(ENABLED, true)) return
-        val rule = best.rule
-        val direction = if (rule.buyYes) "ABOVE TARGET at settlement"
-            else "BELOW TARGET at settlement"
-        val position = if (price > target) "ABOVE" else "BELOW"
-        val title = "BTC " + rule.side + " WATCH ONLY"
-        val signedLevel = String.format(Locale.US,
-            "%+.0f%%", best.signedChartLevel)
-        val spotText = String.format(Locale.US, "$%,.2f", price)
-        val targetText = String.format(Locale.US, "$%,.2f", target)
-        val distanceText = String.format(Locale.US, "$%,.2f", kotlin.math.abs(price - target))
-        val detail = best.left.toString() + "m left | BTC " + spotText +
-            " (" + distanceText + " " + position + " target " + targetText + ")" +
-            " | custom chart " + signedLevel + " | " +
-            rule.side + " means finish " + direction +
-            ". NOT a buy signal: chart scale is NOT Kalshi odds."
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) {
-            status("Allow Android notification permission to receive BTC watches")
+            status("Allow Android notifications for BUY UP / BUY DOWN watches")
             return
         }
-        val ruleKey = "sent_rule_" + rule.path.joinToString("_") +
-            "_" + rule.earliestLeft + "_" + rule.side
-        prefs.edit().putLong(ruleKey, start)
-            .putLong("sent_minute_close", closeOfMinute)
-            .putString(LAST_ALERT, title + "\n" + detail)
-            .putString(STATUS, "Last watch: " + title).apply()
+        if (!active.get() || !prefs.getBoolean(ENABLED, true)) return
+        val spot = chart.optDouble("latest", Double.NaN)
+        val target = chart.optDouble("target", Double.NaN)
+        if (!spot.isFinite() || !target.isFinite() || target <= 0.0) {
+            status("Waiting for valid spot and target")
+            return
+        }
+
+        val direction = if (up) "UP" else "DOWN"
+        val action = "BUY " + direction + " WATCH"
+        val comparedToChart = if (signal.optBoolean("override_chart"))
+            "OVERRIDES chart" else "CONFIRMS chart"
+        val title = action + " · 5/5 + BOOK"
+        val spotText = String.format(Locale.US, "$%,.2f", spot)
+        val targetText = String.format(Locale.US, "$%,.2f", target)
+        val bookText = String.format(Locale.US, "%.0f%% bid / %.1f bps spread",
+            100 * book.bidShare, book.spreadBps)
+        val detail = left.toString() + " min left | 5/5 " + direction + " (" +
+            comparedToChart + ") | BTC " + spotText + " target " + targetText +
+            " | BTC/USDT book " + bookText
+        val warning = "RESEARCH ONLY: UP = finish ABOVE BTC target, DOWN = BELOW. " +
+            "Spot book is NOT Kalshi YES/NO contract book. Verify contract ask, " +
+            "fees and spread before buying; no orders are placed."
         val note = NotificationCompat.Builder(this, SIGNAL_CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle(title)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle(title)
             .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(detail +
-                "\nHistorical contract quotes do NOT validate this chart proxy. Check real odds and fees before trading."))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail + "\n" + warning))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
-            .setContentIntent(viewIntent())
+            .setContentIntent(chartIntent())
             .setAutoCancel(true).build()
+        prefs.edit().putLong("sent_five_signal_section", section)
+            .putString(LAST_ALERT, title + "\n" + detail + "\n" + warning)
+            .putString(STATUS, "Last signal: " + action).apply()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .notify(SIGNAL_ID + latest.left, note)
+            .notify(SIGNAL_ID, note)
     }
 
     override fun onDestroy() {
-        working.set(false)
+        active.set(false)
         super.onDestroy()
     }
 }
