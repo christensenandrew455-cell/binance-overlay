@@ -5,18 +5,7 @@ import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.floor
 
-/**
- * RESEARCH ONLY. The 27 fixed sequences were named in 10-point steps.
- * For BINANCE BTC spot, we measure the app's signed distance-to-target
- * chart proxy, NOT Kalshi YES odds or any Kalshi quote.
- *
- * Above BTC target: +60/+70/+80/+90 -> step 60/70/80/90.
- * Below BTC target: -60/-70/-80/-90 -> step 40/30/20/10.
- * Within the 50-59 chart-magnitude region on EITHER side -> step 50.
- *
- * The mapping is explicit so users cannot mistake these hit/win rates
- * for results from Kalshi probabilities.
- */
+/** Ordered BTC chart bands with a common center at 50. */
 object BinanceTwentySevenPatternReport {
     data class Observation(val minute: Int, val signedChartLevel: Double)
     data class Market(
@@ -28,26 +17,26 @@ object BinanceTwentySevenPatternReport {
         val upWon: Boolean get() = finalBtc > targetBtc
     }
     data class Rule(val steps: List<Int>, val buyUp: Boolean) {
-        val label: String get() = steps.joinToString(" -> ") { "$it%" }
+        val label: String get() = steps.joinToString(" -> ") { when { it == 50 -> "Target 50%" ; it < 0 -> "Below ${-it}%" ; else -> "Above $it%" } }
         val direction: String get() = if (buyUp) "UP" else "DOWN"
     }
 
     // LOCKED 27 paths from the user's original list. Do not data-mine new
     // candidates or change the rule list after seeing these 1,000 markets.
     val rules: List<Rule> = listOf(
-        Rule(listOf(40,50),false), Rule(listOf(30,40),true),
-        Rule(listOf(60,50),false), Rule(listOf(50,40,50),false),
-        Rule(listOf(40,30,40),true), Rule(listOf(50,60,50),false),
-        Rule(listOf(40,60,50),false), Rule(listOf(70,60),false),
-        Rule(listOf(20,40),true), Rule(listOf(80,60),false),
-        Rule(listOf(70,50),false), Rule(listOf(40,20,40),true),
-        Rule(listOf(50,30,40),true), Rule(listOf(30,20,40),true),
-        Rule(listOf(30,50,40),true), Rule(listOf(10,50),false),
-        Rule(listOf(30,20,50),false), Rule(listOf(40,20,50),false),
-        Rule(listOf(50,20,40),true), Rule(listOf(30,10,50),false),
-        Rule(listOf(40,10,50),false), Rule(listOf(50,70,50),false),
-        Rule(listOf(60,70,50),false), Rule(listOf(10,40),true),
-        Rule(listOf(20,10,50),false), Rule(listOf(20,30,50),false),
+        Rule(listOf(-60,50),false), Rule(listOf(-70,-60),true),
+        Rule(listOf(60,50),false), Rule(listOf(50,-60,50),false),
+        Rule(listOf(-60,-70,-60),true), Rule(listOf(50,60,50),false),
+        Rule(listOf(-60,60,50),false), Rule(listOf(70,60),false),
+        Rule(listOf(-80,-60),true), Rule(listOf(80,60),false),
+        Rule(listOf(70,50),false), Rule(listOf(-60,-80,-60),true),
+        Rule(listOf(50,-70,-60),true), Rule(listOf(-70,-80,-60),true),
+        Rule(listOf(-70,50,-60),true), Rule(listOf(-90,50),false),
+        Rule(listOf(-70,-80,50),false), Rule(listOf(-60,-80,50),false),
+        Rule(listOf(50,-80,-60),true), Rule(listOf(-70,-90,50),false),
+        Rule(listOf(-60,-90,50),false), Rule(listOf(50,70,50),false),
+        Rule(listOf(60,70,50),false), Rule(listOf(-90,-60),true),
+        Rule(listOf(-80,-90,50),false), Rule(listOf(-80,-70,50),false),
         Rule(listOf(50,70,60),false)
     )
 
@@ -79,7 +68,7 @@ object BinanceTwentySevenPatternReport {
         if (magnitude < 50.0) return -1
         val bucket = (floor(magnitude / 10.0).toInt() * 10).coerceIn(50, 90)
         return if (bucket == 50) 50 else if (signedLevel > 0.0)
-            bucket else 100 - bucket
+            bucket else -bucket
     }
 
     /**
@@ -132,6 +121,7 @@ object BinanceTwentySevenPatternReport {
         val et = ZoneId.of("America/New_York")
         fun timestamp(ms: Long) = Instant.ofEpochMilli(ms).atZone(et).toString()
         val sb = StringBuilder(20000)
+        sb.append(BinanceSevenPathReport.report(unique))
         sb.appendLine("=== BINANCE BTC 27 FIXED PATTERNS - 1000 MARKET BACKTEST ===")
         sb.appendLine("SOURCE: Binance.US BTCUSDT actual 1-minute OHLC candles, NOT Kalshi.")
         sb.appendLine("Eligible complete 15-minute markets: $total/1000 | skipped: $skipped")
@@ -143,11 +133,7 @@ object BinanceTwentySevenPatternReport {
         sb.appendLine("Market target = LAST Binance BTC close before market starts.")
         sb.appendLine("UP win = final 15-minute BTC close ABOVE target; " +
             "DOWN win = close BELOW target. Ties skipped.")
-        sb.appendLine("Pattern levels = app's BINANCE signed distance/ACM60 chart: " +
-            "10=-90, 20=-80, 30=-70, 40=-60, 50=near target, " +
-            "60=+60, 70=+70, 80=+80, 90=+90.")
-        sb.appendLine("These are NOT Kalshi YES percentage prices; " +
-            "the 27 names are transferred to this new Binance mapping.")
+        sb.appendLine("Target 50%; above and below: 60%, 70%, 80%, 90%.")
         sb.appendLine("Each chart level calculated only from completed BTC candles " +
             "and the 60 most recent completed 1-minute candle ranges.")
         sb.appendLine("One earliest ordered complete match per pattern per market. " +
@@ -172,7 +158,7 @@ object BinanceTwentySevenPatternReport {
             ).joinToString(","))
         }
         sb.appendLine()
-        sb.append(BinanceSevenPathReport.report(unique))
+
         sb.appendLine()
         sb.appendLine("=== EXACT COUNTS BY TIME LEFT ===")
         sb.appendLine("pattern,buy,time_left,hits,wins,hit_rate_pct,win_rate_pct")
