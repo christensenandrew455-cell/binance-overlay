@@ -211,7 +211,7 @@ class KalshiPatternBacktestService : Service() {
         val report = BinanceTwentySevenPatternReport.report(chosen)
         val complete = chosen.size == TARGET_MARKETS
         val summary = if (complete)
-            "COMPLETE: 1,000 Binance BTC 15-minute markets; all 27 patterns tested."
+            "COMPLETE: 1,000 Binance BTC 15-minute markets; 27 existing rules and 7 target-centered paths tested."
         else
             "INCOMPLETE: ${chosen.size}/1,000 Binance BTC sections after " +
                 "$pageCount download pages. Results shown provisionally."
