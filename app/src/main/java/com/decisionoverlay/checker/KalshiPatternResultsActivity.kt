@@ -69,7 +69,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "One row per market. + means above target, − below, and 50% on target. Minute 15 gives the closing side."
+                    "One row per market. 50% is the center band. Above target: 60 to 90%. Below target: -60 to -90%. Minute 15 gives the closing side."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +

@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "binance_minute_export_v1"
+        const val PREFS = "binance_minute_export_v2"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
@@ -103,11 +103,11 @@ class KalshiPatternBacktestService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun getCandles(endTimeMs: Long): List<BtcAcmMath.Candle> {
+    private fun getCandles(startTimeMs: Long, endTimeMs: Long): List<BtcAcmMath.Candle> {
         var lastError = ""
         for (attempt in 0..3) {
             if (!active.get()) error("Scan stopped")
-            val url = "$BASE?symbol=BTCUSDT&interval=1m&limit=1000&endTime=$endTimeMs"
+            val url = "$BASE?symbol=BTCUSDT&interval=1m&limit=1000&startTime=$startTimeMs&endTime=$endTimeMs"
             val response = client.newCall(Request.Builder()
                 .url(url).header("Accept", "application/json").get().build())
                 .execute().use { result ->
@@ -124,7 +124,7 @@ class KalshiPatternBacktestService : Service() {
                     val candle = BtcAcmMath.Candle(
                         row.getLong(0), row.getDouble(1), row.getDouble(2),
                         row.getDouble(3), row.getDouble(4))
-                    if (candle.valid() && candle.at <= endTimeMs)
+                    if (candle.valid() && candle.at in startTimeMs..endTimeMs)
                         candles.add(candle)
                 }
                 return candles
@@ -166,32 +166,24 @@ class KalshiPatternBacktestService : Service() {
 
     private fun scan() {
         status("Downloading Binance BTC 1-minute candles for 100 markets...")
-        val candles = HashMap<Long, BtcAcmMath.Candle>()
+        val zone = java.time.ZoneId.of("America/New_York")
+        val now = java.time.ZonedDateTime.now(zone)
+        val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
         val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
-        var endTime = System.currentTimeMillis() / QUARTER_MS * QUARTER_MS - 1L
-        var previousOldest = Long.MAX_VALUE
         var pageCount = 0
         for (page in 1..MAX_PAGES) {
             if (!active.get()) error("Scan stopped")
-            val batch = getCandles(endTime)
-            if (batch.isEmpty()) break
-            for (c in batch) candles[c.at] = c
-            val oldest = batch.minOf { it.at }
-            if (oldest >= previousOldest) break
-            previousOldest = oldest
-            endTime = oldest - 1L
-            pageCount = page
-
-            val starts = candles.keys.asSequence()
-                .filter { it % QUARTER_MS == 0L }
-                .sortedDescending().toList()
-            for (start in starts) {
-                if (selected.containsKey(start)) continue
-                // Market must have fully finished.
-                if (start + QUARTER_MS >
-                    System.currentTimeMillis() / MINUTE_MS * MINUTE_MS) continue
+            val day = now.toLocalDate().minusDays(page.toLong() - 1)
+            val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
+            val close = minOf(lastClose, day.atTime(23, 0).atZone(zone).toInstant().toEpochMilli())
+            // The first hour supplies the rolling warmup from this session.
+            if (close - open < 60 * MINUTE_MS + QUARTER_MS) continue
+            val candles = getCandles(open, close - 1).associateBy { it.at }
+            pageCount++
+            for (start in (close - QUARTER_MS) downTo (open + 60 * MINUTE_MS) step QUARTER_MS) {
                 val market = buildMarket(start, candles) ?: continue
                 selected[start] = market
+                if (selected.size == TARGET_MARKETS) break
             }
             if (selected.size >= TARGET_MARKETS) break
             status("Binance BTC historical pages: $page; complete 15m " +
@@ -211,8 +203,13 @@ class KalshiPatternBacktestService : Service() {
                 for (sample in market.minutes) {
                     val level = sample.signedChartLevel
                     append(',')
-                    append(if (level == 0.0) "50.00%" else
-                        String.format(java.util.Locale.US, "%+.2f%%", level))
+                    val band = (kotlin.math.abs(level) / 10).toInt() * 10
+                    val signedBand = when {
+                        band < 60 -> 50
+                        level < 0 -> -band
+                        else -> band
+                    }
+                    append(signedBand).append('%')
                 }
                 appendLine(if (market.upWon) ",UP" else ",DOWN")
             }
