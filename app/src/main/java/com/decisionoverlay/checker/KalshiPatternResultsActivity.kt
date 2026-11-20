@@ -58,7 +58,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Tap RUN 100 MARKETS, then COPY FULL.")
+                "Ready. Tap RUN 400 MARKETS, then COPY FULL.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -120,7 +120,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN 100 MARKETS") {
+        start = button("RUN 400 MARKETS") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))

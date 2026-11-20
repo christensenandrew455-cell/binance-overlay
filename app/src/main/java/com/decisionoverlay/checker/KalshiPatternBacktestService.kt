@@ -23,14 +23,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "binance_minute_export_v2"
+        const val PREFS = "binance_minute_export_v3"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://api.binance.us/api/v3/klines"
-        private const val TARGET_MARKETS = 100
+        private const val TARGET_MARKETS = 400
         private const val MAX_PAGES = 80
         private const val MINUTE_MS = 60_000L
         private const val QUARTER_MS = 15L * MINUTE_MS
@@ -165,7 +165,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan() {
-        status("Downloading Binance BTC 1-minute candles for 100 markets...")
+        status("Downloading Binance BTC 1-minute candles for $TARGET_MARKETS markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
@@ -216,9 +216,9 @@ class KalshiPatternBacktestService : Service() {
         }
         val complete = chosen.size == TARGET_MARKETS
         val summary = if (complete)
-            "COMPLETE: 100 Binance BTC 15-minute markets; minute percentages ready to copy."
+            "COMPLETE: $TARGET_MARKETS Binance BTC 15-minute markets; minute percentages ready to copy."
         else
-            "INCOMPLETE: ${chosen.size}/100 Binance BTC sections after " +
+            "INCOMPLETE: ${chosen.size}/$TARGET_MARKETS Binance BTC sections after " +
                 "$pageCount download pages. Results shown provisionally."
         prefs.edit().putString(REPORT, report).putString(STATUS, summary).apply()
     }
