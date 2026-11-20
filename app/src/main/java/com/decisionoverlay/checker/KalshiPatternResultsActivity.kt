@@ -69,7 +69,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Tap RUN 1000 MARKETS, then SAVE CSV.")
+                "Tap RUN 1000 MARKETS to test your six patterns.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -80,12 +80,12 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "See final UP and DOWN percentages by sequence and elapsed minute."
+                    "See hit rate, win rate and best minutes remaining for each pattern."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
                         reportParts(report).size + " smaller chunks, or COPY FULL.]"
-                else report
+                else prefs.getString("six_summary", report)
             }
             handler.postDelayed(this, 1000L)
         }
@@ -124,7 +124,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC sequence outcomes"
+            text = "BTC six-pattern test"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))

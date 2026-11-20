@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "binance_minute_sequences_v4"
+        const val PREFS = "binance_minute_six_sequences_v5"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
@@ -203,7 +203,7 @@ class KalshiPatternBacktestService : Service() {
         else
             "INCOMPLETE: ${chosen.size}/$TARGET_MARKETS Binance BTC sections after " +
                 "$pageCount download pages. Results shown provisionally."
-        prefs.edit().putString(REPORT, report).putString(STATUS, summary).apply()
+        prefs.edit().putString(REPORT, report).putString("six_summary", BtcSequenceOutcomes.summary(report)).putString(STATUS, summary).apply()
     }
 
     override fun onDestroy() {

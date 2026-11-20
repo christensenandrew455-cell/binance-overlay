@@ -4,7 +4,8 @@ import java.util.Locale
 import kotlin.math.abs
 
 object BtcSequenceOutcomes {
-    private val levels = listOf(90, 80, 70, 60, 50, -60, -70, -80, -90)
+    private val paths = listOf(listOf(-60,-70,-60), listOf(60,70,60), listOf(50,-60),
+        listOf(50,60), listOf(-70,-60), listOf(70,60))
 
     private fun band(value: Double): Int {
         val magnitude = (abs(value) / 10).toInt() * 10
@@ -56,56 +57,32 @@ object BtcSequenceOutcomes {
                 }
             }
         }
-        for (a in levels) for (b in levels) if (a != b) summarize(listOf(a,b))
-        for (a in levels) for (b in levels) for (c in levels)
-            if (a != b && b != c) summarize(listOf(a,b,c))
-        appendTimedRows(ordered, samples, this)
+        paths.forEach { summarize(it) }
     }
 
-    private data class TimedPath(val a: Int, val b: Int, val c: Int?, val gap1: Int, val gap2: Int)
-    private class Counts {
-        var hits = 0
-        var up = 0
-        val byMinute = IntArray(15)
-        val upByMinute = IntArray(15)
-    }
-
-    private fun appendTimedRows(markets: List<BinanceTwentySevenPatternReport.Market>,
-        samples: List<List<Int>>, out: StringBuilder) {
-        val counts = linkedMapOf<TimedPath, Counts>()
-        for ((index, series) in samples.withIndex()) {
-            val seen = HashSet<TimedPath>()
-            fun record(path: TimedPath, end: Int) {
-                if (!seen.add(path) || end + 1 < 4) return
-                val count = counts.getOrPut(path) { Counts() }
-                count.hits++
-                count.byMinute[end + 1]++
-                if (markets[index].upWon) {
-                    count.up++
-                    count.upByMinute[end + 1]++
-                }
+    fun summary(csv: String): String = buildString {
+        val rows = csv.lineSequence().drop(1).filter { it.isNotBlank() }
+            .map { it.split(',') }.filter { it[1] == "all" }.toList()
+        fun rate(w: Int, n: Int) = if (n == 0) "—" else String.format(Locale.US, "%.1f%%", 100.0*w/n)
+        val windows = listOf("11–9" to 4..6, "8–5" to 7..10, "4–1" to 11..14)
+        for (path in paths) {
+            val matching = rows.filter { it[0] == path.joinToString(">") }
+            val total = matching.first { it[3] == "all" }
+            val hits = total[4].toInt()
+            val up = path.last() > 0
+            val col = if (up) 6 else 7
+            appendLine(path.joinToString(" → ") + if (up) "   UP" else "   DOWN")
+            appendLine("Hit rate ${rate(hits,total[2].toInt())} ($hits/${total[2]})")
+            appendLine("Win rate ${rate(total[col].toInt(),hits)} (${total[col]}/$hits)")
+            val stats = windows.map { (label, minutes) ->
+                val group = matching.filter { (it[3].toIntOrNull() ?: 0) in minutes }
+                Triple(label, group.sumOf { it[col].toInt() }, group.sumOf { it[4].toInt() })
             }
-            // End minute first: each exact gap profile counts once per market.
-            for (end in series.indices) for (mid in 0 until end) {
-                if (series[mid] == series[end]) continue
-                record(TimedPath(series[mid], series[end], null, end-mid, 0), end)
-                for (start in 0 until mid) {
-                    if (series[start] != series[mid])
-                        record(TimedPath(series[start], series[mid], series[end], mid-start, end-mid), end)
-                }
-            }
-        }
-        fun pct(n: Int, d: Int) = (kotlin.math.round(10000.0 * n / d) / 100.0).toString()
-        for ((path, countsForPath) in counts) {
-            val label = listOfNotNull(path.a, path.b, path.c).joinToString(">")
-            for (minute in 0..14) {
-                val hits = if (minute == 0) countsForPath.hits else countsForPath.byMinute[minute]
-                if (hits == 0) continue
-                val up = if (minute == 0) countsForPath.up else countsForPath.upByMinute[minute]
-                out.appendLine(listOf(label, "all", markets.size, if (minute == 0) "all" else minute,
-                    hits, pct(hits, markets.size), up, hits-up, pct(up,hits), pct(hits-up,hits),
-                    path.gap1, if (path.c == null) "" else path.gap2).joinToString(","))
-            }
+            val best = stats.filter { it.third > 0 }.maxWithOrNull(
+                compareBy<Triple<String, Int, Int>> { it.second.toDouble()/it.third }.thenBy { it.third })
+            appendLine(if (best == null) "Best window: —" else
+                "Best: ${best.first} min left · ${rate(best.second,best.third)} (${best.second}/${best.third})")
+            appendLine()
         }
     }
 }
