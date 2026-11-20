@@ -336,6 +336,8 @@ internal object BtcEdgeTest {
                 if (chartCalls == 0) "n/a" else pct(100.0 * chartWins / chartCalls) + "%)")
             appendLine("Distinct markets: 700 training / 300 holdout. Four fixed evaluation points per market.")
             appendLine()
+            append(BtcFiveIndicatorEnsemble.report(ordered))
+            appendLine()
             appendLine("=== TOP 30: INDICATOR IMPROVEMENT OVER CHART ON MATCHED HOLDOUT CASES ===")
             if (qualified.isEmpty()) appendLine("No setups meet both minimum sample thresholds.")
             for ((index, e) in qualified.take(30).withIndex()) {
@@ -369,7 +371,6 @@ internal object BtcEdgeTest {
                 ).joinToString(","))
             }
             appendLine()
-            append(BtcFiveIndicatorEnsemble.report(ordered))
             appendLine("IMPORTANT: Indicators can be correlated with one another; rows are NOT independent trades.")
             appendLine("Tested setups were compared/ranked using the holdout, so run a later untouched forward sample before trusting a winner.")
             appendLine("Returns, fills, fees, slippage and calibration are NOT measured; a higher hit rate is not established profit.")
