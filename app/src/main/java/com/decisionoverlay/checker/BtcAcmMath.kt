@@ -19,7 +19,8 @@ object BtcAcmMath {
         val open: Double,
         val high: Double,
         val low: Double,
-        val close: Double
+        val close: Double,
+        val volume: Double = Double.NaN
     ) {
         val rangePct: Double get() = (high - low) / open * 100.0
         fun valid(): Boolean = open > 0.0 && high >= low && low > 0.0 &&

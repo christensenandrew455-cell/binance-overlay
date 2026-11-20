@@ -28,6 +28,8 @@ class KalshiPatternBacktestService : Service() {
         const val REPORT = "report"
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
+        const val EDGE = "btc.edge.START"
+        const val EDGE_RESULT = "edge_result"
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://api.binance.us/api/v3/klines"
         private const val TARGET_MARKETS = 1000
@@ -86,11 +88,11 @@ class KalshiPatternBacktestService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."))
         prefs.edit().putBoolean(RUNNING, true)
-            .putString(REPORT, "").putString(STATUS, "Preparing Binance BTC data...")
+            .remove(if (intent?.action == EDGE) EDGE_RESULT else REPORT).putString(STATUS, "Preparing Binance BTC data...")
             .apply()
         Thread {
             try {
-                scan()
+                scan(intent?.action == EDGE)
             } catch (e: Exception) {
                 status("ERROR: " + (e.message ?: e.javaClass.simpleName))
             } finally {
@@ -123,7 +125,7 @@ class KalshiPatternBacktestService : Service() {
                     val row = arr.getJSONArray(i)
                     val candle = BtcAcmMath.Candle(
                         row.getLong(0), row.getDouble(1), row.getDouble(2),
-                        row.getDouble(3), row.getDouble(4))
+                        row.getDouble(3), row.getDouble(4), row.optDouble(5))
                     if (candle.valid() && candle.at in startTimeMs..endTimeMs)
                         candles.add(candle)
                 }
@@ -164,12 +166,14 @@ class KalshiPatternBacktestService : Service() {
             start, target, finalBtc, series)
     }
 
-    private fun scan() {
+    private fun scan(edge: Boolean) {
         status("Downloading Binance BTC 1-minute candles for $TARGET_MARKETS markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
         val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
+        val examples = mutableMapOf<Long, BtcEdgeTest.Market>()
+        val warmup = if (edge) 345L else 60L
         var pageCount = 0
         for (page in 1..MAX_PAGES) {
             if (!active.get()) error("Scan stopped")
@@ -177,11 +181,12 @@ class KalshiPatternBacktestService : Service() {
             val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
             val close = minOf(lastClose, day.atTime(23, 0).atZone(zone).toInstant().toEpochMilli())
             // The first hour supplies the rolling warmup from this session.
-            if (close - open < 60 * MINUTE_MS + QUARTER_MS) continue
+            if (close - open < warmup * MINUTE_MS + QUARTER_MS) continue
             val candles = getCandles(open, close - 1).associateBy { it.at }
             pageCount++
-            for (start in (close - QUARTER_MS) downTo (open + 60 * MINUTE_MS) step QUARTER_MS) {
+            for (start in (close - QUARTER_MS) downTo (open + warmup * MINUTE_MS) step QUARTER_MS) {
                 val market = buildMarket(start, candles) ?: continue
+                if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
                 selected[start] = market
                 if (selected.size == TARGET_MARKETS) break
             }
@@ -196,6 +201,14 @@ class KalshiPatternBacktestService : Service() {
 
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
+        if (edge) {
+            require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. No model fitted." }
+            status("Fitting on 700 markets and testing the newest 300...")
+            val result = BtcEdgeTest.report(chosen.map { examples.getValue(it.startMs) })
+            if (!active.get()) error("Scan stopped")
+            prefs.edit().putString(EDGE_RESULT, result).putString(STATUS, "Indicator test complete. Tap VIEW INDICATOR RESULT.").apply()
+            return
+        }
         val report = BtcSequenceOutcomes.report(chosen)
         val complete = chosen.size == TARGET_MARKETS
         val summary = if (complete)

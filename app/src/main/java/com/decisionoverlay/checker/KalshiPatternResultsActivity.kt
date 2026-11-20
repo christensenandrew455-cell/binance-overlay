@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var start: Button
+    private lateinit var edge: Button
     private lateinit var stop: Button
     private lateinit var copy: Button
     private lateinit var copyFull: Button
@@ -91,6 +92,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
                 "Tap RUN 1000 MARKETS to test your ±70 and ±80 touches.")
+            edge.isEnabled = !running
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
@@ -181,6 +183,23 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             }
         }
         root.addView(timing)
+        val indicators = row(root)
+        edge = button("TEST INDICATORS · 1000") {
+            ContextCompat.startForegroundService(this, Intent(this, KalshiPatternBacktestService::class.java)
+                .setAction(KalshiPatternBacktestService.EDGE))
+            edge.isEnabled = false
+        }
+        addButton(indicators, edge)
+        addButton(indicators, button("VIEW INDICATOR RESULT") {
+            val result = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
+                .getString(KalshiPatternBacktestService.EDGE_RESULT, null)
+            if (result == null) Toast.makeText(this, "Run the indicator test first", Toast.LENGTH_SHORT).show()
+            else android.app.AlertDialog.Builder(this).setTitle("Indicator test").setMessage(result)
+                .setPositiveButton("Close", null).setNeutralButton("Copy") { _, _ ->
+                    (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("BTC indicator test", result))
+                }.show()
+        })
         val actions = row(root)
         copy = button("COPY PART") {
             val parts = reportParts(shownReport)
