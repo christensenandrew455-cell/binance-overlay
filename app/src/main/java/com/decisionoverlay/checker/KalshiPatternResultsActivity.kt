@@ -27,6 +27,17 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private lateinit var share: Button
     private lateinit var status: TextView
     private lateinit var output: TextView
+    private val saveCsv = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            val data = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
+                .getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
+            runCatching {
+                require(data.isNotEmpty())
+                requireNotNull(contentResolver.openOutputStream(uri)).bufferedWriter().use { it.write(data) }
+            }.onSuccess { Toast.makeText(this, "CSV saved", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(this, "Could not save CSV", Toast.LENGTH_SHORT).show() }
+        }
+    }
     private var shownReport = ""
     private var partIndex = 0
 
@@ -58,18 +69,18 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Ready. Tap RUN 400 MARKETS, then COPY FULL.")
+                "Ready. Tap RUN 1000 MARKETS, then SAVE CSV.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
-            copyFull.isEnabled = report.isNotEmpty()
+            copyFull.isEnabled = report.length in 1..200000
             share.isEnabled = report.isNotEmpty()
             if (report != shownReport) {
                 shownReport = report
                 partIndex = 0
                 copy.text = partLabel(report)
                 output.text = if (report.isEmpty())
-                    "One row per market. 50% is the center band. Above target: 60 to 90%. Below target: -60 to -90%. Minute 15 gives the closing side."
+                    "See final UP and DOWN percentages by sequence and elapsed minute."
                 else if (report.length > 100000)
                     report.take(100000) + "\n\n[PREVIEW ONLY: " + report.length +
                         " characters. Use COPY PART to send the complete analysis in " +
@@ -113,14 +124,14 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC minute percentages"
+            text = "BTC sequence outcomes"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN 400 MARKETS") {
+        start = button("RUN 1000 MARKETS") {
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.START))
@@ -153,16 +164,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
             }
         }
-        share = button("SHARE REPORT") {
-            if (shownReport.isNotEmpty()) {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Binance BTC minute percentages")
-                    putExtra(Intent.EXTRA_TEXT, shownReport)
-                }
-                startActivity(Intent.createChooser(send, "Share Binance results"))
-            }
-        }
+        share = button("SAVE CSV") { saveCsv.launch("btc-sequence-outcomes.csv") }
         addButton(actions, copy)
         addButton(actions, copyFull)
         addButton(actions, share)

@@ -23,14 +23,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "binance_minute_export_v3"
+        const val PREFS = "binance_minute_sequences_v4"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://api.binance.us/api/v3/klines"
-        private const val TARGET_MARKETS = 400
+        private const val TARGET_MARKETS = 1000
         private const val MAX_PAGES = 80
         private const val MINUTE_MS = 60_000L
         private const val QUARTER_MS = 15L * MINUTE_MS
@@ -196,27 +196,10 @@ class KalshiPatternBacktestService : Service() {
 
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
-        val report = buildString {
-            appendLine("market_start_utc," + (1..14).joinToString(",") { "minute_$it" } + ",close_side")
-            for (market in chosen) {
-                append(java.time.Instant.ofEpochMilli(market.startMs))
-                for (sample in market.minutes) {
-                    val level = sample.signedChartLevel
-                    append(',')
-                    val band = (kotlin.math.abs(level) / 10).toInt() * 10
-                    val signedBand = when {
-                        band < 60 -> 50
-                        level < 0 -> -band
-                        else -> band
-                    }
-                    append(signedBand).append('%')
-                }
-                appendLine(if (market.upWon) ",UP" else ",DOWN")
-            }
-        }
+        val report = BtcSequenceOutcomes.report(chosen)
         val complete = chosen.size == TARGET_MARKETS
         val summary = if (complete)
-            "COMPLETE: $TARGET_MARKETS Binance BTC 15-minute markets; minute percentages ready to copy."
+            "COMPLETE: $TARGET_MARKETS Binance BTC 15-minute markets; sequence outcomes ready to export."
         else
             "INCOMPLETE: ${chosen.size}/$TARGET_MARKETS Binance BTC sections after " +
                 "$pageCount download pages. Results shown provisionally."

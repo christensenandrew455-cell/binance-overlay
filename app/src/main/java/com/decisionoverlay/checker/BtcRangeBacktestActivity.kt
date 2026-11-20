@@ -90,7 +90,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
         // Backtest is a separate visible action, not a secret long-press.
         // Leave the live notification toggle working exactly as before.
         val backtestButton = Button(this).apply {
-            text = "SCAN 400"
+            text = "SCAN 1000"
             textSize = 10f
             setAllCaps(false)
             setOnClickListener {
