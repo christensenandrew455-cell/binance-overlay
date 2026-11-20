@@ -1,7 +1,6 @@
 package com.decisionoverlay.checker
 
 import org.json.JSONObject
-import kotlin.math.abs
 
 /**
  * Binance.US BTC/USDT spot order book, NOT Kalshi contract bids/asks.
@@ -17,7 +16,7 @@ internal object BtcSpotOrderBook {
         val spreadBps get() = 10_000.0 * (bestAsk - bestBid) /
             ((bestAsk + bestBid) / 2.0)
         fun fresh(now: Long): Boolean =
-            now - receivedAt in 0..20_000L && bidShare.isFinite() &&
+            now - receivedAt in 0L..20_000L && bidShare.isFinite() &&
             spreadBps.isFinite() && spreadBps >= 0.0 && spreadBps <= 10.0
 
         fun supports(up: Boolean, now: Long): Boolean =
