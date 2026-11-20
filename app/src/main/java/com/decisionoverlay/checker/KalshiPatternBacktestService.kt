@@ -29,7 +29,10 @@ class KalshiPatternBacktestService : Service() {
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
         const val EDGE = "btc.edge.START"
-        const val EDGE_RESULT = "edge_result"
+        const val EDGE_RESULT = "indicator_ranking_v1"
+        const val INDICATOR_STATUS = "indicator_status_v1"
+        private val active = AtomicBoolean(false)
+        fun isScanning() = active.get()
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://api.binance.us/api/v3/klines"
         private const val TARGET_MARKETS = 1000
@@ -40,7 +43,7 @@ class KalshiPatternBacktestService : Service() {
         private const val NOTIFICATION_ID = 7877
     }
 
-    private val active = AtomicBoolean(false)
+    private var indicatorRun = false
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -71,7 +74,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun status(message: String) {
-        prefs.edit().putString(STATUS, message).apply()
+        prefs.edit().putString(if (indicatorRun) INDICATOR_STATUS else STATUS, message).apply()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .notify(NOTIFICATION_ID, notification(message))
     }
@@ -83,12 +86,13 @@ class KalshiPatternBacktestService : Service() {
             return START_NOT_STICKY
         }
         if (!active.compareAndSet(false, true)) return START_NOT_STICKY
+        indicatorRun = intent?.action == EDGE
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."))
         prefs.edit().putBoolean(RUNNING, true)
-            .remove(if (intent?.action == EDGE) EDGE_RESULT else REPORT).putString(STATUS, "Preparing Binance BTC data...")
+            .remove(if (intent?.action == EDGE) EDGE_RESULT else REPORT).putString(if (indicatorRun) INDICATOR_STATUS else STATUS, "Preparing Binance BTC data...")
             .apply()
         Thread {
             try {
@@ -202,11 +206,11 @@ class KalshiPatternBacktestService : Service() {
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
         if (edge) {
-            require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. No model fitted." }
-            status("Fitting on 700 markets and testing the newest 300...")
+            require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. A complete test needs 1,000." }
+            status("Ranking indicator setups across all 1,000 markets...")
             val result = BtcEdgeTest.report(chosen.map { examples.getValue(it.startMs) })
             if (!active.get()) error("Scan stopped")
-            prefs.edit().putString(EDGE_RESULT, result).putString(STATUS, "Indicator test complete. Tap VIEW INDICATOR RESULT.").apply()
+            prefs.edit().putString(EDGE_RESULT, result).putString(INDICATOR_STATUS, "Test complete · 1,000 markets").apply()
             return
         }
         val report = BtcSequenceOutcomes.report(chosen)

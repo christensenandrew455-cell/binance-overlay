@@ -13,7 +13,7 @@ internal object BtcEdgeTest {
         // All features end at or before the decision timestamp. Keep markets
         // that never reach an eligible band in the hit-rate denominator.
         val rows = mutableListOf<Row>()
-        for (minute in 3..14) {
+        for (minute in 1..14) {
             val end = start + minute*M
             val latest = bars[end-M] ?: return null
             val left = 15-minute
@@ -50,62 +50,71 @@ internal object BtcEdgeTest {
         return if (rows.isEmpty()) null else Market(up, rows)
     }
 
-    private fun probability(x: DoubleArray, w: DoubleArray): Double {
-        var score = w.last()
-        for (j in x.indices) score += w[j]*x[j]
-        return 1/(1+exp(-score.coerceIn(-40.0,40.0)))
+    private val names = listOf("1m close vs target", "5m momentum (2 bars)",
+        "5m signed relative volume (60-bar baseline)", "15m EMA20 slope (3 bars)")
+    private data class Setup(val band: Int, val left: Int, val indicators: Int, val positive: Int)
+    private data class Counts(var hits: Int = 0, var up: Int = 0) {
+        val wins get() = maxOf(up, hits - up)
+        val winRate get() = wins.toDouble() / hits
+        // Harmonic mean rewards setups that are both frequent and accurate.
+        fun score(total: Int): Double {
+            val coverage = hits.toDouble() / total
+            return 2 * coverage * winRate / (coverage + winRate)
+        }
     }
-
-    private data class Call(val up: Boolean, val band: Int, val predicted: Double, val win: Boolean)
 
     fun report(markets: List<Market>): String {
         require(markets.size == 1000)
-        val train = markets.take(700).flatMap { m -> m.rows.map { it.x to if (m.up) 1.0 else 0.0 } }
-        val mean = DoubleArray(5) { j -> train.map { it.first[j] }.average() }
-        val sd = DoubleArray(5) { j -> sqrt(train.sumOf { (it.first[j]-mean[j]).pow(2) }/train.size).coerceAtLeast(1e-8) }
-        fun normalize(x: DoubleArray) = DoubleArray(5) { ((x[it]-mean[it])/sd[it]).coerceIn(-8.0,8.0) }
-        val normalized = train.map { normalize(it.first) to it.second }
-        val w = DoubleArray(6)
-        repeat(400) {
-            val gradient = DoubleArray(6)
-            for ((x,y) in normalized) {
-                val error = y-probability(x,w)
-                for (j in x.indices) gradient[j] += error*x[j]
-                gradient[5] += error
-            }
-            for (j in w.indices) w[j] += 0.25*(gradient[j]/train.size - if (j<5) 0.001*w[j] else 0.0)
-        }
-        val calls = mutableListOf<Call>()
-        for (market in markets.drop(700)) {
+        val counts = mutableMapOf<Setup, Counts>()
+        for (market in markets) {
+            val seen = mutableSetOf<Setup>()
             for (row in market.rows) {
-                val band = abs(row.band)
-                if (band !in listOf(50,60,70)) continue
-                val p = probability(normalize(row.x),w)
-                val up = if (band==50) p>=0.5 else row.band>0
-                val predicted = 100*(if (up) p else 1-p)
-                if (predicted < band+20) continue
-                calls.add(Call(up,band,predicted,up==market.up))
-                break
+                var positive = 0
+                var available = 0
+                for (i in names.indices) {
+                    if (row.x[i] != 0.0) available = available or (1 shl i)
+                    if (row.x[i] > 0) positive = positive or (1 shl i)
+                }
+                var subset = available
+                while (subset != 0) {
+                    for (left in listOf(0, row.x.last().toInt())) {
+                        val setup = Setup(row.band, left, subset, positive and subset)
+                        if (seen.add(setup)) {
+                            val c = counts.getOrPut(setup) { Counts() }
+                            c.hits++
+                            if (market.up) c.up++
+                        }
+                    }
+                    subset = (subset - 1) and available
+                }
             }
         }
+        fun percent(value: Double) = String.format(Locale.US, "%.1f%%", 100 * value)
         return buildString {
-            appendLine("700 older markets fitted · 300 newest tested · first qualifying call per market")
-            appendLine("Baseline = Binance candle band. Outcome = BTC close versus target. Gap is in percentage points.")
-            fun group(label: String, set: List<Call>) {
+            appendLine("1,000 completed BTC markets · historical setup rankings")
+            appendLine("Hit rate = matching markets / 1,000. Each market counts once per setup. Setups overlap.")
+            appendLine("Win rate = share of matches finishing in the more frequent direction. Rankings describe these same markets and need fresh-market validation.")
+            appendLine("Band = Binance distance-to-target index. 50 is the middle band (magnitude below 60).")
+            appendLine("Sorted by the harmonic mean of hit rate and win rate. Tied directions have no call.")
+            for (timed in listOf(false, true)) {
                 appendLine()
-                appendLine(label)
-                if (set.isEmpty()) { appendLine("0/300 hits (0%). Win rate and gap unavailable."); return }
-                val wins = set.count { it.win }
-                val rate = 100.0*wins/set.size
-                val base = set.map { it.band }.average()
-                val forecast = set.map { it.predicted }.average()
-                appendLine(String.format(Locale.US,"%d/300 hits (%.1f%%) · %d/%d wins (%.1f%%)",set.size,set.size/3.0,wins,set.size,rate))
-                appendLine(String.format(Locale.US,"Average band %.1f%% · predicted %.1f%% · actual minus band %+.1f points · predicted minus band %+.1f points",base,forecast,rate-base,forecast-base))
-                appendLine(if (rate-base>=20) "Reached +20 points in this sample." else "Below +20 points in this sample.")
+                appendLine(if (timed) "Best exact-minute setups" else "Best setups across any minute")
+                val ranked = counts.entries.filter { (k, c) -> (k.left != 0) == timed && c.up * 2 != c.hits }
+                    .sortedWith(compareByDescending<Map.Entry<Setup, Counts>> { it.value.score(markets.size) }
+                        .thenByDescending { it.value.wins }.thenBy { it.key.band }.thenBy { it.key.left }
+                        .thenBy { it.key.indicators }.thenBy { it.key.positive })
+                if (ranked.isEmpty()) appendLine("No directional setups.")
+                for ((index, entry) in ranked.take(20).withIndex()) {
+                    val (k, c) = entry
+                    val band = if (k.band == 50) "50 middle" else "${abs(k.band)} ${if (k.band > 0) "UP" else "DOWN"}"
+                    val timing = if (timed) "${k.left} min left" else "1–14 min left"
+                    val signals = names.indices.filter { k.indicators and (1 shl it) != 0 }.joinToString(" + ") {
+                        names[it] + if (k.positive and (1 shl it) != 0) " up" else " down"
+                    }
+                    appendLine("${index + 1}. Band $band · $timing · $signals")
+                    appendLine("Finish ${if (c.up * 2 > c.hits) "UP" else "DOWN"} · hits ${c.hits}/1000 (${percent(c.hits / 1000.0)}) · wins ${c.wins}/${c.hits} (${percent(c.winRate)})")
+                }
             }
-            group("All signals",calls)
-            for (band in listOf(50,60,70)) for (up in listOf(true,false))
-                group("${if (up) "UP" else "DOWN"} · $band% band", calls.filter { it.band==band && it.up==up })
         }
     }
 }

@@ -17,97 +17,27 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
-/** Screen for starting/stopping the phone-safe scan and copying the raw results. */
+/** Displays and copies the same completed indicator report. */
 class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var start: Button
-    private lateinit var edge: Button
-    private lateinit var stop: Button
+    private lateinit var test: Button
     private lateinit var copy: Button
-    private lateinit var copyFull: Button
-    private lateinit var share: Button
     private lateinit var status: TextView
     private lateinit var output: TextView
-    private val saveCsv = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        if (uri != null) {
-            val data = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
-                .getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
-            runCatching {
-                require(data.isNotEmpty())
-                requireNotNull(contentResolver.openOutputStream(uri)).bufferedWriter().use { it.write(data) }
-            }.onSuccess { Toast.makeText(this, "CSV saved", Toast.LENGTH_SHORT).show() }
-                .onFailure { Toast.makeText(this, "Could not save CSV", Toast.LENGTH_SHORT).show() }
-        }
-    }
-    private lateinit var charts: LinearLayout
-    private fun showCharts(threshold: String, path: String) {
-        charts.removeAllViews()
-        val windows = shownReport.lineSequence().drop(1).filter { it.isNotBlank() }
-            .map { it.split(',') }.filter { it[0]==threshold && it[1]=="window" && it[2]==path }
-            .associateBy { it[4] }
-        val down = threshold.toInt()>0
-        fun label(s: String) { charts.addView(TextView(this).apply { text=s; setTextColor(Color.WHITE) }) }
-        label(path.replace(">"," → ") + "  |  " + threshold + " touch")
-        for (win in listOf(false,true)) {
-            label(if (win) "Final " + (if (down) "DOWN" else "UP") + " among matches" else "Hit rate among scanned markets")
-            for (w in listOf("14–12","11–9","8–5","4–1")) {
-                val r = windows[w]
-                val value = r?.get(if (win) (if (down) 10 else 11) else 13)?.toDoubleOrNull() ?: 0.0
-                label("$w min left   " + (if (r==null && win) "—" else "$value%") + "   (" + (r?.get(7) ?: "0") + " matches)")
-                charts.addView(android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
-                    max=1000; progress=(10*value).toInt()
-                })
-            }
-        }
-    }
     private var shownReport = ""
-    private var partIndex = 0
-
-    // Large reports are copied in manageable line-aligned pieces so chat/paste
-    // targets do not choke on the whole historical analysis.
-    private fun reportParts(report: String): List<String> {
-        if (report.isEmpty()) return emptyList()
-        val chunks = ArrayList<String>()
-        var start = 0
-        while (start < report.length) {
-            val limit = (start + 24000).coerceAtMost(report.length)
-            val newline = if (limit == report.length) limit
-                else report.lastIndexOf('\n', limit).takeIf { it > start + 1000 }
-                    ?.plus(1) ?: limit
-            chunks.add(report.substring(start, newline))
-            start = newline
-        }
-        return chunks
-    }
-    private fun partLabel(report: String): String {
-        val count = reportParts(report).size
-        return if (count == 0) "COPY PART" else
-            "COPY PART " + (partIndex + 1) + "/" + count
-    }
     private val refresh = object : Runnable {
         override fun run() {
-            val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS,
-                Context.MODE_PRIVATE)
-            val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
-            val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
-            status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Tap RUN 1000 MARKETS to test your ±70 and ±80 touches.")
-            edge.isEnabled = !running
-            start.isEnabled = !running
-            stop.isEnabled = running
-            copy.isEnabled = report.isNotEmpty()
-            copyFull.isEnabled = report.length in 1..200000
-            share.isEnabled = report.isNotEmpty()
+            val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE)
+            val running = KalshiPatternBacktestService.isScanning()
+            val report = prefs.getString(KalshiPatternBacktestService.EDGE_RESULT, "").orEmpty()
+            status.text = prefs.getString(KalshiPatternBacktestService.INDICATOR_STATUS, "Tap Test to scan 1,000 BTC markets.")
+            test.isEnabled = !running
+            copy.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
-                charts.removeAllViews()
                 shownReport = report
-                partIndex = 0
-                copy.text = partLabel(report)
-                output.text = if (report.isEmpty())
-                    "Compare paths before the BTC target by final DOWN or UP close."
-                else prefs.getString("touch_summary", report)
+                output.text = report
             }
-            handler.postDelayed(this, 1000L)
+            handler.postDelayed(this, 500L)
         }
     }
 
@@ -144,87 +74,26 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC target-return patterns"
+            text = "BTC indicator test"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        start = button("RUN 1000 MARKETS") {
-            ContextCompat.startForegroundService(this,
-                Intent(this, KalshiPatternBacktestService::class.java)
-                    .setAction(KalshiPatternBacktestService.START))
-            start.isEnabled = false
-        }
-        stop = button("STOP") {
-            startService(Intent(this, KalshiPatternBacktestService::class.java)
-                .setAction(KalshiPatternBacktestService.STOP))
-        }
-        addButton(commands, start)
-        addButton(commands, stop)
-        val timing = button("PATTERN TIMING") {
-            if (shownReport.isEmpty()) {
-                Toast.makeText(this, "Run the scan first", Toast.LENGTH_SHORT).show()
-            } else {
-                val choices = BtcSequenceOutcomes.choices(shownReport)
-                val labels = choices.map { (threshold,path) -> "${if (threshold.startsWith("-")) "" else "+"}$threshold touch · " + path.replace(">", " → ") }
-                android.app.AlertDialog.Builder(this).setTitle("Choose a path")
-                    .setItems(labels.toTypedArray()) { _, index ->
-                        val (threshold,path) = choices[index]
-                        showCharts(threshold,path)
-                        output.text = BtcSequenceOutcomes.detail(shownReport,threshold,path)
-                        (charts.parent.parent as? ScrollView)?.scrollTo(0,0)
-                    }.setNeutralButton("Overview") { _,_ ->
-                        charts.removeAllViews()
-                        output.text = BtcSequenceOutcomes.summary(shownReport)
-                        (charts.parent.parent as? ScrollView)?.scrollTo(0,0)
-                    }.show()
-            }
-        }
-        root.addView(timing)
-        val indicators = row(root)
-        edge = button("TEST INDICATORS · 1000") {
+        test = button("Test") {
+            test.isEnabled = false
+            copy.isEnabled = false
             ContextCompat.startForegroundService(this, Intent(this, KalshiPatternBacktestService::class.java)
                 .setAction(KalshiPatternBacktestService.EDGE))
-            edge.isEnabled = false
         }
-        addButton(indicators, edge)
-        addButton(indicators, button("VIEW INDICATOR RESULT") {
-            val result = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
-                .getString(KalshiPatternBacktestService.EDGE_RESULT, null)
-            if (result == null) Toast.makeText(this, "Run the indicator test first", Toast.LENGTH_SHORT).show()
-            else android.app.AlertDialog.Builder(this).setTitle("Indicator test").setMessage(result)
-                .setPositiveButton("Close", null).setNeutralButton("Copy") { _, _ ->
-                    (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText("BTC indicator test", result))
-                }.show()
-        })
-        val actions = row(root)
-        copy = button("COPY PART") {
-            val parts = reportParts(shownReport)
-            if (parts.isNotEmpty()) {
-                val index = partIndex.coerceIn(0, parts.lastIndex)
-                val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Binance part", "PART " +
-                    (index + 1) + "/" + parts.size + "\n" + parts[index]))
-                Toast.makeText(this, "Copied part " + (index + 1) +
-                    " of " + parts.size, Toast.LENGTH_SHORT).show()
-                partIndex = (index + 1) % parts.size
-                copy.text = partLabel(shownReport)
-            }
+        copy = button("Copy") {
+            (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("BTC indicator results", shownReport))
+            Toast.makeText(this, "Results copied", Toast.LENGTH_SHORT).show()
         }
-        copyFull = button("COPY FULL") {
-            if (shownReport.isNotEmpty()) {
-                val mgr = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                mgr.setPrimaryClip(ClipData.newPlainText("Binance minute percentages", shownReport))
-                Toast.makeText(this, "Full report copied", Toast.LENGTH_SHORT).show()
-            }
-        }
-        share = button("SAVE CSV") { saveCsv.launch("btc-sequence-outcomes.csv") }
-        addButton(actions, copy)
-        addButton(actions, copyFull)
-        addButton(actions, share)
+        addButton(commands, test)
+        addButton(commands, copy)
         status = TextView(this).apply {
             textSize = 12f
             setTextColor(Color.rgb(240, 190, 80))
@@ -239,11 +108,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setTextIsSelectable(true)
             setPadding(dp(8), dp(8), dp(8), dp(12))
         }
-        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        charts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        panel.addView(charts)
-        panel.addView(output)
-        scroller.addView(panel)
+        scroller.addView(output)
         root.addView(scroller, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
