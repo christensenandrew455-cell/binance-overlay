@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "btc_touch_target_v1"
+        const val PREFS = "btc_touch_target_timing_v2"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"

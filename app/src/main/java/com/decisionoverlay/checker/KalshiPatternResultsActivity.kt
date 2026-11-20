@@ -139,6 +139,24 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         addButton(commands, start)
         addButton(commands, stop)
+        val timing = button("PATTERN TIMING") {
+            if (shownReport.isEmpty()) {
+                Toast.makeText(this, "Run the scan first", Toast.LENGTH_SHORT).show()
+            } else {
+                val choices = BtcSequenceOutcomes.choices(shownReport)
+                val labels = choices.map { (threshold,path) -> "+$threshold touch · " + path.replace(">", " → ") }
+                android.app.AlertDialog.Builder(this).setTitle("Choose a path")
+                    .setItems(labels.toTypedArray()) { _, index ->
+                        val (threshold,path) = choices[index]
+                        output.text = BtcSequenceOutcomes.detail(shownReport,threshold,path)
+                        (output.parent as? ScrollView)?.scrollTo(0,0)
+                    }.setNeutralButton("Overview") { _,_ ->
+                        output.text = BtcSequenceOutcomes.summary(shownReport)
+                        (output.parent as? ScrollView)?.scrollTo(0,0)
+                    }.show()
+            }
+        }
+        root.addView(timing)
         val actions = row(root)
         copy = button("COPY PART") {
             val parts = reportParts(shownReport)
