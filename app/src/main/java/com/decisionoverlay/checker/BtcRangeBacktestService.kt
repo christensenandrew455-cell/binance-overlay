@@ -43,6 +43,28 @@ class BtcRangeBacktestService : Service() {
         .callTimeout(20, TimeUnit.SECONDS).build()
     private var section = -1L
     private val points = ArrayList<Dot>()
+    private var lastDepthRequest = 0L
+    private var latestDepth: BtcSpotOrderBook.Depth? = null
+
+    /** Poll a small public spot depth snapshot every 15 seconds at most.
+     * Failure does not erase old data; its 20-second TTL prevents stale alerts.
+     */
+    private fun refreshDepth(now: Long) {
+        if (now - lastDepthRequest < 15_000L) return
+        lastDepthRequest = now
+        try {
+            val response = client.newCall(Request.Builder().url(
+                "https://api.binance.us/api/v3/depth?symbol=BTCUSDT&limit=20")
+                .get().build()).execute().use { res ->
+                    if (!res.isSuccessful) error("Depth HTTP ${res.code}")
+                    JSONObject(res.body?.string().orEmpty())
+                }
+            latestDepth = BtcSpotOrderBook.parse(response, System.currentTimeMillis())
+        } catch (_: Exception) {
+            // The prior snapshot may still be displayed with its timestamp.
+            // The alert evaluator always rejects it once stale.
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -112,7 +134,7 @@ class BtcRangeBacktestService : Service() {
             val row = response.getJSONArray(i)
             val candle = BtcAcmMath.Candle(
                 row.getLong(0), row.getDouble(1), row.getDouble(2),
-                row.getDouble(3), row.getDouble(4))
+                row.getDouble(3), row.getDouble(4), row.optDouble(5))
             if (candle.valid()) candles[candle.at] = candle
         }
         val target = candles[marketStart - MINUTE]?.close
@@ -145,6 +167,40 @@ class BtcRangeBacktestService : Service() {
         val modeledPct = BtcChartProxyMath.strength(latest, target, acm, left)
         val chartLevels = BtcChartProxyMath.completedMinuteSamples(
             candles, target, marketStart, completedOpen)
+
+        // Match the historical test: the latest 22 fully closed one-minute
+        // candles, aligned to the same closing time as the chart level.
+        val completedBars = BtcEdgeTest.completedBars(candles, open, 1)
+        val calculated = completedBars?.let { BtcEdgeTest.indicators(it) }.orEmpty()
+        val states = BtcFiveIndicatorEnsemble.NAMES.associateWith {
+            calculated[it] ?: 0
+        }
+        val lastLevel = chartLevels.minByOrNull { it.left }
+        val latestLeft = lastLevel?.left ?: -1
+        val trainedModel = getSharedPreferences(
+            KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
+            .getString(BtcLiveCalibration.KEY, null)
+        val vote = if (lastLevel != null) BtcLiveCalibration.vote(
+            trainedModel, BtcEdgeTest.chartBand(lastLevel.signedLevel),
+            lastLevel.left, states) else null
+
+        refreshDepth(System.currentTimeMillis())
+        val book = latestDepth
+        val bookConfirms = vote != null && book?.supports(
+            vote.up, System.currentTimeMillis()) == true
+        val analysis = JSONObject()
+            .put("closed_at", open)
+            .put("left", latestLeft)
+            .put("model_ready", !trainedModel.isNullOrBlank())
+            .put("unanimous", vote != null)
+            .put("up", vote?.up ?: false)
+            .put("votes_up", vote?.upVotes ?: -1)
+            .put("override_chart", vote?.overridesChart ?: false)
+            .put("book_confirms", bookConfirms)
+            .put("ready", bookConfirms)
+        val rawStates = JSONObject()
+        states.forEach { (name, state) -> rawStates.put(name, state) }
+        analysis.put("states", rawStates)
         val json = JSONObject().put("section", marketStart)
             .put("target", target).put("acm", acm)
             .put("latest", latest).put("now", receivedAt)
@@ -161,6 +217,8 @@ class BtcRangeBacktestService : Service() {
             proxy.put(JSONArray().put(sample.left).put(sample.signedLevel))
         }
         json.put("signed_chart_levels", proxy)
+        json.put("five_indicator_signal", analysis)
+        if (book != null) json.put("btc_usdt_order_book", book.asJson())
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString(KEY_SNAPSHOT, json.toString()).apply()
 
