@@ -40,21 +40,21 @@ jobs:
       - name: Compile and run Android unit tests
         run: chmod +x ./gradlew && ./gradlew testDebugUnitTest assembleDebug --stacktrace
       - name: Name the preview APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk btc-live-five-vote.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk btc-chart-level-study.apk
       - name: Upload downloadable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: btc-live-five-vote-apk
-          path: btc-live-five-vote.apk
+          name: btc-chart-level-study-apk
+          path: btc-chart-level-study.apk
           if-no-files-found: error
       - name: Publish Android APK as a preview release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "btc-live-five-vote-${GITHUB_RUN_ID}" \
-            btc-live-five-vote.apk \
-            --title "BTC live 5/5 signal + book APK (${GITHUB_RUN_ID})" \
-            --notes "Android debug preview of live BUY UP/DOWN research watches using the trained 5/5 BTC vote and Binance.US spot order book, plus unchanged 1,000-market historical test at commit ${GITHUB_SHA}. Not merged into main. No live trade execution. Built and tested by GitHub Actions." \
+          gh release create "btc-chart-level-study-${GITHUB_RUN_ID}" \
+            btc-chart-level-study.apk \
+            --title "BTC per-minute chart-level study + live 5/5 signals APK (${GITHUB_RUN_ID})" \
+            --notes "Android debug preview adds a 1,000-market first-touch and per-minute +50/+60/+70/+80/+90 chart-level settlement study alongside existing five-indicator research watches, chart and spot order book at commit ${GITHUB_SHA}. Not merged into main. No live trade execution. Built and tested by GitHub Actions." \
             --target "${GITHUB_SHA}" \
             --prerelease
