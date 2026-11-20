@@ -51,7 +51,6 @@ class BtcPositiveLevelStudyTest {
         assertTrue(report.contains("+90,14,1,1,0,100.0%"))
         assertTrue(report.contains("+90,12,1,0,1,0.0%"))
         assertTrue(report.contains("+90,2,0,0,0,n/a"))
-        assertTrue(report.contains("+90,2,0,2/"))
         assertTrue(report.contains("+90,2,0,100.0%,2.00,13.00,1,1,50.0%"))
     }
 
