@@ -120,6 +120,68 @@ object BinanceTwentySevenPatternReport {
     private fun n(x: Double): String =
         if (!x.isFinite()) "n/a" else String.format(Locale.US, "%.1f", x)
 
+    private data class PreDropPath(val market: Market, val drop: Int, val levels: Map<Int, Double>)
+
+    private fun preDropPath(market: Market): PreDropPath? {
+        if (market.finalBtc >= market.targetBtc) return null
+        val levels = market.minutes.associate { it.minute to it.signedChartLevel }
+        val rise = (4..14).firstOrNull { (levels[it] ?: 0.0) > 0.0 } ?: return null
+        val drop = (rise + 1..14).firstOrNull { (levels[it] ?: 0.0) < 0.0 } ?: 15
+        return PreDropPath(market, drop, levels)
+    }
+
+    internal fun preDropReport(chronological: List<Market>): String = buildString {
+        val split = chronological.size * 7 / 10
+        val training = chronological.take(split).mapNotNull(::preDropPath)
+        val heldOut = chronological.drop(split)
+        val minutes = 3..14
+        val averageDrop = training.map { it.drop }.average()
+        val means = minutes.associateWith { minute ->
+            training.filter { minute < it.drop }.mapNotNull { it.levels[minute] }.average()
+        }
+        appendLine("=== PRE-DROP SIGNED CHART PERCENTAGES ===")
+        appendLine("Minute-close observations. First above after M03, then first below. M15 is settlement.")
+        appendLine("Discovery: oldest $split episodes; ${training.size} qualifying. Holdout: newest ${heldOut.size} episodes.")
+        appendLine("Mean discovery drop minute: ${n(averageDrop)}")
+        val headers = minutes.joinToString(",") { "M%02d_pct".format(Locale.US, it) }
+        appendLine("sample,start_utc,first_drop_minute,$headers")
+        fun row(sample: String, path: PreDropPath) {
+            val cells = minutes.joinToString(",") { minute ->
+                if (minute < path.drop) path.levels[minute]?.let(::n).orEmpty() else ""
+            }
+            appendLine("$sample,${Instant.ofEpochMilli(path.market.startMs)},${path.drop},$cells")
+        }
+        training.forEach { row("discovery", it) }
+        heldOut.mapNotNull(::preDropPath).forEach { row("holdout", it) }
+        appendLine("discovery_mean,,," + minutes.joinToString(",") { n(means.getValue(it)) })
+        appendLine("discovery_count,,," + minutes.joinToString(",") { minute ->
+            training.count { minute < it.drop && minute in it.levels }.toString()
+        })
+        if (training.isEmpty()) {
+            appendLine("No qualifying discovery paths. No pattern available to test.")
+            return@buildString
+        }
+        val signalMinute = (kotlin.math.round(averageDrop).toInt() - 1).coerceIn(4, 14)
+        val prefix = 3..signalMinute
+        var triggers = 0
+        var correct = 0
+        for (market in heldOut) {
+            val observed = market.minutes.filter { it.minute in prefix }
+            val firstAbove = observed.firstOrNull { it.minute > 3 && it.signedChartLevel > 0 } ?: continue
+            if (observed.any { it.minute > firstAbove.minute && it.signedChartLevel < 0 }) continue
+            if (observed.size != prefix.count() || observed.any {
+                kotlin.math.abs(it.signedChartLevel - means.getValue(it.minute)) > 10.0
+            }) continue
+            triggers++
+            if (market.finalBtc < market.targetBtc) correct++
+        }
+        appendLine("Holdout DOWN signal at M$signalMinute (rounded discovery mean drop minus one).")
+        appendLine("Match requires every M03-to-signal level within 10 chart points of its discovery mean,")
+        appendLine("with an above-target close after M03 and no subsequent below-target close yet.")
+        appendLine("Triggers: $triggers/${heldOut.size} (${n(100.0 * triggers / heldOut.size)}%).")
+        appendLine("Correct DOWN finishes: $correct/$triggers (${n(100.0 * correct / triggers)}%).")
+    }
+
     fun report(markets: List<Market>, skipped: Int = 0): String {
         val unique = markets.distinctBy { it.startMs }
             .sortedBy { it.startMs }
@@ -181,6 +243,7 @@ object BinanceTwentySevenPatternReport {
                 if (hits.isEmpty()) "n/a" else n(100.0 * w / hits.size)
             ).joinToString(","))
         }
+        sb.append(preDropReport(unique))
         sb.appendLine("=== END BINANCE 1000 MARKET REPORT ===")
         return sb.toString()
     }
