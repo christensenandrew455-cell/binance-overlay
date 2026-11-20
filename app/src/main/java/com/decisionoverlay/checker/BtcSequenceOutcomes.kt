@@ -21,12 +21,13 @@ object BtcSequenceOutcomes {
     }
 
     fun report(markets: List<BinanceTwentySevenPatternReport.Market>): String = buildString {
-        appendLine("threshold,kind,path,step_minutes_elapsed,finish_minutes_left,leg_gaps_minutes,total_duration_minutes,markets,down,up,final_down_pct,final_up_pct")
-        for (threshold in listOf(70,80)) {
+        appendLine("threshold,kind,path,step_minutes_elapsed,finish_minutes_left,leg_gaps_minutes,total_duration_minutes,markets,down,up,final_down_pct,final_up_pct,scanned_markets,hit_pct")
+        for (threshold in listOf(70,80,-70,-80)) {
+            val sign = if (threshold > 0) 1 else -1
             val records = sortedMapOf<String,Count>()
             for (market in markets) {
                 val samples = market.minutes
-                val first = samples.indexOfFirst { it.signedChartLevel >= threshold }
+                val first = samples.indexOfFirst { sign * it.signedChartLevel >= abs(threshold) }
                 if (first < 0) continue
                 val seen = mutableSetOf<String>()
                 fun add(kind: String, path: String, steps: String = "", left: String = "",
@@ -42,7 +43,7 @@ object BtcSequenceOutcomes {
                 var crossing: Int? = null
                 for (i in first until samples.size) {
                     val obs = samples[i]
-                    if (obs.signedChartLevel <= 0.0) { crossing = obs.minute; break }
+                    if (sign * obs.signedChartLevel <= 0.0) { crossing = obs.minute; break }
                     val level = band(obs.signedChartLevel)
                     if (level == levels.lastOrNull()) continue
                     levels.add(level)
@@ -62,7 +63,7 @@ object BtcSequenceOutcomes {
                         }
                     }
                 }
-                val end = crossing ?: if (!market.upWon) 15 else null
+                val end = crossing ?: if (market.upWon == (sign < 0)) 15 else null
                 add("return_status",when {
                     crossing != null -> "returned by minute 14"
                     end != null -> "first crossed at settlement"
@@ -73,7 +74,7 @@ object BtcSequenceOutcomes {
             }
             for ((key,c) in records) {
                 val n = c.down+c.up
-                appendLine("$threshold,$key,$n,${c.down},${c.up},${pct(c.down,n)},${pct(c.up,n)}")
+                appendLine("$threshold,$key,$n,${c.down},${c.up},${pct(c.down,n)},${pct(c.up,n)},${markets.size},${pct(n,markets.size)}")
             }
         }
     }
@@ -86,7 +87,7 @@ object BtcSequenceOutcomes {
 
     fun detail(csv: String, threshold: String, path: String): String = buildString {
         val group = rows(csv).filter { it[0] == threshold && it[2] == path }.toList()
-        appendLine("+$threshold touch · " + path.replace(">", " → "))
+        appendLine("${if (threshold.startsWith("-")) "" else "+"}$threshold touch · " + path.replace(">", " → "))
         appendLine(outcome(group.first { it[1] == "sequence" }))
         appendLine()
         appendLine("When the path first finished")
@@ -110,10 +111,10 @@ object BtcSequenceOutcomes {
         val all = rows(csv).toList()
         appendLine("Choose PATTERN TIMING to compare exact minutes and move speeds.")
         appendLine("Windows use the first finish per market. Speed and exact-time rows count each matching market once per timing.")
-        for (threshold in listOf("70","80")) {
+        for (threshold in listOf("70","80","-70","-80")) {
             val group = all.filter { it[0] == threshold }
             val cohort = group.first { it[1] == "cohort" }
-            appendLine("\n+$threshold touched in ${cohort[7]} markets")
+            appendLine("\n${if (threshold.startsWith("-")) "" else "+"}$threshold touched in ${cohort[7]} markets")
             appendLine(outcome(cohort))
             for (r in group.filter { it[1] == "return_status" })
                 appendLine("${r[2]}: ${r[8]} DOWN / ${r[9]} UP")

@@ -38,6 +38,27 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 .onFailure { Toast.makeText(this, "Could not save CSV", Toast.LENGTH_SHORT).show() }
         }
     }
+    private lateinit var charts: LinearLayout
+    private fun showCharts(threshold: String, path: String) {
+        charts.removeAllViews()
+        val windows = shownReport.lineSequence().drop(1).filter { it.isNotBlank() }
+            .map { it.split(',') }.filter { it[0]==threshold && it[1]=="window" && it[2]==path }
+            .associateBy { it[4] }
+        val down = threshold.toInt()>0
+        fun label(s: String) { charts.addView(TextView(this).apply { text=s; setTextColor(Color.WHITE) }) }
+        label(path.replace(">"," → ") + "  |  " + threshold + " touch")
+        for (win in listOf(false,true)) {
+            label(if (win) "Final " + (if (down) "DOWN" else "UP") + " among matches" else "Hit rate among scanned markets")
+            for (w in listOf("14–12","11–9","8–5","4–1")) {
+                val r = windows[w]
+                val value = r?.get(if (win) (if (down) 10 else 11) else 13)?.toDoubleOrNull() ?: 0.0
+                label("$w min left   " + (if (r==null && win) "—" else "$value%") + "   (" + (r?.get(7) ?: "0") + " matches)")
+                charts.addView(android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
+                    max=1000; progress=(10*value).toInt()
+                })
+            }
+        }
+    }
     private var shownReport = ""
     private var partIndex = 0
 
@@ -69,13 +90,14 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = prefs.getBoolean(KalshiPatternBacktestService.RUNNING, false)
             val report = prefs.getString(KalshiPatternBacktestService.REPORT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.STATUS,
-                "Tap RUN 1000 MARKETS to test your +70 and +80 touches.")
+                "Tap RUN 1000 MARKETS to test your ±70 and ±80 touches.")
             start.isEnabled = !running
             stop.isEnabled = running
             copy.isEnabled = report.isNotEmpty()
             copyFull.isEnabled = report.length in 1..200000
             share.isEnabled = report.isNotEmpty()
             if (report != shownReport) {
+                charts.removeAllViews()
                 shownReport = report
                 partIndex = 0
                 copy.text = partLabel(report)
@@ -144,15 +166,17 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 Toast.makeText(this, "Run the scan first", Toast.LENGTH_SHORT).show()
             } else {
                 val choices = BtcSequenceOutcomes.choices(shownReport)
-                val labels = choices.map { (threshold,path) -> "+$threshold touch · " + path.replace(">", " → ") }
+                val labels = choices.map { (threshold,path) -> "${if (threshold.startsWith("-")) "" else "+"}$threshold touch · " + path.replace(">", " → ") }
                 android.app.AlertDialog.Builder(this).setTitle("Choose a path")
                     .setItems(labels.toTypedArray()) { _, index ->
                         val (threshold,path) = choices[index]
+                        showCharts(threshold,path)
                         output.text = BtcSequenceOutcomes.detail(shownReport,threshold,path)
-                        (output.parent as? ScrollView)?.scrollTo(0,0)
+                        (charts.parent.parent as? ScrollView)?.scrollTo(0,0)
                     }.setNeutralButton("Overview") { _,_ ->
+                        charts.removeAllViews()
                         output.text = BtcSequenceOutcomes.summary(shownReport)
-                        (output.parent as? ScrollView)?.scrollTo(0,0)
+                        (charts.parent.parent as? ScrollView)?.scrollTo(0,0)
                     }.show()
             }
         }
@@ -196,7 +220,11 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setTextIsSelectable(true)
             setPadding(dp(8), dp(8), dp(8), dp(12))
         }
-        scroller.addView(output)
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        charts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        panel.addView(charts)
+        panel.addView(output)
+        scroller.addView(panel)
         root.addView(scroller, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
