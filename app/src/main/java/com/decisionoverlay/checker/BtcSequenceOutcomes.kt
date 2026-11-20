@@ -4,85 +4,81 @@ import java.util.Locale
 import kotlin.math.abs
 
 object BtcSequenceOutcomes {
-    private val paths = listOf(listOf(-60,-70,-60), listOf(60,70,60), listOf(50,-60),
-        listOf(50,60), listOf(-70,-60), listOf(70,60))
-
-    private fun band(value: Double): Int {
-        val magnitude = (abs(value) / 10).toInt() * 10
-        return when {
-            magnitude < 60 -> 50
-            value < 0 -> -magnitude
-            else -> magnitude
-        }
+    private data class Count(var down: Int = 0, var up: Int = 0) {
+        fun add(upWon: Boolean) { if (upWon) up++ else down++ }
+    }
+    private fun pct(n: Int, d: Int) = if (d == 0) "" else String.format(Locale.US, "%.1f", 100.0*n/d)
+    private fun band(x: Double): Int {
+        val magnitude = (abs(x)/10).toInt()*10
+        return if (magnitude < 60) 50 else if (x < 0) -magnitude else magnitude
     }
 
     fun report(markets: List<BinanceTwentySevenPatternReport.Market>): String = buildString {
-        val ordered = markets.sortedBy { it.startMs }
-        val samples = ordered.map { m -> m.minutes.map { band(it.signedChartLevel) } }
-        val split = ordered.size * 7 / 10
-        appendLine("sequence,sample,markets,first_completion_elapsed_minute,hits,hit_pct,up,down,up_pct,down_pct,gap_1_minutes,gap_2_minutes")
-        fun summarize(path: List<Int>) {
-            val hits = Array(3) { IntArray(15) }
-            val ups = Array(3) { IntArray(15) }
-            for ((i, series) in samples.withIndex()) {
-                var step = 0
-                for ((index, level) in series.withIndex()) {
-                    if (level != path[step]) continue
-                    if (++step < path.size) continue
-                    val minute = index + 1
-                    if (minute in 4..14) {
-                        for (group in listOf(0, if (i < split) 1 else 2)) {
-                            hits[group][minute]++
-                            hits[group][0]++
-                            if (ordered[i].upWon) {
-                                ups[group][minute]++
-                                ups[group][0]++
-                            }
-                        }
-                    }
-                    break
+        appendLine("threshold,kind,path,markets,down,up,share_of_down_pct,share_of_up_pct,final_down_pct")
+        for (threshold in listOf(70,80)) {
+            val total = Count()
+            val records = sortedMapOf<String,Count>()
+            for (market in markets) {
+                val samples = market.minutes
+                val first = samples.indexOfFirst { it.signedChartLevel >= threshold }
+                if (first < 0) continue
+                total.add(market.upWon)
+                val seen = mutableSetOf<String>()
+                // Only transitions observed between the first touch and the first
+                // subsequent close at/below the actual BTC starting price.
+                val path = mutableListOf<Int>()
+                var returned = false
+                for (i in first until samples.size) {
+                    val level = samples[i].signedChartLevel
+                    if (level <= 0.0) { returned = true; break }
+                    val value = band(level)
+                    if (path.lastOrNull() == value) continue
+                    path.add(value)
+                    for (length in 2..minOf(3,path.size))
+                        seen.add("sequence," + path.takeLast(length).joinToString(">"))
                 }
-            }
-            val name = path.joinToString(">")
-            fun pct(n: Int, total: Int) = if (total == 0) "" else
-                String.format(Locale.US, "%.2f", 100.0 * n / total)
-            for ((group, sample) in listOf("all", "older70", "newer30").withIndex()) {
-                val total = listOf(ordered.size, split, ordered.size - split)[group]
-                for (minute in 0..14) {
-                    val n = hits[group][minute]
-                    if (minute > 0 && n == 0) continue
-                    val up = ups[group][minute]
-                    appendLine(listOf(name, sample, total, if (minute == 0) "all" else minute,
-                        n, pct(n,total), up, n-up, pct(up,n), pct(n-up,n), "any", if (path.size == 3) "any" else "").joinToString(","))
+                val status = when {
+                    returned -> "returned by minute 14"
+                    !market.upWon -> "first crossed at settlement"
+                    else -> "no observed return"
                 }
+                seen.add("return_status," + status)
+                for (key in seen) records.getOrPut(key) { Count() }.add(market.upWon)
             }
+            fun row(key: String, c: Count) {
+                val n = c.up + c.down
+                appendLine(listOf(threshold,key,n,c.down,c.up,pct(c.down,total.down),
+                    pct(c.up,total.up),pct(c.down,n)).joinToString(","))
+            }
+            row("cohort,all touches",total)
+            records.forEach { (key,c) -> row(key,c) }
         }
-        paths.forEach { summarize(it) }
     }
 
     fun summary(csv: String): String = buildString {
-        val rows = csv.lineSequence().drop(1).filter { it.isNotBlank() }
-            .map { it.split(',') }.filter { it[1] == "all" }.toList()
-        fun rate(w: Int, n: Int) = if (n == 0) "—" else String.format(Locale.US, "%.1f%%", 100.0*w/n)
-        val windows = listOf("11–9" to 4..6, "8–5" to 7..10, "4–1" to 11..14)
-        for (path in paths) {
-            val matching = rows.filter { it[0] == path.joinToString(">") }
-            val total = matching.first { it[3] == "all" }
-            val hits = total[4].toInt()
-            val up = path.last() > 0
-            val col = if (up) 6 else 7
-            appendLine(path.joinToString(" → ") + if (up) "   UP" else "   DOWN")
-            appendLine("Hit rate ${rate(hits,total[2].toInt())} ($hits/${total[2]})")
-            appendLine("Win rate ${rate(total[col].toInt(),hits)} (${total[col]}/$hits)")
-            val stats = windows.map { (label, minutes) ->
-                val group = matching.filter { (it[3].toIntOrNull() ?: 0) in minutes }
-                Triple(label, group.sumOf { it[col].toInt() }, group.sumOf { it[4].toInt() })
-            }
-            val best = stats.filter { it.third > 0 }.maxWithOrNull(
-                compareBy<Triple<String, Int, Int>> { it.second.toDouble()/it.third }.thenBy { it.third })
-            appendLine(if (best == null) "Best window: —" else
-                "Best: ${best.first} min left · ${rate(best.second,best.third)} (${best.second}/${best.third})")
+        val rows = csv.lineSequence().drop(1).filter { it.isNotBlank() }.map { it.split(',') }.toList()
+        appendLine("First touch or higher. Each market counts once per path. Target = starting BTC price; crossings checked at minute closes.")
+        for (threshold in listOf("70","80")) {
+            val group = rows.filter { it[0] == threshold }
+            val total = group.first { it[1] == "cohort" }
             appendLine()
+            appendLine("+${threshold} reached in ${total[3]} markets")
+            appendLine("Final DOWN: ${total[4]}   UP: ${total[5]}")
+            for (r in group.filter { it[1] == "return_status" })
+                appendLine("${r[2]}: ${r[4]} DOWN / ${r[5]} UP")
+            val paths = group.filter { it[1] == "sequence" }
+            for ((label, col) in listOf("DOWN" to 4, "UP" to 5)) {
+                appendLine()
+                appendLine("Most common before target in $label closes")
+                val top = paths.filter { it[col].toInt() > 0 }.sortedWith(
+                    compareByDescending<List<String>> { it[col].toInt() }
+                    .thenBy { it[9-col].toInt() }.thenBy { it[2] }).take(5)
+                if (top.isEmpty()) appendLine("No observed two- or three-step paths.")
+                for (r in top) {
+                    appendLine(r[2].replace(">", " → "))
+                    appendLine("DOWN ${r[4]}/${total[4]} (${r[6].ifEmpty { "—" }}%) · UP ${r[5]}/${total[5]} (${r[7].ifEmpty { "—" }}%)")
+                }
+            }
         }
     }
 }
