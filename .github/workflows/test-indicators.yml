@@ -46,7 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "five-five-indicator-preview-${GITHUB_RUN_ID}" \
+          gh release create "five-indicator-preview-${GITHUB_RUN_ID}" \
             five-indicator-preview.apk \
             --title "Five-indicator combined-test APK (${GITHUB_RUN_ID})" \
             --notes "Android debug preview with five-indicator joint-vote test across the existing 1,000 BTC markets at commit ${GITHUB_SHA}. Not merged into main. No live trade execution. Built and tested by GitHub Actions." \
