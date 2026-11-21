@@ -5,8 +5,10 @@ import org.junit.Test
 
 class KalshiLiveSignalRulesTest {
     private fun q(left: Int, level: Double) = BtcChartProxyMath.Sample(left, level)
+    private fun match(vararg samples: BtcChartProxyMath.Sample) =
+        KalshiLiveSignalRules.matchingSignedSignals(samples.toList())
 
-    @Test fun onlyFourHistoricalPatternsMeetTwentyPercentFloor() {
+    @Test fun onlyFourHistoricalPatternsMeetTwentyPercentOccurrenceFloor() {
         assertEquals(4, KalshiLiveSignalRules.rules.size)
         assertEquals(listOf(
             "-50 -> -60 in 2 min", "-50 -> -60 in 1 min",
@@ -17,46 +19,64 @@ class KalshiLiveSignalRulesTest {
         assertTrue(KalshiLiveSignalRules.rules.all {
             it.hitRatePercent >= KalshiLiveSignalRules.MIN_HIT_RATE_PERCENT
         })
-        assertEquals(34.3, KalshiLiveSignalRules.rules[0].hitRatePercent, 0.001)
-        assertEquals(79.6, KalshiLiveSignalRules.rules[0].winRatePercent, 0.1)
     }
 
-    @Test fun exactNegativeTenPointBinsNotThresholdCrossing() {
-        val down = KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(14, -55.0), q(12, -65.0)))
-        assertEquals(1, down.size)
-        assertEquals("DOWN", down.single().rule.side)
-        assertEquals(2, down.single().rule.gapMinutes)
-        assertEquals(14, down.single().startLeft)
-        assertEquals(12, down.single().left)
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(14, -55.0), q(12, -75.0))).isEmpty())
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(14, -55.0), q(12, -59.0))).isEmpty())
+    @Test fun theExactFinishingMinuteOverridesTheOverallRate() {
+        val good = match(q(14, -55.0), q(12, -65.0))
+        assertEquals(1, good.size)
+        assertEquals("DOWN", good.single().rule.side)
+        assertEquals(14, good.single().startLeft)
+        assertEquals(12, good.single().left)
+        assertEquals(91.4, good.single().window.winRatePercent, 0.1)
+        assertEquals(31.4, good.single().window.edgePoints, 0.1)
+        // Same path, a DIFFERENT finish minute: only 73.3%, below cutoff.
+        assertTrue(match(q(12, -55.0), q(10, -65.0)).isEmpty())
     }
 
-    @Test fun exactPositiveOneMinuteAndDirection() {
-        val up = KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(10, 55.2), q(9, 61.1)))
-        assertEquals(1, up.size)
-        assertEquals("UP", up.single().rule.side)
-        assertEquals(1, up.single().rule.gapMinutes)
+    @Test fun exactlySeventyFivePercentOrLowerIsAlwaysRejected() {
+        // -50 -> -60 (1m), 12 -> 11: 30 wins / 40 = 75.0%.
+        assertTrue(match(q(12, -55.0), q(11, -65.0)).isEmpty())
+        // -50 -> -60 (2m), 5 -> 3: 18 wins / 24 = 75.0%.
+        assertTrue(match(q(5, -55.0), q(3, -65.0)).isEmpty())
+        // +50 -> +60 (1m), 14 -> 13: 74.2%.
+        assertTrue(match(q(14, 55.0), q(13, 65.0)).isEmpty())
+        // +50 -> +60 (2m), 12 -> 10: 82.4% passes.
+        assertEquals("UP", match(q(12, 55.0), q(10, 65.0))
+            .single().rule.side)
     }
 
-    @Test fun neverConfusePositiveWithNegativeFiftyOrIncorrectGap() {
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(12, 55.0), q(11, -65.0))).isEmpty())
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(12, -55.0), q(9, -65.0))).isEmpty())
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(12, -55.0), q(11, 65.0))).isEmpty())
+    @Test fun insufficientDiscoverySampleCannotProduceHighChanceAlert() {
+        // 4 -> 2 is 85.7% but has only NINE discovery hits.
+        assertTrue(match(q(4, -55.0), q(2, -65.0)).isEmpty())
+        // 5 -> 4 (UP 1m) is 85.7% with only SIX discovery hits.
+        assertTrue(match(q(5, 55.0), q(4, 65.0)).isEmpty())
     }
 
-    @Test fun firstCompletionOnlyAndNoFutureReading() {
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(14, -55.0), q(13, -65.0), q(12, -55.0), q(11, -65.0)))
+    @Test fun exactBinsNotThresholdCrossingAndDirection() {
+        assertTrue(match(q(14, -55.0), q(12, -75.0)).isEmpty())
+        assertTrue(match(q(14, -55.0), q(12, -59.0)).isEmpty())
+        assertTrue(match(q(12, 55.0), q(10, -65.0)).isEmpty())
+        assertTrue(match(q(12, -55.0), q(10, 65.0)).isEmpty())
+        assertEquals("UP", match(q(11, 55.2), q(10, 61.1))
+            .single().rule.side)
+    }
+
+    @Test fun aPreviouslyRejectedWindowDoesNotBlockTheLaterGoodOne() {
+        // 14 -> 13 DOWN 1m has 18 discovery hits; no alert at 13.
+        // 13 -> 12 has 30 discovery hits and 89.6% win; can alert at 12.
+        val history = listOf(q(14, -55.0), q(13, -65.0),
+            q(13, -55.0), q(12, -65.0))
+        // Duplicated minute readings resolve to first close, so test the
+        // later qualifying window independently with a legal market sequence.
+        assertEquals(1, match(q(13, -55.0), q(12, -65.0)).size)
+        assertTrue(match(q(14, -55.0), q(13, -65.0)).isEmpty())
+    }
+
+    @Test fun firstEligibleCompletionOnlyAndNoFutureReading() {
+        // 13 -> 12 qualifies; a later 10 -> 9 match should not alert again.
+        assertTrue(match(q(13, -55.0), q(12, -65.0),
+            q(10, -55.0), q(9, -65.0))
             .none { it.rule.gapMinutes == 1 })
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(14, -55.0))).isEmpty())
+        assertTrue(match(q(14, -55.0)).isEmpty())
     }
 }

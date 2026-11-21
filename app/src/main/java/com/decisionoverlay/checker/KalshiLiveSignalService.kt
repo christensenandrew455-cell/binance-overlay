@@ -179,7 +179,7 @@ class KalshiLiveSignalService : Service() {
         val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
         if (matched.isEmpty()) {
             status("BTC chart | " + latest.left +
-                "m left | no selected 20%+ frequency pattern")
+                "m left | no exact-minute pattern above +15-point edge")
             return
         }
         val price = chart.optDouble("latest", Double.NaN)
@@ -207,14 +207,16 @@ class KalshiLiveSignalService : Service() {
         val spotText = String.format(Locale.US, "$%,.2f", price)
         val targetText = String.format(Locale.US, "$%,.2f", target)
         val distanceText = String.format(Locale.US, "$%,.2f", kotlin.math.abs(price - target))
+        val w = best.window
         val stats = String.format(Locale.US,
-            "hit %.1f%% of 1000 | historical %s win %.1f%% | recent win %.1f%%",
-            rule.hitRatePercent, rule.side, rule.winRatePercent,
-            rule.newerWinPercent)
+            "exact-minute %s win %.1f%% (%d/%d) | chart index %.0f | edge +%.1f points | newer %.1f%% (%d hits)",
+            rule.side, w.winRatePercent, w.wins, w.hits,
+            w.chartSideIndex, w.edgePoints, w.newerWinPercent, w.newerHits)
         val detail = rule.name + " | " + best.startLeft + " -> " + best.left +
             "m left | " + stats + " | BTC " + spotText +
             " (" + distanceText + " " + position + " target " + targetText + ")" +
-            " | chart " + signedLevel + ". " + rule.side +
+            " | chart " + signedLevel + " | overall occurrence " +
+            String.format(Locale.US, "%.1f%%", rule.hitRatePercent) + ". " + rule.side +
             " means " + direction + ". RESEARCH ONLY: check actual contract ask/fees."
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=

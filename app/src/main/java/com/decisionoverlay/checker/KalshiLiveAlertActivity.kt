@@ -100,20 +100,22 @@ class KalshiLiveAlertActivity : AppCompatActivity() {
         root.addView(label("LAST ALERT", 14f, Color.WHITE))
         lastAlert = label("", 13f, Color.rgb(88, 220, 143))
         root.addView(lastAlert)
-        root.addView(label("FOUR SELECTED 20%+ OCCURRENCE RULES", 16f, Color.WHITE))
+        root.addView(label("FOUR PATTERNS · EXACT-MINUTE FILTER", 16f, Color.WHITE))
         root.addView(label(
             "Only the four selected exact signed-bin paths generate research " +
-            "alerts; one alert per BTC 15-minute market. '20%' means the path " +
-            "was found in at least 200 of 1,000 historical markets. " +
-            "Any individual exact-minute window may occur much less often.",
+            "alerts; one alert per BTC 15-minute market. Each rule occurred in " +
+            "20%+ of tested markets. An alert requires its EXACT start/end " +
+            "minute to show more than a 15-point win-rate gap above the chart " +
+            "side's 60 index: 75% is excluded. Require 20+ older matches. " +
+            "Frozen Nov 20 report; not live Kalshi odds.",
             12f, Color.rgb(195, 206, 219)))
         for (rule in KalshiLiveSignalRules.rules) {
             root.addView(label(
                 rule.name + " | BUY " + rule.side +
                 " | hit " + String.format(Locale.US, "%.1f%%", rule.hitRatePercent) +
                 " | win " + String.format(Locale.US, "%.1f%%", rule.winRatePercent) +
-                " | newest win " + String.format(Locale.US, "%.1f%%",
-                    rule.newerWinPercent),
+                " | eligible minute windows " +
+                    KalshiLiveSignalRules.eligibleWindowCount(rule),
                 12f, Color.rgb(221, 230, 241)))
         }
         root.addView(label(
