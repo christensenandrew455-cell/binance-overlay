@@ -244,8 +244,9 @@ class KalshiPatternBacktestService : Service() {
             return
         }
         if (focused) {
-            status("Comparing successful 90/80 reversals with prior losing patterns...")
-            val result = BtcExtremeWinnerPatternMiner.report(chosen, earlyFeatures) + "\n\n" +
+            status("Testing EXACT live chart alert hit and win rates by minute...")
+            val result = BtcLiveNotificationTimingReport.report(chosen) + "\n\n" +
+                BtcExtremeWinnerPatternMiner.report(chosen, earlyFeatures) + "\n\n" +
                 BtcAnytimeExtremeResearchReport.report(chosen, earlyFeatures) + "\n\n" +
                 BtcEightPatternReport.report(chosen) + "\n\n" +
                 BtcContrarianReversalResearchReport.report(chosen, earlyFeatures) + "\n\n" +
@@ -254,7 +255,7 @@ class KalshiPatternBacktestService : Service() {
             prefs.edit().putString(FOCUSED_RESULT, result)
                 .putString(FOCUSED_STATUS,
                     (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
-                    ": " + chosen.size + "/1000 BTC markets · 4 patterns tested")
+                    ": " + chosen.size + "/1000 BTC markets · live alert hit/win by minute")
                 .apply()
             return
         }
