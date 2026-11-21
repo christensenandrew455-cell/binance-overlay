@@ -48,6 +48,55 @@ class BtcAnytimeExtremeResearchReportTest {
         assertTrue(row.returnedOppositeBeforeClose)
     }
 
+
+    @Test fun combinedDirectionsRequireLaterFlipAndOppositeSettlement() {
+        // +90 -> -50 later -> DOWN; and -90 -> +50 later -> UP.
+        val down = market(10, false, 1 to 92.0, 7 to -52.0)
+        val up = market(11, true, 2 to -93.0, 9 to 55.0)
+        // Settled DOWN but there was never a completed opposite-side candle.
+        val settlementOnly = market(12, false, 3 to 94.0, 6 to 83.0)
+        // Crosses the center but settles on the SAME side it first touched.
+        val falseReversal = market(13, true, 4 to 94.0, 8 to -57.0)
+        val markets = listOf(down, up, settlementOnly, falseReversal)
+
+        val plus = subject.flipEvents(markets, 90, true)
+        val minus = subject.flipEvents(markets, 90, false)
+        assertEquals(3, plus.size)
+        assertEquals(1, minus.size)
+        assertEquals(2, plus.count { it.settledOpposite })
+        assertEquals(1, plus.count { it.fullyFlippedAndSettled })
+        assertEquals(1, minus.count { it.fullyFlippedAndSettled })
+        assertEquals(2, (plus + minus).count { it.fullyFlippedAndSettled })
+        assertEquals(4, (plus + minus).map { it.marketIndex }.distinct().size)
+    }
+
+    @Test fun eightyThresholdIncludesNinetyWithoutRequiringSequentialMinute() {
+        val markets = listOf(market(2, false, 1 to 82.0, 11 to -56.0),
+            market(3, true, 2 to -91.0, 13 to 54.0))
+        assertEquals(1, subject.flipEvents(markets, 80, true).count {
+            it.fullyFlippedAndSettled
+        })
+        assertEquals(1, subject.flipEvents(markets, 80, false).count {
+            it.fullyFlippedAndSettled
+        })
+        assertEquals(1, subject.flipEvents(markets, 90, false).size)
+        assertEquals(0, subject.flipEvents(markets, 90, true).size)
+    }
+
+    @Test fun summaryDisplaysBothDirectionalAndCombinedReversals() {
+        val markets = listOf(
+            market(1, false, 1 to 94.0, 8 to -56.0),
+            market(2, true, 2 to -95.0, 10 to 53.0)
+        )
+        val report = subject.report(markets, emptyMap())
+        assertTrue(report.contains("MAIN RESULT: EXTREME TOUCH"))
+        assertTrue(report.contains("90,COMBINED_UNIQUE_MARKETS,2,2,100.0"))
+        assertTrue(report.contains("90,FIRST_EXTREME_ONLY,2,2,100.0"))
+        assertTrue(report.contains("80,UP_TOUCH_then_DOWN"))
+        assertTrue(report.contains("80,DOWN_TOUCH_then_UP"))
+        assertTrue(report.contains("NO fixed gap"))
+    }
+
     @Test fun reportHasExactMinuteAndNonadjacentHistoryAndNoPriceClaims() {
         val markets = listOf(
             market(1, false, 1 to -85.0, 5 to 95.0),
