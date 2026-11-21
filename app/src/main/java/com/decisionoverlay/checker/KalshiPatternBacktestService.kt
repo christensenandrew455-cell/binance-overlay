@@ -244,8 +244,9 @@ class KalshiPatternBacktestService : Service() {
             return
         }
         if (focused) {
-            status("Testing original four plus early momentum and reversal research...")
-            val result = BtcEightPatternReport.report(chosen) + "\n\n" +
+            status("Testing anytime 90 touches, reversals, and existing BTC patterns...")
+            val result = BtcAnytimeExtremeResearchReport.report(chosen, earlyFeatures) + "\n\n" +
+                BtcEightPatternReport.report(chosen) + "\n\n" +
                 BtcContrarianReversalResearchReport.report(chosen, earlyFeatures) + "\n\n" +
                 BtcEarlyIndicatorResearchReport.report(chosen, earlyFeatures)
             if (!active.get()) error("Scan stopped")
