@@ -79,6 +79,6 @@ class BtcEarlyIndicatorResearchReportTest {
         assertTrue(report.contains("BEFORE THE MOVEMENT"))
         assertTrue(report.contains("NO Kalshi price"))
         assertTrue(report.contains("-70 to -60 in 1m"))
-        assertTrue(report.contains("+70 predicts +60"))
+        assertTrue(report.contains("+70,+60,UP,Unfiltered"))
     }
 }
