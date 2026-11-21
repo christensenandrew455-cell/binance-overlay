@@ -10,7 +10,7 @@ import java.util.Locale
  * current frozen KalshiLiveSignalRules would have notified at that minute
  * if the chart service had delivered each completed 1m snapshot promptly.
  *
- * No thresholds are chosen from this report. Never changes live alerts.
+ * Uses frozen live-window minimum 75% win rate, inclusive, and >=20 older cases.\n * Reports actual hit/win timing; no further cutoffs selected here.
  */
 internal object BtcLiveNotificationTimingReport {
     internal data class Count(var hits: Int = 0, var wins: Int = 0) {
@@ -153,12 +153,12 @@ internal object BtcLiveNotificationTimingReport {
             appendLine("Older/newer are separated; newer was previously researched,")
             appendLine("so this is NOT a pristine out-of-sample performance claim.")
             appendLine("Eligible_match = matches satisfying the EXISTING frozen live")
-            appendLine("window gate: >=20 older hits and >15 index points vs 60.")
+            appendLine("window gate: >=20 older hits and >=15 win-rate points above 60.")
             appendLine("First_notification = IDEAL replay of EXISTING live alerts,")
             appendLine("one chosen notification per 15-minute market, first eligible")
             appendLine("minute and highest rule priority at ties. Actual phone polls,")
             appendLine("late snapshots and intraminute price crossing are not modeled.")
-            appendLine("NO NEW WIN-RATE CUTOFFS, NO GRAPH OR LIVE ALERT CHANGES.")
+            appendLine("EXACT-TIME 75% WIN-RATE MINIMUM APPLIED IN LIVE ELIGIBILITY.")\n            appendLine("NO CHART CHANGES; preserve minimum 20 older matches.")
             appendLine()
 
             appendLine("=== GRAPH DATA: EACH LIVE PATTERN AT EVERY EXACT FINISH MINUTE (CSV) ===")
@@ -220,7 +220,7 @@ internal object BtcLiveNotificationTimingReport {
                 " winning, " + fmt(a.uniqueNotified.newer.winPct) + "% win.")
             appendLine("Historical settlement outcomes are NOT actual Kalshi")
             appendLine("executed orders or expected profit after quotes/fees.")
-            appendLine("=== END LIVE GRAPH ALERT TIMING; NO LIVE RULE CHANGES ===")
+            appendLine("=== END LIVE GRAPH ALERT TIMING ===")
         }
     }
 }
