@@ -33,14 +33,20 @@ class KalshiLiveSignalRulesTest {
         assertTrue(match(q(12, -55.0), q(10, -65.0)).isEmpty())
     }
 
-    @Test fun exactlySeventyFivePercentOrLowerIsAlwaysRejected() {
-        // -50 -> -60 (1m), 12 -> 11: 30 wins / 40 = 75.0%.
-        assertTrue(match(q(12, -55.0), q(11, -65.0)).isEmpty())
-        // -50 -> -60 (2m), 5 -> 3: 18 wins / 24 = 75.0%.
+    @Test fun exactlySeventyFivePercentIsAllowedWhenDiscoverySampleIsLargeEnough() {
+        // -50 -> -60 (1m), 12 -> 11: 30 wins / 40 = 75.0% and 28
+        // discovery matches. This must now SEND at the inclusive cutoff.
+        val exactly = match(q(12, -55.0), q(11, -65.0)).single()
+        assertEquals("DOWN", exactly.rule.side)
+        assertEquals(75.0, exactly.window.winRatePercent, 0.001)
+        assertEquals(15.0, exactly.window.edgePoints, 0.001)
+        assertTrue(exactly.window.eligible)
+        // -50 -> -60 (2m), 5 -> 3: 18/24 = 75.0%, but only
+        // 16 discovery matches; still rejected to avoid tiny samples.
         assertTrue(match(q(5, -55.0), q(3, -65.0)).isEmpty())
-        // +50 -> +60 (1m), 14 -> 13: 74.2%.
+        // Below the inclusive threshold (74.2%) must be rejected.
         assertTrue(match(q(14, 55.0), q(13, 65.0)).isEmpty())
-        // +50 -> +60 (2m), 12 -> 10: 82.4% passes.
+        // 82.4% passes normally.
         assertEquals("UP", match(q(12, 55.0), q(10, 65.0))
             .single().rule.side)
     }
