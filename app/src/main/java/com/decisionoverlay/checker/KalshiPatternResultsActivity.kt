@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +16,10 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.core.content.ContextCompat
 
 /** Separate 1,000-market indicator and exhaustive two-point pattern scans. */
@@ -24,9 +29,51 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private lateinit var patterns: Button
     private var showingPatterns = false
     private lateinit var copy: Button
+    private lateinit var save: Button
+    private var pendingExportKey: String? = null
     private lateinit var status: TextView
     private lateinit var output: TextView
     private var shownReport = ""
+
+    // Document picker allows saving directly to Downloads or cloud storage
+    // without needing Android's broad file-access permissions.
+    private val exportPicker = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        val key = pendingExportKey
+        pendingExportKey = null
+        if (uri == null || key == null) return@registerForActivityResult
+
+        val contents = getSharedPreferences(
+            KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE
+        ).getString(key, null)
+        if (contents.isNullOrEmpty()) {
+            Toast.makeText(this, "No scan results to save. Run the scan first.", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        // Save every row, not just the shortened on-screen preview.
+        Thread {
+            val saved = runCatching {
+                contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
+                    it.write(contents)
+                } ?: error("Could not open the selected file")
+            }
+            runOnUiThread {
+                saved.fold(
+                    onSuccess = {
+                        Toast.makeText(this,
+                            "Saved full report. Attach the .txt file in ChatGPT.",
+                            Toast.LENGTH_LONG).show()
+                    },
+                    onFailure = {
+                        Toast.makeText(this,
+                            "Could not save results: " + (it.message ?: "storage error"),
+                            Toast.LENGTH_LONG).show()
+                    }
+                )
+            }
+        }.start()
+    }
     private val refresh = object : Runnable {
         override fun run() {
             val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE)
@@ -42,9 +89,15 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             test.isEnabled = !running
             patterns.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
+            save.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
                 shownReport = report
-                output.text = report
+                // Rendering thousands of CSV rows in one TextView can freeze Android.
+                // The downloadable report is complete regardless of this preview limit.
+                output.text = if (report.length > 30_000) {
+                    report.take(30_000) +
+                        "\n\n[Preview shortened. Tap Download full .txt for every row.]"
+                } else report
             }
             handler.postDelayed(this, 500L)
         }
@@ -74,6 +127,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingExportKey = savedInstanceState?.getString("pending_export_key")
         supportActionBar?.hide()
         window.statusBarColor = Color.rgb(7, 10, 16)
         window.navigationBarColor = Color.rgb(7, 10, 16)
@@ -115,6 +169,26 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         addButton(commands, test)
         addButton(commands, patterns)
         addButton(commands, copy)
+        val exportCommands = row(root)
+        save = button("Download full .txt") {
+            val key = if (showingPatterns)
+                KalshiPatternBacktestService.EXHAUSTIVE_RESULT
+                else KalshiPatternBacktestService.EDGE_RESULT
+            val hasReport = getSharedPreferences(
+                KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE
+            ).getString(key, null)?.isNotEmpty() == true
+            if (!hasReport) {
+                Toast.makeText(this, "Run the scan first to create results.", Toast.LENGTH_LONG).show()
+            } else {
+                pendingExportKey = key
+                val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                val name = if (showingPatterns)
+                    "BTC-1400-patterns-$time.txt"
+                    else "BTC-indicators-$time.txt"
+                exportPicker.launch(name)
+            }
+        }
+        addButton(exportCommands, save)
         status = TextView(this).apply {
             textSize = 12f
             setTextColor(Color.rgb(240, 190, 80))
@@ -139,6 +213,11 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         super.onResume()
         handler.removeCallbacks(refresh)
         handler.post(refresh)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("pending_export_key", pendingExportKey)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onPause() {
