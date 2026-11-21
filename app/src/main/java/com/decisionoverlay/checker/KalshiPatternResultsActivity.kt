@@ -17,10 +17,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
-/** Displays and copies the same completed indicator report. */
+/** Separate 1,000-market indicator and exhaustive two-point pattern scans. */
 class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var test: Button
+    private lateinit var patterns: Button
+    private var showingPatterns = false
     private lateinit var copy: Button
     private lateinit var status: TextView
     private lateinit var output: TextView
@@ -29,9 +31,16 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         override fun run() {
             val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE)
             val running = KalshiPatternBacktestService.isScanning()
-            val report = prefs.getString(KalshiPatternBacktestService.EDGE_RESULT, "").orEmpty()
-            status.text = prefs.getString(KalshiPatternBacktestService.INDICATOR_STATUS, "Tap Test to scan 1,000 BTC markets.")
+            val reportKey = if (showingPatterns)
+                KalshiPatternBacktestService.EXHAUSTIVE_RESULT
+                else KalshiPatternBacktestService.EDGE_RESULT
+            val statusKey = if (showingPatterns)
+                KalshiPatternBacktestService.EXHAUSTIVE_STATUS
+                else KalshiPatternBacktestService.INDICATOR_STATUS
+            val report = prefs.getString(reportKey, "").orEmpty()
+            status.text = prefs.getString(statusKey, "Tap a scan button to test 1,000 BTC markets.")
             test.isEnabled = !running
+            patterns.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
                 shownReport = report
@@ -74,25 +83,37 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             setBackgroundColor(Color.rgb(7, 10, 16))
         }
         val heading = TextView(this).apply {
-            text = "BTC indicator test"
+            text = "BTC historical tests"
             textSize = 19f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, dp(5))
         }
         root.addView(heading)
         val commands = row(root)
-        test = button("Test") {
+        test = button("Indicators") {
+            showingPatterns = false
+            shownReport = ""
             test.isEnabled = false
             copy.isEnabled = false
             ContextCompat.startForegroundService(this, Intent(this, KalshiPatternBacktestService::class.java)
                 .setAction(KalshiPatternBacktestService.EDGE))
         }
+        patterns = button("1,400 patterns") {
+            showingPatterns = true
+            shownReport = ""
+            patterns.isEnabled = false
+            copy.isEnabled = false
+            ContextCompat.startForegroundService(this,
+                Intent(this, KalshiPatternBacktestService::class.java)
+                    .setAction(KalshiPatternBacktestService.EXHAUSTIVE))
+        }
         copy = button("Copy") {
             (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("BTC indicator results", shownReport))
+                .setPrimaryClip(ClipData.newPlainText("BTC historical results", shownReport))
             Toast.makeText(this, "Results copied", Toast.LENGTH_SHORT).show()
         }
         addButton(commands, test)
+        addButton(commands, patterns)
         addButton(commands, copy)
         status = TextView(this).apply {
             textSize = 12f

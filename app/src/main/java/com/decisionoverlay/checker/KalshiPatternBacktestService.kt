@@ -29,6 +29,9 @@ class KalshiPatternBacktestService : Service() {
         const val RUNNING = "running"
         const val START = "kalshi.pattern.START"
         const val EDGE = "btc.edge.START"
+        const val EXHAUSTIVE = "btc.exhaustive.START"
+        const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
+        const val EXHAUSTIVE_STATUS = "btc_exhaustive_status_v1"
         const val EDGE_RESULT = "indicator_ranking_v1"
         const val INDICATOR_STATUS = "indicator_status_v1"
         private val active = AtomicBoolean(false)
@@ -44,6 +47,17 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private var indicatorRun = false
+    private var exhaustiveRun = false
+    private fun statusKey(): String = when {
+        exhaustiveRun -> EXHAUSTIVE_STATUS
+        indicatorRun -> INDICATOR_STATUS
+        else -> STATUS
+    }
+    private fun resultKey(): String = when {
+        exhaustiveRun -> EXHAUSTIVE_RESULT
+        indicatorRun -> EDGE_RESULT
+        else -> REPORT
+    }
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -74,7 +88,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun status(message: String) {
-        prefs.edit().putString(if (indicatorRun) INDICATOR_STATUS else STATUS, message).apply()
+        prefs.edit().putString(statusKey(), message).apply()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .notify(NOTIFICATION_ID, notification(message))
     }
@@ -87,16 +101,17 @@ class KalshiPatternBacktestService : Service() {
         }
         if (!active.compareAndSet(false, true)) return START_NOT_STICKY
         indicatorRun = intent?.action == EDGE
+        exhaustiveRun = intent?.action == EXHAUSTIVE
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."))
         prefs.edit().putBoolean(RUNNING, true)
-            .remove(if (intent?.action == EDGE) EDGE_RESULT else REPORT).putString(if (indicatorRun) INDICATOR_STATUS else STATUS, "Preparing Binance BTC data...")
+            .remove(resultKey()).putString(statusKey(), "Preparing Binance BTC data...")
             .apply()
         Thread {
             try {
-                scan(intent?.action == EDGE)
+                scan(edge = indicatorRun, exhaustive = exhaustiveRun)
             } catch (e: Exception) {
                 status("ERROR: " + (e.message ?: e.javaClass.simpleName))
             } finally {
@@ -170,7 +185,7 @@ class KalshiPatternBacktestService : Service() {
             start, target, finalBtc, series)
     }
 
-    private fun scan(edge: Boolean) {
+    private fun scan(edge: Boolean, exhaustive: Boolean) {
         status("Downloading Binance BTC 1-minute candles for $TARGET_MARKETS markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
@@ -205,6 +220,17 @@ class KalshiPatternBacktestService : Service() {
 
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
+        if (exhaustive) {
+            status("Testing all 1,400 signed two-reading patterns...")
+            val result = BtcExhaustivePatternReport.report(chosen)
+            if (!active.get()) error("Scan stopped")
+            prefs.edit().putString(EXHAUSTIVE_RESULT, result)
+                .putString(EXHAUSTIVE_STATUS,
+                    (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
+                    ": " + chosen.size + "/1000 BTC markets · 1,400 patterns scanned")
+                .apply()
+            return
+        }
         if (edge) {
             require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. A complete test needs 1,000." }
             status("Ranking indicator setups across all 1,000 markets...")
