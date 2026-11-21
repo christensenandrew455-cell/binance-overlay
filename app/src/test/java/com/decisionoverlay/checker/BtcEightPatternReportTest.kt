@@ -32,6 +32,10 @@ class BtcEightPatternReportTest {
         assertTrue(report.contains("+50 -> +60 in 1 min | BUY UP | hit 2/4 (50.0%) | win 1/2 (50.0%)"))
         assertTrue(report.contains("14 -> 13 min left"))
         assertTrue(report.contains("-50,-60,1,DOWN,14,13,2,50.0,1,50.0"))
+
+        assertTrue(report.contains("=== GRAPH-READY FOUR-PATTERN WIN RATES BY FINISH MINUTE (CSV) ==="))
+        assertTrue(report.contains("-50 -> -60 in 1 min,-50,-60,1,DOWN,14,13,2,1,50.0,2,1,50.0,0,0,N/A,N/A"))
+        assertTrue(report.contains("-50 -> -60 in 1 min,-50,-60,1,DOWN,N/A,14,0,0,N/A,0,0,N/A,0,0,N/A,N/A"))
         assertFalse(report.contains("-> -50 in 4 min"))
     }
 }

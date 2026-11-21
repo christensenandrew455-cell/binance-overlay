@@ -155,6 +155,35 @@ internal object BtcEightPatternReport {
                 "older_hits,older_wins,older_win_pct,newer_hits,newer_wins," +
                 "newer_win_pct,older_wilson_lower_95_pct")
             exactRows.forEach { appendLine(it) }
+
+            appendLine()
+            appendLine("=== GRAPH-READY FOUR-PATTERN WIN RATES BY FINISH MINUTE (CSV) ===")
+            appendLine("All finish minutes 14 down to 1 are included; no matches = N/A, not 0%.")
+            appendLine("Each market can match different minutes but only once per exact pattern/time.")
+            appendLine("The chart percentage index is NOT Kalshi odds or an executable price.")
+            appendLine("No win-rate cutoff or notification change is applied here.")
+            appendLine("pattern,from_chart,to_chart,gap_minutes,side,first_minutes_left," +
+                "minutes_left,hits,wins,win_pct,older_hits,older_wins,older_win_pct," +
+                "newer_hits,newer_wins,newer_win_pct,older_wilson_lower_95_pct")
+            for (rule in rules) for (minuteLeft in 14 downTo 1) {
+                val firstLeft = minuteLeft + rule.path.gap
+                val events = if (firstLeft <= 14)
+                    scan.byMinute[BtcExhaustivePatternReport.Timed(
+                        rule.path, firstLeft, minuteLeft)].orEmpty()
+                else emptyList()
+                val all = counts(events, rule.buyUp)
+                val old = counts(events.filter { it.marketIndex < split }, rule.buyUp)
+                val new = counts(events.filter { it.marketIndex >= split }, rule.buyUp)
+                appendLine(listOf(
+                    rule.name, level(rule.path.from), level(rule.path.to),
+                    rule.path.gap, rule.side,
+                    if (firstLeft <= 14) firstLeft.toString() else "N/A",
+                    minuteLeft, all.hits, all.wins, n(all.hitRate),
+                    old.hits, old.wins, n(old.hitRate),
+                    new.hits, new.wins, n(new.hitRate),
+                    if (old.hits >= 20) n(wilsonLower(old)) else "N/A"
+                ).joinToString(","))
+            }
             appendLine("=== END: FOUR SELECTED BTC PATTERNS. RESEARCH ONLY. ===")
         }
     }

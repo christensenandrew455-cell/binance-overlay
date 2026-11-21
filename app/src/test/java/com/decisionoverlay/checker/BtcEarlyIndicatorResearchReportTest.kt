@@ -68,6 +68,23 @@ class BtcEarlyIndicatorResearchReportTest {
         assertEquals(14, leadFilter.first().minutesLeft)
     }
 
+
+    @Test fun graphReadyMinuteBreakdownUsesTrueWinRatesWithoutChangingAlerts() {
+        val markets = listOf(
+            market(1, false, 1 to -55.0, 2 to -65.0),
+            market(2, true, 1 to -55.0, 2 to -65.0)
+        )
+        val report = test.report(markets, emptyMap())
+        assertTrue(report.contains(
+            "-50 to -60 in 1m,DOWN,Unfiltered,13,2,1,50.0,1,1,100.0,1,0,0.0,N/A"
+        ))
+        assertTrue(report.contains(
+            "-50 to -60 in 1m,DOWN,Volume >= 1.2x,13,0,0,N/A,0,0,N/A,0,0,N/A,N/A"
+        ))
+        assertTrue(report.contains("No matches = N/A") ||
+            report.contains("no matches = N/A"))
+    }
+
     @Test fun reportIsClearlyResearchOnlyAndHasHoldoutAndNextBandOutput() {
         val markets = listOf(
             market(1, false, 1 to -75.0, 2 to -65.0),
@@ -79,6 +96,9 @@ class BtcEarlyIndicatorResearchReportTest {
         assertTrue(report.contains("BEFORE THE MOVEMENT"))
         assertTrue(report.contains("NO Kalshi price"))
         assertTrue(report.contains("-70 to -60 in 1m"))
+
+        assertTrue(report.contains("=== GRAPH-READY INDICATOR WIN RATES BY FINISH MINUTE (CSV) ==="))
+        assertTrue(report.contains("-50 to -60 in 1m,DOWN,Unfiltered,13,0,0,N/A,0,0,N/A,0,0,N/A,N/A"))
         assertTrue(report.contains("+70,+60,UP,Unfiltered"))
     }
 }

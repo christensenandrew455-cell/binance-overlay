@@ -210,6 +210,31 @@ internal object BtcEarlyIndicatorResearchReport {
                     "${fmt(s.old.winPct)},${fmt(s.old.reachPct)},${s.new.count}," +
                     "${fmt(s.new.winPct)},${fmt(s.new.reachPct)},${fmt(s.new.avgLeft)}")
             }
+
+            appendLine()
+            appendLine("=== GRAPH-READY INDICATOR WIN RATES BY FINISH MINUTE (CSV) ===")
+            appendLine("Only the original four live-chart patterns; all seven study gates.")
+            appendLine("One earliest qualifying complete path per market per gate.")
+            appendLine("Every finish minute 14 down to 1 is shown; no matches = N/A.")
+            appendLine("Filters here are research comparisons, NOT live alert restrictions.")
+            appendLine("pattern,side,filter,minutes_left,hits,wins,win_pct,older_hits," +
+                "older_wins,older_win_pct,newer_hits,newer_wins,newer_win_pct," +
+                "older_wilson_lower_95_pct")
+            for (candidate in candidates.filter { it.existing }) for (gate in Gate.entries) {
+                val outcomes = pathOutcomes(ordered, features, candidate, gate)
+                for (minuteLeft in 14 downTo 1) {
+                    val minuteEvents = outcomes.filter { it.minutesLeft == minuteLeft }
+                    val all = stats(minuteEvents)
+                    val s = split(minuteEvents, older)
+                    appendLine(listOf(
+                        candidate.label, candidate.side, gate.label, minuteLeft,
+                        all.count, all.wins, fmt(all.winPct),
+                        s.old.count, s.old.wins, fmt(s.old.winPct),
+                        s.new.count, s.new.wins, fmt(s.new.winPct),
+                        if (s.old.count >= 20) fmt(s.old.lower) else "N/A"
+                    ).joinToString(","))
+                }
+            }
             appendLine("=== END EARLY RESEARCH; NO LIVE CHANGES ===")
         }
     }
