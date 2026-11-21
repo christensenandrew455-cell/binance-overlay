@@ -77,7 +77,9 @@ class KalshiLiveSignalService : Service() {
             prefs.edit().putBoolean(ENABLED, false)
                 .putString(STATUS, "Off. Enable notifications on the BTC chart.").apply()
             working.set(false)
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(SIGNAL_ID)
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).apply {
+                for (id in SIGNAL_ID..SIGNAL_ID + 14) cancel(id)
+            }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -168,23 +170,16 @@ class KalshiLiveSignalService : Service() {
             status("Waiting for the next chart minute close")
             return
         }
-        // Watch the entire useful part of the quarter-hour. Each
-        // pattern keeps its own evidence-supported entry window.
-        if (latest.left !in 4..12) {
-            status("BTC chart running | " + latest.left +
-                "m left | watch 12-4m (skip first/last 3m)")
-            return
-        }
-        // At most one alert per fully closed minute. Distinct pattern
-        // alerts in other minutes are allowed within the same market.
-        if (prefs.getLong("sent_minute_close", -1L) == closeOfMinute) {
-            status("BTC chart | " + latest.left + "m left | already alerted this minute")
+        // One actionable research notification at most per 15-minute market.
+        // Ordinary foreground service status notifications stay silent.
+        if (prefs.getLong("sent_market_section_v2", -1L) == start) {
+            status("BTC chart | already alerted in this 15-minute market")
             return
         }
         val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
         if (matched.isEmpty()) {
             status("BTC chart | " + latest.left +
-                "m left | no eligible pattern (rule times: 8-6m, 5-4m)")
+                "m left | no selected 20%+ frequency pattern")
             return
         }
         val price = chart.optDouble("latest", Double.NaN)
@@ -193,43 +188,41 @@ class KalshiLiveSignalService : Service() {
             status("Waiting for valid BTC spot and target")
             return
         }
-        // Require the CURRENT BTC price to agree with the completed chart
-        // direction, even if it moves across target between minute closes.
+        // Check that the live BTC price has not crossed back through target
+        // since the qualifying minute closed.
         val best = matched.firstOrNull {
-            val correctSide = if (it.rule.buyYes) price < target else price > target
-            val key = "sent_rule_" + it.rule.path.joinToString("_") +
-                "_" + it.rule.earliestLeft + "_" + it.rule.side
-            correctSide && prefs.getLong(key, -1L) != start
+            if (it.rule.buyUp) price > target else price < target
         } ?: run {
-            status("BTC chart | no new eligible watch, or price crossed target")
+            status("BTC chart | pattern matched but price crossed target")
             return
         }
         if (!working.get() || !prefs.getBoolean(ENABLED, true)) return
         val rule = best.rule
-        val direction = if (rule.buyYes) "ABOVE TARGET at settlement"
+        val direction = if (rule.buyUp) "ABOVE TARGET at settlement"
             else "BELOW TARGET at settlement"
         val position = if (price > target) "ABOVE" else "BELOW"
-        val title = "BTC " + rule.side + " WATCH ONLY"
+        val title = "BTC pattern: BUY " + rule.side + " (watch)"
         val signedLevel = String.format(Locale.US,
             "%+.0f%%", best.signedChartLevel)
         val spotText = String.format(Locale.US, "$%,.2f", price)
         val targetText = String.format(Locale.US, "$%,.2f", target)
         val distanceText = String.format(Locale.US, "$%,.2f", kotlin.math.abs(price - target))
-        val detail = best.left.toString() + "m left | BTC " + spotText +
+        val stats = String.format(Locale.US,
+            "hit %.1f%% of 1000 | historical %s win %.1f%% | recent win %.1f%%",
+            rule.hitRatePercent, rule.side, rule.winRatePercent,
+            rule.newerWinPercent)
+        val detail = rule.name + " | " + best.startLeft + " -> " + best.left +
+            "m left | " + stats + " | BTC " + spotText +
             " (" + distanceText + " " + position + " target " + targetText + ")" +
-            " | custom chart " + signedLevel + " | " +
-            rule.side + " means finish " + direction +
-            ". NOT a buy signal: chart scale is NOT Kalshi odds."
+            " | chart " + signedLevel + ". " + rule.side +
+            " means " + direction + ". RESEARCH ONLY: check actual contract ask/fees."
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) {
             status("Allow Android notification permission to receive BTC watches")
             return
         }
-        val ruleKey = "sent_rule_" + rule.path.joinToString("_") +
-            "_" + rule.earliestLeft + "_" + rule.side
-        prefs.edit().putLong(ruleKey, start)
-            .putLong("sent_minute_close", closeOfMinute)
+        prefs.edit().putLong("sent_market_section_v2", start)
             .putString(LAST_ALERT, title + "\n" + detail)
             .putString(STATUS, "Last watch: " + title).apply()
         val note = NotificationCompat.Builder(this, SIGNAL_CHANNEL)
@@ -237,13 +230,13 @@ class KalshiLiveSignalService : Service() {
             .setContentTitle(title)
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail +
-                "\nHistorical contract quotes do NOT validate this chart proxy. Check real odds and fees before trading."))
+                "\nThese are Binance-chart outcome rates, not Kalshi odds or expected profit. Check live contract prices and fees manually."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setContentIntent(viewIntent())
             .setAutoCancel(true).build()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .notify(SIGNAL_ID + latest.left, note)
+            .notify(SIGNAL_ID, note)
     }
 
     override fun onDestroy() {

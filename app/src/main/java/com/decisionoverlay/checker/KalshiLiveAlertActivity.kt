@@ -60,8 +60,8 @@ class KalshiLiveAlertActivity : AppCompatActivity() {
 
         root.addView(label("Kalshi LIVE Pattern Alerts", 23f, Color.WHITE))
         root.addView(label(
-            "Real Kalshi BTC 15-minute YES/NO prices. Research notifications only — " +
-            "no automatic buys, guaranteed odds, or trades.", 13f,
+            "Binance.US BTC closed-candle patterns. Four research-only watch " +
+            "alerts, not live Kalshi odds, guaranteed outcomes, or trades.", 13f,
             Color.rgb(195, 206, 219)))
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -100,30 +100,25 @@ class KalshiLiveAlertActivity : AppCompatActivity() {
         root.addView(label("LAST ALERT", 14f, Color.WHITE))
         lastAlert = label("", 13f, Color.rgb(88, 220, 143))
         root.addView(lastAlert)
-        root.addView(label("RESEARCH RULES", 16f, Color.WHITE))
+        root.addView(label("FOUR SELECTED 20%+ OCCURRENCE RULES", 16f, Color.WHITE))
         root.addView(label(
-            "All first-completion times are 8–6 minutes left. The numbers below are " +
-            "from the 300 newest markets of the scanned 1,000. " +
-            "Patterns overlap; only the best qualifying rule alerts per market.\n" +
-            "An alert requires fresh one-minute closes, a live spread of 8¢ or less " +
-            "and a live ask + approximate fee at least 3¢ below the newest win rate.",
+            "Only the four selected exact signed-bin paths generate research " +
+            "alerts; one alert per BTC 15-minute market. '20%' means the path " +
+            "was found in at least 200 of 1,000 historical markets. " +
+            "Any individual exact-minute window may occur much less often.",
             12f, Color.rgb(195, 206, 219)))
         for (rule in KalshiLiveSignalRules.rules) {
-            val frequency = 100.0 * rule.newestN / 300.0
-            val text = rule.name + "  → buy " + rule.side +
-                "  | win " + String.format(Locale.US, "%.1f%%",
-                    rule.newestWinRate * 100.0) +
-                " (" + rule.newestN + " newer) | appears " +
-                String.format(Locale.US, "%.1f%%", frequency) +
-                " of markets | newer modeled net +" +
-                String.format(Locale.US, "%.1fc", rule.newestNetCents)
-            root.addView(label(text, 12f, Color.rgb(221, 230, 241)))
+            root.addView(label(
+                rule.name + " | BUY " + rule.side +
+                " | hit " + String.format(Locale.US, "%.1f%%", rule.hitRatePercent) +
+                " | win " + String.format(Locale.US, "%.1f%%", rule.winRatePercent) +
+                " | newest win " + String.format(Locale.US, "%.1f%%",
+                    rule.newerWinPercent),
+                12f, Color.rgb(221, 230, 241)))
         }
         root.addView(label(
-            "The research compared thousands of possible overlapping patterns. " +
-            "These results were also used to choose the rules, so they are " +
-            "NOT an independent confirmation of an edge. " +
-            "A real fill may differ from a quote; forward-test before spending money.",
+            "Observed settlement outcomes do not guarantee profitable trades. " +
+            "Check live contract prices, spreads and fees before entering manually.",
             12f, Color.rgb(190, 201, 212)))
     }
 

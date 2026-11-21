@@ -6,7 +6,7 @@ import java.util.Locale
 import kotlin.math.sqrt
 
 /**
- * Eight user-selected signed chart patterns, fixed BEFORE reviewing this run.
+ * The four user-selected signed chart patterns, with the legacy class name preserved.
  * The same 1,000 Binance.US 15-minute BTC markets and closed-candle
  * signed chart index as the exhaustive scanner are used.
  *
@@ -22,11 +22,7 @@ internal object BtcEightPatternReport {
         Rule(BtcExhaustivePatternReport.Path(-50, -60, 1), false),
         Rule(BtcExhaustivePatternReport.Path(-50, -60, 2), false),
         Rule(BtcExhaustivePatternReport.Path(+50, +60, 1), true),
-        Rule(BtcExhaustivePatternReport.Path(+50, +60, 2), true),
-        Rule(BtcExhaustivePatternReport.Path(-50, -50, 2), false),
-        Rule(BtcExhaustivePatternReport.Path(+50, +50, 2), true),
-        Rule(BtcExhaustivePatternReport.Path(+50, -50, 4), false),
-        Rule(BtcExhaustivePatternReport.Path(-50, +50, 4), true)
+        Rule(BtcExhaustivePatternReport.Path(+50, +60, 2), true)
     )
 
     private data class Counts(val hits: Int, val wins: Int) {
@@ -80,7 +76,7 @@ internal object BtcEightPatternReport {
         val exactRows = ArrayList<String>()
 
         return buildString {
-            appendLine("=== EIGHT SELECTED BTC PATTERNS: 1,000 MARKET TEST ===")
+            appendLine("=== FOUR SELECTED BTC PATTERNS: 1,000 MARKET TEST ===")
             appendLine("Completed BTC markets: " + total + "/1000")
             if (total != 1000) appendLine("INCOMPLETE: all figures provisional.")
             appendLine("Earliest market: " + timestamp(ordered.first().startMs))
@@ -103,7 +99,8 @@ internal object BtcEightPatternReport {
             appendLine("among exact pairs with >=20 discovery hits, not highest")
             appendLine("100%-from-one-example win rate. Insufficient data = N/A.")
             appendLine("Outcome win rates are NOT simulated trades, real fills, or profits.")
-            appendLine("No live alert/order changes. RESEARCH ONLY.")
+            appendLine("Only the four selected patterns, each with >=20% overall hit rate.")
+            appendLine("Historical win rate is not an actual trade win rate. RESEARCH ONLY.")
             appendLine()
 
             for ((index, rule) in rules.withIndex()) {
@@ -158,7 +155,7 @@ internal object BtcEightPatternReport {
                 "older_hits,older_wins,older_win_pct,newer_hits,newer_wins," +
                 "newer_win_pct,older_wilson_lower_95_pct")
             exactRows.forEach { appendLine(it) }
-            appendLine("=== END: EIGHT SELECTED BTC PATTERNS. RESEARCH ONLY. ===")
+            appendLine("=== END: FOUR SELECTED BTC PATTERNS. RESEARCH ONLY. ===")
         }
     }
 }

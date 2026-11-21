@@ -31,8 +31,8 @@ class KalshiPatternBacktestService : Service() {
         const val EDGE = "btc.edge.START"
         const val EXHAUSTIVE = "btc.exhaustive.START"
         const val FOCUSED = "btc.focused.START"
-        const val FOCUSED_RESULT = "btc_eight_selected_results_v1"
-        const val FOCUSED_STATUS = "btc_eight_selected_status_v1"
+        const val FOCUSED_RESULT = "btc_four_selected_results_v1"
+        const val FOCUSED_STATUS = "btc_four_selected_status_v1"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
         const val EXHAUSTIVE_STATUS = "btc_exhaustive_status_v1"
         const val EDGE_RESULT = "indicator_ranking_v1"
@@ -239,13 +239,13 @@ class KalshiPatternBacktestService : Service() {
             return
         }
         if (focused) {
-            status("Testing eight selected patterns and exact minutes...")
+            status("Testing four selected patterns and exact minutes...")
             val result = BtcEightPatternReport.report(chosen)
             if (!active.get()) error("Scan stopped")
             prefs.edit().putString(FOCUSED_RESULT, result)
                 .putString(FOCUSED_STATUS,
                     (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
-                    ": " + chosen.size + "/1000 BTC markets · 8 patterns tested")
+                    ": " + chosen.size + "/1000 BTC markets · 4 patterns tested")
                 .apply()
             return
         }

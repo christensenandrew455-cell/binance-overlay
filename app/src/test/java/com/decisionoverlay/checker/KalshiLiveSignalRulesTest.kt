@@ -4,87 +4,59 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class KalshiLiveSignalRulesTest {
-    private fun q(left: Int, signedLevel: Double) =
-        BtcChartProxyMath.Sample(left, signedLevel)
+    private fun q(left: Int, level: Double) = BtcChartProxyMath.Sample(left, level)
 
-    @Test fun pathNeedsChronologicalOrderAndDistinctMinutes() {
-        val samples = listOf(q(13, -65.0), q(12, 0.0), q(8, 62.0))
-        assertEquals(8, KalshiLiveSignalRules.firstCompletion(
-            listOf(40, 60), samples)?.left)
-        assertNull(KalshiLiveSignalRules.firstCompletion(
-            listOf(60, 40), samples))
-        assertNull(KalshiLiveSignalRules.firstCompletion(
-            listOf(40, 60, 40), samples))
+    @Test fun onlyFourHistoricalPatternsMeetTwentyPercentFloor() {
+        assertEquals(4, KalshiLiveSignalRules.rules.size)
+        assertEquals(listOf(
+            "-50 -> -60 in 2 min", "-50 -> -60 in 1 min",
+            "+50 -> +60 in 1 min", "+50 -> +60 in 2 min"
+        ), KalshiLiveSignalRules.rules.map { it.name })
+        assertEquals(listOf("DOWN", "DOWN", "UP", "UP"),
+            KalshiLiveSignalRules.rules.map { it.side })
+        assertTrue(KalshiLiveSignalRules.rules.all {
+            it.hitRatePercent >= KalshiLiveSignalRules.MIN_HIT_RATE_PERCENT
+        })
+        assertEquals(34.3, KalshiLiveSignalRules.rules[0].hitRatePercent, 0.001)
+        assertEquals(79.6, KalshiLiveSignalRules.rules[0].winRatePercent, 0.1)
     }
 
-    @Test fun noSignalIfPathAlreadyCompletedBeforeWindow() {
-        val samples = listOf(q(13, -61.0), q(12, 61.0), q(7, 62.0))
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(samples).isEmpty())
-    }
-
-    @Test fun onlyAlertAtCompletedMinuteInSixToEightMinuteWindow() {
+    @Test fun exactNegativeTenPointBinsNotThresholdCrossing() {
+        val down = KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(14, -55.0), q(12, -65.0)))
+        assertEquals(1, down.size)
+        assertEquals("DOWN", down.single().rule.side)
+        assertEquals(2, down.single().rule.gapMinutes)
+        assertEquals(14, down.single().startLeft)
+        assertEquals(12, down.single().left)
         assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(11, -61.0), q(9, 61.0))).isEmpty())
+            listOf(q(14, -55.0), q(12, -75.0))).isEmpty())
         assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(11, -61.0), q(5, 61.0))).isEmpty())
+            listOf(q(14, -55.0), q(12, -59.0))).isEmpty())
     }
 
-    @Test fun addsFiveAndFourMinuteWatchOnlyForItsOwnRule() {
-        val five = KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(11, 74.0), q(5, 58.0)))
-        val match = five.firstOrNull { it.rule.path == listOf(70, 60) }
-        assertNotNull(match)
-        assertEquals("DOWN", match!!.rule.side)
-        assertEquals(5, match.left)
+    @Test fun exactPositiveOneMinuteAndDirection() {
+        val up = KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(10, 55.2), q(9, 61.1)))
+        assertEquals(1, up.size)
+        assertEquals("UP", up.single().rule.side)
+        assertEquals(1, up.single().rule.gapMinutes)
+    }
 
-        val four = KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(11, 74.0), q(4, 58.0)))
-        assertTrue(four.any { it.rule.path == listOf(70, 60) && it.left == 4 })
-
-        // The original 8-6-minute signals must not silently be
-        // reassigned performance statistics from a different time bucket.
-        assertTrue(five.none { it.rule.path == listOf(40, 60) })
+    @Test fun neverConfusePositiveWithNegativeFiftyOrIncorrectGap() {
         assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
-            listOf(q(11, 74.0), q(8, 58.0))).none {
-                it.rule.path == listOf(70, 60)
-            })
+            listOf(q(12, 55.0), q(11, -65.0))).isEmpty())
+        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(12, -55.0), q(9, -65.0))).isEmpty())
+        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(12, -55.0), q(11, 65.0))).isEmpty())
     }
 
-    @Test fun emitsDownWatchWhenCurrentChartAboveTarget() {
-        val samples = listOf(q(11, -61.0), q(8, 61.0))
-        val signals = KalshiLiveSignalRules.matchingSignedSignals(samples)
-        val match = signals.firstOrNull { it.rule.path == listOf(40, 60) }
-        assertNotNull(match)
-        assertEquals("DOWN", match!!.rule.side)
-        assertEquals("-60% > +60%", match.rule.name)
-        assertEquals(61.0, match.signedChartLevel, 1e-5)
-        assertTrue(signals.all { it.signedChartLevel > 0.0 &&
-            it.rule.side == "DOWN" })
-    }
-
-    @Test fun emitsUpWatchWhenCurrentChartBelowTarget() {
-        val samples = listOf(q(12, 51.0), q(9, -71.0), q(7, -81.0))
-        val signals = KalshiLiveSignalRules.matchingSignedSignals(samples)
-        val match = signals.firstOrNull { it.rule.path == listOf(50, 20) }
-        assertNotNull(match)
-        assertEquals("UP", match!!.rule.side)
-        assertEquals("TARGET > -80%", match.rule.name)
-        assertEquals(-81.0, match.signedChartLevel, 1e-5)
-        assertTrue(signals.all { it.signedChartLevel < 0.0 &&
-            it.rule.side == "UP" })
-    }
-
-    @Test fun cannotMatchOldQuotePercentagesAsUnsignedChartData() {
-        val samples = listOf(q(11, 40.0), q(8, 60.0))
-        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(samples).isEmpty())
-    }
-
-    @Test fun oldTwentyQuoteIsNegativeEightyOnCustomChartScale() {
-        assertEquals(-80.0, BtcChartProxyMath.signedFromProxy(20.0), 0.00001)
-        assertEquals(-60.0, BtcChartProxyMath.signedFromProxy(40.0), 0.00001)
-        assertEquals(0.0, BtcChartProxyMath.signedFromProxy(50.0), 0.00001)
-        assertEquals(70.0, BtcChartProxyMath.signedFromProxy(70.0), 0.00001)
-        assertEquals("-80%", BtcChartProxyMath.signedPathLevel(20))
-        assertEquals("+70%", BtcChartProxyMath.signedPathLevel(70))
+    @Test fun firstCompletionOnlyAndNoFutureReading() {
+        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(14, -55.0), q(13, -65.0), q(12, -55.0), q(11, -65.0)))
+            .none { it.rule.gapMinutes == 1 })
+        assertTrue(KalshiLiveSignalRules.matchingSignedSignals(
+            listOf(q(14, -55.0))).isEmpty())
     }
 }
