@@ -179,7 +179,7 @@ class KalshiLiveSignalService : Service() {
         val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
         if (matched.isEmpty()) {
             status("BTC chart | " + latest.left +
-                "m left | no exact-minute pattern above +15-point edge")
+                "m left | no exact-minute pattern with 75%+ historical win rate")
             return
         }
         val price = chart.optDouble("latest", Double.NaN)
