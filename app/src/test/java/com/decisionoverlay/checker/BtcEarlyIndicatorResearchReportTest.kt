@@ -42,25 +42,25 @@ class BtcEarlyIndicatorResearchReportTest {
         val m3 = market(3, false, 1 to -75.0, 2 to -75.0, 3 to -75.0)
         val markets = listOf(m1, m2, m3)
         val features = mapOf(
-            m1.startMs to mapOf(1 to test.Features(1.5, -0.3, -0.1),
-                2 to test.Features(1.5, -0.5, -0.2)),
-            m2.startMs to mapOf(1 to test.Features(0.8, 0.1, 0.1),
-                2 to test.Features(0.8, 0.1, 0.1)),
-            m3.startMs to mapOf(1 to test.Features(1.5, -0.4, -0.2))
+            m1.startMs to mapOf(1 to BtcEarlyIndicatorResearchReport.Features(1.5, -0.3, -0.1),
+                2 to BtcEarlyIndicatorResearchReport.Features(1.5, -0.5, -0.2)),
+            m2.startMs to mapOf(1 to BtcEarlyIndicatorResearchReport.Features(0.8, 0.1, 0.1),
+                2 to BtcEarlyIndicatorResearchReport.Features(0.8, 0.1, 0.1)),
+            m3.startMs to mapOf(1 to BtcEarlyIndicatorResearchReport.Features(1.5, -0.4, -0.2))
         )
         val path = test.candidates.first {
             it.from == -70 && it.to == -60 && it.gap == 1
         }
-        val baseline = test.pathOutcomes(markets, features, path, test.Gate.NONE)
-        val filtered = test.pathOutcomes(markets, features, path, test.Gate.VOL_MOM)
+        val baseline = test.pathOutcomes(markets, features, path, BtcEarlyIndicatorResearchReport.Gate.NONE)
+        val filtered = test.pathOutcomes(markets, features, path, BtcEarlyIndicatorResearchReport.Gate.VOL_MOM)
         assertEquals(2, baseline.size)
         assertEquals(1, filtered.size)
         assertEquals(13, filtered.single().minutesLeft)
         assertTrue(filtered.single().won)
 
         val lead = test.leads.first { it.from == -70 }
-        val leadBaseline = test.leadOutcomes(markets, features, lead, test.Gate.NONE)
-        val leadFilter = test.leadOutcomes(markets, features, lead, test.Gate.VOL_MOM)
+        val leadBaseline = test.leadOutcomes(markets, features, lead, BtcEarlyIndicatorResearchReport.Gate.NONE)
+        val leadFilter = test.leadOutcomes(markets, features, lead, BtcEarlyIndicatorResearchReport.Gate.VOL_MOM)
         assertEquals(3, leadBaseline.size)
         assertEquals(2, leadFilter.size)
         assertEquals(2, leadBaseline.count { it.reached })
