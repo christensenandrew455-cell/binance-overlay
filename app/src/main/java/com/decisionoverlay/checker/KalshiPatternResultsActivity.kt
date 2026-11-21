@@ -27,7 +27,9 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var test: Button
     private lateinit var patterns: Button
+    private lateinit var focused: Button
     private var showingPatterns = false
+    private var showingFocused = false
     private lateinit var copy: Button
     private lateinit var save: Button
     private var pendingExportKey: String? = null
@@ -78,16 +80,21 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         override fun run() {
             val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE)
             val running = KalshiPatternBacktestService.isScanning()
-            val reportKey = if (showingPatterns)
-                KalshiPatternBacktestService.EXHAUSTIVE_RESULT
-                else KalshiPatternBacktestService.EDGE_RESULT
-            val statusKey = if (showingPatterns)
-                KalshiPatternBacktestService.EXHAUSTIVE_STATUS
-                else KalshiPatternBacktestService.INDICATOR_STATUS
+            val reportKey = when {
+                showingFocused -> KalshiPatternBacktestService.FOCUSED_RESULT
+                showingPatterns -> KalshiPatternBacktestService.EXHAUSTIVE_RESULT
+                else -> KalshiPatternBacktestService.EDGE_RESULT
+            }
+            val statusKey = when {
+                showingFocused -> KalshiPatternBacktestService.FOCUSED_STATUS
+                showingPatterns -> KalshiPatternBacktestService.EXHAUSTIVE_STATUS
+                else -> KalshiPatternBacktestService.INDICATOR_STATUS
+            }
             val report = prefs.getString(reportKey, "").orEmpty()
             status.text = prefs.getString(statusKey, "Tap a scan button to test 1,000 BTC markets.")
             test.isEnabled = !running
             patterns.isEnabled = !running
+            focused.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
@@ -146,6 +153,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         val commands = row(root)
         test = button("Indicators") {
             showingPatterns = false
+            showingFocused = false
             shownReport = ""
             test.isEnabled = false
             copy.isEnabled = false
@@ -154,12 +162,23 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         patterns = button("1,400 patterns") {
             showingPatterns = true
+            showingFocused = false
             shownReport = ""
             patterns.isEnabled = false
             copy.isEnabled = false
             ContextCompat.startForegroundService(this,
                 Intent(this, KalshiPatternBacktestService::class.java)
                     .setAction(KalshiPatternBacktestService.EXHAUSTIVE))
+        }
+        focused = button("8 chosen patterns") {
+            showingPatterns = false
+            showingFocused = true
+            shownReport = ""
+            focused.isEnabled = false
+            copy.isEnabled = false
+            ContextCompat.startForegroundService(this,
+                Intent(this, KalshiPatternBacktestService::class.java)
+                    .setAction(KalshiPatternBacktestService.FOCUSED))
         }
         copy = button("Copy") {
             (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
@@ -168,12 +187,15 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         addButton(commands, test)
         addButton(commands, patterns)
-        addButton(commands, copy)
+        addButton(commands, focused)
         val exportCommands = row(root)
+        addButton(exportCommands, copy)
         save = button("Download full .txt") {
-            val key = if (showingPatterns)
-                KalshiPatternBacktestService.EXHAUSTIVE_RESULT
-                else KalshiPatternBacktestService.EDGE_RESULT
+            val key = when {
+                showingFocused -> KalshiPatternBacktestService.FOCUSED_RESULT
+                showingPatterns -> KalshiPatternBacktestService.EXHAUSTIVE_RESULT
+                else -> KalshiPatternBacktestService.EDGE_RESULT
+            }
             val hasReport = getSharedPreferences(
                 KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE
             ).getString(key, null)?.isNotEmpty() == true
@@ -182,9 +204,11 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             } else {
                 pendingExportKey = key
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                val name = if (showingPatterns)
-                    "BTC-1400-patterns-$time.txt"
-                    else "BTC-indicators-$time.txt"
+                val name = when {
+                    showingFocused -> "BTC-8-patterns-$time.txt"
+                    showingPatterns -> "BTC-1400-patterns-$time.txt"
+                    else -> "BTC-indicators-$time.txt"
+                }
                 exportPicker.launch(name)
             }
         }

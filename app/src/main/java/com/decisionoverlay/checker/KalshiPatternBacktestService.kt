@@ -30,6 +30,9 @@ class KalshiPatternBacktestService : Service() {
         const val START = "kalshi.pattern.START"
         const val EDGE = "btc.edge.START"
         const val EXHAUSTIVE = "btc.exhaustive.START"
+        const val FOCUSED = "btc.focused.START"
+        const val FOCUSED_RESULT = "btc_eight_selected_results_v1"
+        const val FOCUSED_STATUS = "btc_eight_selected_status_v1"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
         const val EXHAUSTIVE_STATUS = "btc_exhaustive_status_v1"
         const val EDGE_RESULT = "indicator_ranking_v1"
@@ -48,12 +51,15 @@ class KalshiPatternBacktestService : Service() {
 
     private var indicatorRun = false
     private var exhaustiveRun = false
+    private var focusedRun = false
     private fun statusKey(): String = when {
+        focusedRun -> FOCUSED_STATUS
         exhaustiveRun -> EXHAUSTIVE_STATUS
         indicatorRun -> INDICATOR_STATUS
         else -> STATUS
     }
     private fun resultKey(): String = when {
+        focusedRun -> FOCUSED_RESULT
         exhaustiveRun -> EXHAUSTIVE_RESULT
         indicatorRun -> EDGE_RESULT
         else -> REPORT
@@ -102,6 +108,7 @@ class KalshiPatternBacktestService : Service() {
         if (!active.compareAndSet(false, true)) return START_NOT_STICKY
         indicatorRun = intent?.action == EDGE
         exhaustiveRun = intent?.action == EXHAUSTIVE
+        focusedRun = intent?.action == FOCUSED
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -111,7 +118,7 @@ class KalshiPatternBacktestService : Service() {
             .apply()
         Thread {
             try {
-                scan(edge = indicatorRun, exhaustive = exhaustiveRun)
+                scan(edge = indicatorRun, exhaustive = exhaustiveRun, focused = focusedRun)
             } catch (e: Exception) {
                 status("ERROR: " + (e.message ?: e.javaClass.simpleName))
             } finally {
@@ -185,7 +192,7 @@ class KalshiPatternBacktestService : Service() {
             start, target, finalBtc, series)
     }
 
-    private fun scan(edge: Boolean, exhaustive: Boolean) {
+    private fun scan(edge: Boolean, exhaustive: Boolean, focused: Boolean) {
         status("Downloading Binance BTC 1-minute candles for $TARGET_MARKETS markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
@@ -228,6 +235,17 @@ class KalshiPatternBacktestService : Service() {
                 .putString(EXHAUSTIVE_STATUS,
                     (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
                     ": " + chosen.size + "/1000 BTC markets · 1,400 patterns scanned")
+                .apply()
+            return
+        }
+        if (focused) {
+            status("Testing eight selected patterns and exact minutes...")
+            val result = BtcEightPatternReport.report(chosen)
+            if (!active.get()) error("Scan stopped")
+            prefs.edit().putString(FOCUSED_RESULT, result)
+                .putString(FOCUSED_STATUS,
+                    (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
+                    ": " + chosen.size + "/1000 BTC markets · 8 patterns tested")
                 .apply()
             return
         }
