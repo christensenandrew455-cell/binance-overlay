@@ -79,6 +79,66 @@ internal object BtcAnytimeExtremeResearchReport {
         Hit(index, t, market.upWon == buyUp, returned)
     }
 
+
+    /**
+     * Exact question: hit a threshold on one side at ANY minute, THEN close
+     * a subsequent minute in the other signed side, AND settle on that side.
+     * 80 is an 80+ threshold (includes 90); 90 means the 90 band.
+     * One earliest threshold hit per direction per market.
+     */
+    internal data class FlipEvent(
+        val marketIndex: Int,
+        val firstMinute: Int,
+        val settledOpposite: Boolean,
+        val crossedAfterTouch: Boolean
+    ) {
+        val fullyFlippedAndSettled get() = crossedAfterTouch && settledOpposite
+        val leftAtTrigger get() = 15 - firstMinute
+    }
+
+    internal fun flipEvents(
+        markets: List<BinanceTwentySevenPatternReport.Market>,
+        threshold: Int,
+        touchedUp: Boolean
+    ): List<FlipEvent> {
+        require(threshold == 80 || threshold == 90)
+        return markets.mapIndexedNotNull { index, market ->
+            val bands = market.minutes.asSequence()
+                .filter { it.minute in 1..14 }
+                .sortedBy { it.minute }
+                .distinctBy { it.minute }
+                .mapNotNull { obs ->
+                    val b = level(obs.signedChartLevel) ?: return@mapNotNull null
+                    obs.minute to b
+                }.toMap()
+            val touch = (1..14).firstOrNull { minute ->
+                val b = bands[minute] ?: return@firstOrNull false
+                if (touchedUp) b >= threshold else b <= -threshold
+            } ?: return@mapIndexedNotNull null
+            val oppositeAfter = (touch + 1..14).any { minute ->
+                val b = bands[minute] ?: return@any false
+                if (touchedUp) b <= -50 else b >= 50
+            }
+            FlipEvent(index, touch, market.upWon != touchedUp, oppositeAfter)
+        }
+    }
+
+    private fun StringBuilder.flipSummaryLine(
+        threshold: Int, label: String, events: List<FlipEvent>, total: Int
+    ) {
+        val touching = events.size
+        val endedOpposite = events.count { it.settledOpposite }
+        val fullyFlipped = events.count { it.fullyFlippedAndSettled }
+        val crossed = events.count { it.crossedAfterTouch }
+        val avgLeft = if (events.isEmpty()) Double.NaN else events.map { it.leftAtTrigger }.average()
+        appendLine("$threshold,$label,$total,$touching," +
+            "${fmt(100.0 * touching / total)},$endedOpposite," +
+            "${fmt(if (touching == 0) Double.NaN else 100.0 * endedOpposite / touching)}," +
+            "$crossed,$fullyFlipped," +
+            "${fmt(if (touching == 0) Double.NaN else 100.0 * fullyFlipped / touching)}," +
+            "${fmt(100.0 * fullyFlipped / total)},${fmt(avgLeft)}")
+    }
+
     internal data class Stats(
         val count: Int, val wins: Int, val returned: Int, val meanLeft: Double
     ) {
@@ -141,6 +201,59 @@ internal object BtcAnytimeExtremeResearchReport {
             appendLine("NO MAIN GRAPH, 4 LIVE ALERTS, OR 1400-SCANNER CHANGES.")
             appendLine()
 
+
+            appendLine("=== MAIN RESULT: EXTREME TOUCH -> LATER OPPOSITE TOUCH -> OPPOSITE SETTLEMENT (CSV) ===")
+            appendLine("An upside 90 means first +90 candle at ANY time; subsequent -50-or-lower")
+            appendLine("candle at ANY later minute; and BTC ultimately settles DOWN.")
+            appendLine("The downside 90 mirror first touches -90, later +50-or-higher,")
+            appendLine("and BTC ultimately settles UP. Same definition at 80+; includes 90.")
+            appendLine("NO prior opposite touch required. NO fixed gap between readings.")
+            appendLine("The combined result counts distinct markets, not two alerts in one market.")
+            appendLine("Also report opposite settlement alone, in case the flip occurs only")
+            appendLine("in the final minute that this closed-candle chart does not observe.")
+            appendLine("touch_hit_pct = touching / 1000; complete_flip_market_pct = flip-and-settle / 1000.")
+            appendLine("complete_flip_given_touch_pct = flip-and-settle / touching.")
+            appendLine("FIRST_TOUCH_ONLY is the earliest extreme of EITHER side in each")
+            appendLine("market, so it cannot benefit from choosing the better side afterward.")
+            appendLine("The original 1000-market data cannot prove executable Kalshi returns.")
+            appendLine()
+            appendLine("threshold,side,markets_examined,markets_touching,touch_hit_pct," +
+                "markets_settling_opposite,settle_opposite_given_touch_pct," +
+                "markets_touching_opposite_later,markets_flipping_AND_settling_opposite," +
+                "complete_flip_given_touch_pct,complete_flip_market_pct,mean_minutes_left_at_touch")
+            for (threshold in listOf(90, 80)) {
+                val plus = flipEvents(ordered, threshold, true)
+                val minus = flipEvents(ordered, threshold, false)
+                val combinedByMarket = (plus + minus).groupBy { it.marketIndex }
+                val firstOnly = combinedByMarket.values.map { events ->
+                    events.minBy { it.firstMinute }
+                }
+                // Opposite settlement can succeed on only one side, so the
+                // union is a distinct-market indicator, never summed blindly.
+                val uniqueCombined = combinedByMarket.values.map { events ->
+                    events.firstOrNull { it.fullyFlippedAndSettled }
+                        ?: events.firstOrNull { it.settledOpposite }
+                        ?: events.minBy { it.firstMinute }
+                }
+                flipSummaryLine(threshold, "UP_TOUCH_then_DOWN", plus, ordered.size)
+                flipSummaryLine(threshold, "DOWN_TOUCH_then_UP", minus, ordered.size)
+                flipSummaryLine(threshold, "COMBINED_UNIQUE_MARKETS", uniqueCombined, ordered.size)
+                flipSummaryLine(threshold, "FIRST_EXTREME_ONLY", firstOnly, ordered.size)
+                for ((part, predicate, total) in listOf(
+                    Triple("OLDER_70PCT", { index: Int -> index < discovery }, discovery),
+                    Triple("NEWER_30PCT", { index: Int -> index >= discovery }, holdout)
+                )) {
+                    flipSummaryLine(threshold, part + "_UP_TOUCH_then_DOWN",
+                        plus.filter { predicate(it.marketIndex) }, total)
+                    flipSummaryLine(threshold, part + "_DOWN_TOUCH_then_UP",
+                        minus.filter { predicate(it.marketIndex) }, total)
+                    flipSummaryLine(threshold, part + "_COMBINED_UNIQUE",
+                        uniqueCombined.filter { predicate(it.marketIndex) }, total)
+                    flipSummaryLine(threshold, part + "_FIRST_EXTREME_ONLY",
+                        firstOnly.filter { predicate(it.marketIndex) }, total)
+                }
+            }
+            appendLine()
             appendLine("=== 90-FIRST-TOUCH FREQUENCY BY EXACT MINUTE (CSV) ===")
             appendLine("extreme,at_minutes_left,markets_touching_at_minute,first_touch_at_minute," +
                 "cumulative_markets_touched_by_minute,cumulative_pct_of_all_markets")
