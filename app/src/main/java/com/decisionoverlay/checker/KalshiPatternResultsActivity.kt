@@ -66,7 +66,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = KalshiPatternBacktestService.isScanning()
             val report = prefs.getString(KalshiPatternBacktestService.FOCUSED_RESULT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.FOCUSED_STATUS,
-                "TEST scans 1,000 BTC markets for the four selected patterns.")
+                "TEST compares four selected patterns with earlier paths, volume and momentum.")
             test.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()
@@ -130,7 +130,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             } else {
                 pendingExportKey = key
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                exportPicker.launch("BTC-4-patterns-$time.txt")
+                exportPicker.launch("BTC-pattern-indicator-research-$time.txt")
             }
         }
         for (b in listOf(test, copy, save)) {

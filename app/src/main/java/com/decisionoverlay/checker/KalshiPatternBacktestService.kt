@@ -199,6 +199,7 @@ class KalshiPatternBacktestService : Service() {
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
         val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
         val examples = mutableMapOf<Long, BtcEdgeTest.Market>()
+        val earlyFeatures = mutableMapOf<Long, Map<Int, BtcEarlyIndicatorResearchReport.Features>>()
         val warmup = if (edge) 345L else 60L
         var pageCount = 0
         for (page in 1..MAX_PAGES) {
@@ -213,6 +214,10 @@ class KalshiPatternBacktestService : Service() {
             for (start in (close - QUARTER_MS) downTo (open + warmup * MINUTE_MS) step QUARTER_MS) {
                 val market = buildMarket(start, candles) ?: continue
                 if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
+                if (focused) earlyFeatures[start] = (1..14).mapNotNull { minute ->
+                    BtcEarlyIndicatorResearchReport.featuresAt(start, minute, candles)
+                        ?.let { minute to it }
+                }.toMap()
                 selected[start] = market
                 if (selected.size == TARGET_MARKETS) break
             }
@@ -239,8 +244,9 @@ class KalshiPatternBacktestService : Service() {
             return
         }
         if (focused) {
-            status("Testing four selected patterns and exact minutes...")
-            val result = BtcEightPatternReport.report(chosen)
+            status("Testing four existing patterns plus volume/momentum early research...")
+            val result = BtcEightPatternReport.report(chosen) + "\n\n" +
+                BtcEarlyIndicatorResearchReport.report(chosen, earlyFeatures)
             if (!active.get()) error("Scan stopped")
             prefs.edit().putString(FOCUSED_RESULT, result)
                 .putString(FOCUSED_STATUS,
