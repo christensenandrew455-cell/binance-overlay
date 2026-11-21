@@ -10,7 +10,7 @@ import kotlin.math.abs
  */
 object KalshiLiveSignalRules {
     const val MIN_HIT_RATE_PERCENT = 20.0
-    const val MIN_EDGE_POINTS = 15.0
+    const val MIN_EDGE_POINTS = 15.0 // Minimum 15 percentage POINTS above the 60 chart INDEX
     const val MIN_DISCOVERY_WINDOW_HITS = 20
 
     data class Rule(
@@ -58,11 +58,11 @@ object KalshiLiveSignalRules {
         // -60 corresponds to DOWN index 60, and +60 to UP index 60.
         val chartSideIndex: Double get() = abs(key.toBand).toDouble()
         val edgePoints: Double get() = winRatePercent - chartSideIndex
-        // Strictly greater: 75% - 60 = 15pp does NOT qualify.
+        // INCLUSIVE: 75% - 60 = 15 percentage points DOES qualify.
         // Require 20+ discovery-market matches to exclude tiny-sample 100% rows.
         val eligible: Boolean get() =
             olderHits >= MIN_DISCOVERY_WINDOW_HITS &&
-                edgePoints > MIN_EDGE_POINTS
+                edgePoints >= MIN_EDGE_POINTS
     }
 
     // 11 columns: from,to,gap,startLeft,finishLeft,hits,wins,
