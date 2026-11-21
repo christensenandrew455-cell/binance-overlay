@@ -244,8 +244,9 @@ class KalshiPatternBacktestService : Service() {
             return
         }
         if (focused) {
-            status("Testing anytime 90 touches, reversals, and existing BTC patterns...")
-            val result = BtcAnytimeExtremeResearchReport.report(chosen, earlyFeatures) + "\n\n" +
+            status("Comparing successful 90/80 reversals with prior losing patterns...")
+            val result = BtcExtremeWinnerPatternMiner.report(chosen, earlyFeatures) + "\n\n" +
+                BtcAnytimeExtremeResearchReport.report(chosen, earlyFeatures) + "\n\n" +
                 BtcEightPatternReport.report(chosen) + "\n\n" +
                 BtcContrarianReversalResearchReport.report(chosen, earlyFeatures) + "\n\n" +
                 BtcEarlyIndicatorResearchReport.report(chosen, earlyFeatures)
