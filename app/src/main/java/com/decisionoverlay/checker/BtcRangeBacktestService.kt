@@ -115,7 +115,7 @@ class BtcRangeBacktestService : Service() {
                 row.getDouble(3), row.getDouble(4))
             if (candle.valid()) candles[candle.at] = candle
         }
-        val target = candles[marketStart - MINUTE]?.close
+        val target = candles[marketStart - MINUTE]?.midpoint
             ?: error("Waiting for current 15-minute target")
         val completedOpen = open - MINUTE
         val acm = BtcAcmMath.averageRange(candles, completedOpen, 60)

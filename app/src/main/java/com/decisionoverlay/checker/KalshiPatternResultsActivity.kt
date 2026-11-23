@@ -66,7 +66,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = KalshiPatternBacktestService.isScanning()
             val report = prefs.getString(KalshiPatternBacktestService.FOCUSED_RESULT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.FOCUSED_STATUS,
-                "TEST compares four selected patterns with earlier paths, volume and momentum.")
+                "TEST checks BTC reversals by chart level and minute, with and without momentum and volume.")
             test.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()

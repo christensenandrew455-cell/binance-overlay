@@ -173,7 +173,7 @@ class KalshiPatternBacktestService : Service() {
         for (offset in -60..14) {
             if (candles[start + offset * MINUTE_MS] == null) return null
         }
-        val target = candles.getValue(start - MINUTE_MS).close
+        val target = candles.getValue(start - MINUTE_MS).midpoint
         val finalBtc = candles.getValue(start + 14L * MINUTE_MS).close
         if (target <= 0.0 || finalBtc == target) return null
         val series = ArrayList<BinanceTwentySevenPatternReport.Observation>(14)
@@ -186,7 +186,7 @@ class KalshiPatternBacktestService : Service() {
             val signed = BtcChartProxyMath.signedStrength(
                 candle.close, target, acm60, left)
             if (!signed.isFinite()) return null
-            series.add(BinanceTwentySevenPatternReport.Observation(minute, signed))
+            series.add(BinanceTwentySevenPatternReport.Observation(minute, signed, candle.low, candle.high))
         }
         return BinanceTwentySevenPatternReport.Market(
             start, target, finalBtc, series)
@@ -245,7 +245,8 @@ class KalshiPatternBacktestService : Service() {
         }
         if (focused) {
             status("Testing EXACT live chart alert hit and win rates by minute...")
-            val result = BtcLiveNotificationTimingReport.report(chosen) + "\n\n" +
+            val result = BtcQuarterReversals.report(chosen, earlyFeatures) + "\n\n" +
+                BtcLiveNotificationTimingReport.report(chosen) + "\n\n" +
                 BtcExtremeWinnerPatternMiner.report(chosen, earlyFeatures) + "\n\n" +
                 BtcAnytimeExtremeResearchReport.report(chosen, earlyFeatures) + "\n\n" +
                 BtcEightPatternReport.report(chosen) + "\n\n" +
@@ -255,7 +256,7 @@ class KalshiPatternBacktestService : Service() {
             prefs.edit().putString(FOCUSED_RESULT, result)
                 .putString(FOCUSED_STATUS,
                     (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
-                    ": " + chosen.size + "/1000 BTC markets · live alert hit/win by minute")
+                    ": " + chosen.size + "/1000 BTC markets · reversal hit/win by minute and indicator comparison")
                 .apply()
             return
         }
