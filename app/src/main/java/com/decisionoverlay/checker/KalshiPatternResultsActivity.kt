@@ -34,7 +34,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private var pendingExportKey: String? = null
 
     private val exportPicker = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
+        ActivityResultContracts.CreateDocument("text/csv")
     ) { uri: Uri? ->
         val key = pendingExportKey
         pendingExportKey = null
@@ -66,7 +66,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             val running = KalshiPatternBacktestService.isScanning()
             val report = prefs.getString(KalshiPatternBacktestService.FOCUSED_RESULT, "").orEmpty()
             status.text = prefs.getString(KalshiPatternBacktestService.FOCUSED_STATUS,
-                "TEST checks BTC reversals by chart level and minute, with and without momentum and volume.")
+                "TEST records 100 markets. DOWNLOAD saves every minute as CSV.")
             test.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()
@@ -109,6 +109,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         root.addView(commands)
         test = button("TEST") {
+            output.text = ""
             shownReport = ""
             test.isEnabled = false
             ContextCompat.startForegroundService(this,
@@ -130,7 +131,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             } else {
                 pendingExportKey = key
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                exportPicker.launch("BTC-pattern-indicator-research-$time.txt")
+                exportPicker.launch("BTC-minute-data-$time.csv")
             }
         }
         for (b in listOf(test, copy, save)) {

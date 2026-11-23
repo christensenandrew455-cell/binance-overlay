@@ -31,8 +31,8 @@ class KalshiPatternBacktestService : Service() {
         const val EDGE = "btc.edge.START"
         const val EXHAUSTIVE = "btc.exhaustive.START"
         const val FOCUSED = "btc.focused.START"
-        const val FOCUSED_RESULT = "btc_four_selected_results_v1"
-        const val FOCUSED_STATUS = "btc_four_selected_status_v1"
+        const val FOCUSED_RESULT = "btc_minute_csv_v1"
+        const val FOCUSED_STATUS = "btc_minute_status_v1"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
         const val EXHAUSTIVE_STATUS = "btc_exhaustive_status_v1"
         const val EDGE_RESULT = "indicator_ranking_v1"
@@ -193,13 +193,14 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan(edge: Boolean, exhaustive: Boolean, focused: Boolean) {
-        status("Downloading Binance BTC 1-minute candles for $TARGET_MARKETS markets...")
+        val limit = if (focused) BtcMinuteRecorder.MARKETS else TARGET_MARKETS
+        val recorded = sortedMapOf<Long, String>()
+        status("Downloading Binance BTC 1-minute candles for $limit markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
         val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
         val examples = mutableMapOf<Long, BtcEdgeTest.Market>()
-        val earlyFeatures = mutableMapOf<Long, Map<Int, BtcEarlyIndicatorResearchReport.Features>>()
         val warmup = if (edge) 345L else 60L
         var pageCount = 0
         for (page in 1..MAX_PAGES) {
@@ -208,23 +209,40 @@ class KalshiPatternBacktestService : Service() {
             val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
             val close = minOf(lastClose, day.atTime(23, 0).atZone(zone).toInstant().toEpochMilli())
             // The first hour supplies the rolling warmup from this session.
-            if (close - open < warmup * MINUTE_MS + QUARTER_MS) continue
-            val candles = getCandles(open, close - 1).associateBy { it.at }
+            val fetchStart = if (focused) open - warmup * MINUTE_MS else open
+            val firstMarket = fetchStart + warmup * MINUTE_MS
+            if (close - firstMarket < QUARTER_MS) continue
+            val candles = getCandles(fetchStart, close - 1).associateBy { it.at }
             pageCount++
-            for (start in (close - QUARTER_MS) downTo (open + warmup * MINUTE_MS) step QUARTER_MS) {
+            for (start in (close - QUARTER_MS) downTo firstMarket step QUARTER_MS) {
+                if (focused) {
+                    val rows = BtcMinuteRecorder.rows(start, candles) ?: continue
+                    recorded[start] = rows
+                    if (recorded.size == limit) break
+                    continue
+                }
                 val market = buildMarket(start, candles) ?: continue
                 if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
-                if (focused) earlyFeatures[start] = (1..14).mapNotNull { minute ->
-                    BtcEarlyIndicatorResearchReport.featuresAt(start, minute, candles)
-                        ?.let { minute to it }
-                }.toMap()
                 selected[start] = market
                 if (selected.size == TARGET_MARKETS) break
             }
-            if (selected.size >= TARGET_MARKETS) break
+            val collected = if (focused) recorded.size else selected.size
+            if (collected >= limit) break
             status("Binance BTC historical pages: $page; complete 15m " +
-                "markets: ${selected.size}/$TARGET_MARKETS")
+                "markets: $collected/$limit")
             try { Thread.sleep(140L) } catch (_: InterruptedException) { break }
+        }
+        if (focused) {
+            check(active.get()) { "Scan stopped" }
+            check(recorded.isNotEmpty()) { "No complete BTC markets were available." }
+            val csv = buildString {
+                appendLine(BtcMinuteRecorder.header)
+                recorded.values.forEach { append(it) }
+            }
+            val state = if (recorded.size == limit) "Complete" else "Incomplete"
+            prefs.edit().putString(FOCUSED_RESULT, csv).putString(FOCUSED_STATUS,
+                "$state · ${recorded.size}/$limit markets · ${recorded.size * 15} minute rows").apply()
+            return
         }
         if (selected.isEmpty())
             error("No complete Binance BTC 15-minute markets found. " +
@@ -240,23 +258,6 @@ class KalshiPatternBacktestService : Service() {
                 .putString(EXHAUSTIVE_STATUS,
                     (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
                     ": " + chosen.size + "/1000 BTC markets · 1,400 patterns scanned")
-                .apply()
-            return
-        }
-        if (focused) {
-            status("Testing EXACT live chart alert hit and win rates by minute...")
-            val result = BtcQuarterReversals.report(chosen, earlyFeatures) + "\n\n" +
-                BtcLiveNotificationTimingReport.report(chosen) + "\n\n" +
-                BtcExtremeWinnerPatternMiner.report(chosen, earlyFeatures) + "\n\n" +
-                BtcAnytimeExtremeResearchReport.report(chosen, earlyFeatures) + "\n\n" +
-                BtcEightPatternReport.report(chosen) + "\n\n" +
-                BtcContrarianReversalResearchReport.report(chosen, earlyFeatures) + "\n\n" +
-                BtcEarlyIndicatorResearchReport.report(chosen, earlyFeatures)
-            if (!active.get()) error("Scan stopped")
-            prefs.edit().putString(FOCUSED_RESULT, result)
-                .putString(FOCUSED_STATUS,
-                    (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
-                    ": " + chosen.size + "/1000 BTC markets · reversal hit/win by minute and indicator comparison")
                 .apply()
             return
         }
