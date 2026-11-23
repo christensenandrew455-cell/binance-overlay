@@ -22,6 +22,7 @@ object BtcAcmMath {
         val close: Double,
         val volume: Double = Double.NaN
     ) {
+        val midpoint: Double get() = low + (high - low) / 2.0
         val rangePct: Double get() = (high - low) / open * 100.0
         fun valid(): Boolean = open > 0.0 && high >= low && low > 0.0 &&
             close > 0.0 && listOf(open, high, low, close).all { it.isFinite() }

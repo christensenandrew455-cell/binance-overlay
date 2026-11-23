@@ -18,7 +18,8 @@ import kotlin.math.floor
  * for results from Kalshi probabilities.
  */
 object BinanceTwentySevenPatternReport {
-    data class Observation(val minute: Int, val signedChartLevel: Double)
+    data class Observation(val minute: Int, val signedChartLevel: Double,
+        val low: Double = Double.NaN, val high: Double = Double.NaN)
     data class Market(
         val startMs: Long,
         val targetBtc: Double,
@@ -140,7 +141,7 @@ object BinanceTwentySevenPatternReport {
         sb.appendLine("Validation markets strictly BEFORE 2026-11-17 Eastern; Nov 17-19 discovery markets excluded.")
         sb.appendLine("First market: " + timestamp(unique.first().startMs))
         sb.appendLine("Last market: " + timestamp(unique.last().startMs))
-        sb.appendLine("Market target = LAST Binance BTC close before market starts.")
+        sb.appendLine("Market target = midpoint of the final Binance BTC one-minute high and low before the quarter-hour.")
         sb.appendLine("UP win = final 15-minute BTC close ABOVE target; " +
             "DOWN win = close BELOW target. Ties skipped.")
         sb.appendLine("Pattern levels = app's BINANCE signed distance/ACM60 chart: " +
