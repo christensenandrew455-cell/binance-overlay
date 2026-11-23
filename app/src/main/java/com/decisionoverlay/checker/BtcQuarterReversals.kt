@@ -7,6 +7,9 @@ internal object BtcQuarterReversals {
     private data class Key(val start: Int?, val end: Int, val left: Int, val filtered: Boolean)
     private data class Count(var hits: Int = 0, var wins: Int = 0)
 
+    private enum class Call { BASELINE, DOWN, UP }
+    private data class DirectionKey(val band: Int, val left: Int, val call: Call)
+
     private fun clear(bar: BinanceTwentySevenPatternReport.Observation, target: Double, above: Boolean) =
         if (above) bar.low > target else bar.high < target
 
@@ -17,12 +20,24 @@ internal object BtcQuarterReversals {
         features: Map<Long, Map<Int, BtcEarlyIndicatorResearchReport.Features>>
     ): String {
         val counts = mutableMapOf<Key, Count>()
+        val directionCounts = mutableMapOf<DirectionKey, Count>()
         for (market in markets) {
             val minutes = market.minutes.associateBy { it.minute }
             for ((minute, bar) in minutes) {
                 val end = BtcExhaustivePatternReport.band(bar.signedChartLevel) ?: continue
                 val above = end > 0
                 if (!clear(bar, market.targetBtc, above)) continue
+                val indicators = features[market.startMs]?.get(minute)
+                if (abs(end) in listOf(80, 90) && minute in 1..14) {
+                    val gate = BtcEarlyIndicatorResearchReport.Gate.VOL_MOM
+                    for (call in Call.values()) {
+                        if (call != Call.BASELINE && !gate.accepts(indicators, call == Call.UP)) continue
+                        val key = DirectionKey(end, 15 - minute, call)
+                        val count = directionCounts.getOrPut(key) { Count() }
+                        count.hits++
+                        if (!market.upWon) count.wins++ // DOWN finishes, for every cohort.
+                    }
+                }
                 val starts = mutableListOf<Int?>()
                 if (abs(end) >= 60) starts.add(null)
                 val prior = minutes[minute - 1]
@@ -31,7 +46,7 @@ internal object BtcQuarterReversals {
                     if (start != null && (start > 0) == above && abs(start) > abs(end)) starts.add(start)
                 }
                 val qualified = BtcEarlyIndicatorResearchReport.Gate.VOL_MOM.accepts(
-                    features[market.startMs]?.get(minute), !above)
+                    indicators, !above)
                 for (start in starts) for (filtered in listOf(false, true)) {
                     if (filtered && !qualified) continue
                     val count = counts.getOrPut(Key(start, end, 15 - minute, filtered)) { Count() }
@@ -41,6 +56,24 @@ internal object BtcQuarterReversals {
             }
         }
         return buildString {
+            appendLine("BTC DIRECTION AT 80 AND 90 · ${markets.size} completed markets")
+            appendLine("Each completed minute: predict the sign of 3m momentum when relative volume >= 1.2x. Otherwise no call. BASELINE includes all eligible observations at the same band and minute.")
+            appendLine("Hit % = signals / all markets. DOWN % = markets finishing below target / signals. Call win % = correct UP or DOWN calls / signals. Outcomes use the final close.")
+            appendLine("signed_band,minutes_left,call,signals,hit_pct,down_finishes,down_pct,up_finishes,up_pct,call_wins,call_win_pct")
+            for (band in listOf(90, 80, -90, -80)) for (left in 14 downTo 1) for (call in Call.values()) {
+                val c = directionCounts[DirectionKey(band, left, call)] ?: Count()
+                val down = c.wins
+                val up = c.hits - down
+                val wins = when (call) {
+                    Call.UP -> up
+                    Call.DOWN -> down
+                    Call.BASELINE -> null
+                }
+                appendLine(listOf(band, left, call, c.hits, percent(c.hits, markets.size),
+                    down, percent(down, c.hits), up, percent(up, c.hits),
+                    wins ?: "NA", wins?.let { percent(it, c.hits) } ?: "NA").joinToString(","))
+            }
+            appendLine()
             appendLine("BTC REVERSALS BY EXACT MINUTE · ${markets.size} completed markets")
             appendLine("Signed chart bands are proxy levels. Reference cost assumes 100 minus the entry band in cents. No Kalshi quotes, fees or fills.")
             appendLine("Entry at completed minute close. Every candle in the setup must stay strictly on its starting side, including wicks. Win = final BTC close on opposite side of midpoint target; tied markets excluded.")
