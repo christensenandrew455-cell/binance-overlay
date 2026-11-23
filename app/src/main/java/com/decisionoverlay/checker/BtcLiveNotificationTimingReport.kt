@@ -158,7 +158,8 @@ internal object BtcLiveNotificationTimingReport {
             appendLine("one chosen notification per 15-minute market, first eligible")
             appendLine("minute and highest rule priority at ties. Actual phone polls,")
             appendLine("late snapshots and intraminute price crossing are not modeled.")
-            appendLine("EXACT-TIME 75% WIN-RATE MINIMUM APPLIED IN LIVE ELIGIBILITY.")\n            appendLine("NO CHART CHANGES; preserve minimum 20 older matches.")
+            appendLine("EXACT-TIME 75% WIN-RATE MINIMUM APPLIED IN LIVE ELIGIBILITY.")
+            appendLine("NO CHART CHANGES; preserve minimum 20 older matches.")
             appendLine()
 
             appendLine("=== GRAPH DATA: EACH LIVE PATTERN AT EVERY EXACT FINISH MINUTE (CSV) ===")
