@@ -17,7 +17,7 @@ internal object BtcMinuteRecorder {
             // At settlement use the limiting signed endpoint of the capped proxy.
             if (left == 0) return if (price > target) 90.0 else -90.0
             val range = BtcAcmMath.averageRange(candles, at, 60) ?: return null
-            return BtcChartProxyMath.signedStrength(price, target, range, left)
+            return BtcChartProxyMath.signedStrength(price, target, range, left.toDouble())
                 .takeIf { it.isFinite() }
         }
         val levels = arrayOfNulls<Double>(16)
