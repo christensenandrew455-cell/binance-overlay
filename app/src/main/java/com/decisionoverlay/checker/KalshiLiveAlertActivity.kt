@@ -69,12 +69,10 @@ class KalshiLiveAlertActivity : AppCompatActivity() {
             text = "ENABLE ALERTS"
             setAllCaps(false)
             setOnClickListener {
-                getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
-                    .edit().putBoolean(KalshiLiveSignalService.ENABLED, true).apply()
+                KalshiLiveSignalService.setEnabled(this@KalshiLiveAlertActivity, true)
                 ContextCompat.startForegroundService(this@KalshiLiveAlertActivity,
-                    Intent(this@KalshiLiveAlertActivity,
-                        KalshiLiveSignalService::class.java)
-                        .setAction(KalshiLiveSignalService.START))
+                    Intent(this@KalshiLiveAlertActivity, BtcRangeBacktestService::class.java)
+                        .setAction(BtcRangeBacktestService.START))
                 start.isEnabled = false
             }
         }
@@ -82,11 +80,7 @@ class KalshiLiveAlertActivity : AppCompatActivity() {
             text = "STOP ALERTS"
             setAllCaps(false)
             setOnClickListener {
-                getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
-                    .edit().putBoolean(KalshiLiveSignalService.ENABLED, false).apply()
-                startService(Intent(this@KalshiLiveAlertActivity,
-                    KalshiLiveSignalService::class.java)
-                    .setAction(KalshiLiveSignalService.STOP))
+                KalshiLiveSignalService.setEnabled(this@KalshiLiveAlertActivity, false)
                 stop.isEnabled = false
             }
         }

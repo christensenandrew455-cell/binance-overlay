@@ -50,7 +50,7 @@ class BtcRangeBacktestService : Service() {
         super.onCreate()
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(
-            CHANNEL_RUNNING, "BTC chart running", NotificationManager.IMPORTANCE_LOW))
+            CHANNEL_RUNNING, "Kalshi Watch", NotificationManager.IMPORTANCE_LOW))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -63,8 +63,9 @@ class BtcRangeBacktestService : Service() {
         if (!running.compareAndSet(false, true)) return START_STICKY
         val note = NotificationCompat.Builder(this, CHANNEL_RUNNING)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("BTC chart active")
-            .setContentText("Watching 15-minute BTC markets")
+            .setContentTitle("Kalshi Watch")
+            .setSilent(true)
+            .setShowWhen(false)
             .setContentIntent(openIntent(FOREGROUND_ID))
             .setOnlyAlertOnce(true).setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 34)
@@ -72,6 +73,13 @@ class BtcRangeBacktestService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else
             startForeground(FOREGROUND_ID, note)
+        val alerts = KalshiLiveSignalService(this) { running.get() }
+        Thread {
+            while (running.get()) {
+                alerts.tick()
+                try { Thread.sleep(7_000L) } catch (_: InterruptedException) { break }
+            }
+        }.start()
         Thread {
             while (running.get()) {
                 try {

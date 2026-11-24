@@ -72,18 +72,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
                 val prefs = getSharedPreferences(
                     KalshiLiveSignalService.PREFS, MODE_PRIVATE)
                 val enabled = prefs.getBoolean(KalshiLiveSignalService.ENABLED, true)
-                if (enabled) {
-                    prefs.edit().putBoolean(KalshiLiveSignalService.ENABLED, false).apply()
-                    startService(Intent(this@BtcRangeBacktestActivity,
-                        KalshiLiveSignalService::class.java)
-                        .setAction(KalshiLiveSignalService.STOP))
-                } else {
-                    prefs.edit().putBoolean(KalshiLiveSignalService.ENABLED, true).apply()
-                    ContextCompat.startForegroundService(this@BtcRangeBacktestActivity,
-                        Intent(this@BtcRangeBacktestActivity,
-                            KalshiLiveSignalService::class.java)
-                            .setAction(KalshiLiveSignalService.START))
-                }
+                KalshiLiveSignalService.setEnabled(this@BtcRangeBacktestActivity, !enabled)
                 updateAlertButtons()
             }
         }
@@ -119,13 +108,7 @@ class BtcRangeBacktestActivity : AppCompatActivity() {
         ContextCompat.startForegroundService(this,
             Intent(this, BtcRangeBacktestService::class.java)
                 .setAction(BtcRangeBacktestService.START))
-        // Restore the saved Kalshi notifications preference on launch.
-        if (getSharedPreferences(KalshiLiveSignalService.PREFS, MODE_PRIVATE)
-                .getBoolean(KalshiLiveSignalService.ENABLED, true)) {
-            ContextCompat.startForegroundService(this,
-                Intent(this, KalshiLiveSignalService::class.java)
-                    .setAction(KalshiLiveSignalService.START))
-        }
+        // The chart service also hosts the alert worker and reads its saved preference.
         updateAlertButtons()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this,
