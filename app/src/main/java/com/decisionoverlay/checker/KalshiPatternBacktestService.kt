@@ -17,13 +17,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Historical Binance.US BTCUSDT collector, launched ONLY by the BACKTEST
+ * Historical Binance.US BTCUSD collector, launched ONLY by the BACKTEST
  * button. Legacy class name is preserved for Android manifest compatibility.
  * There are NO Kalshi requests or automatic GitHub validation runs.
  */
 class KalshiPatternBacktestService : Service() {
     companion object {
-        const val PREFS = "btc_touch_target_both_v3"
+        const val PREFS = "btc_touch_target_btcusd_midpoint_v4"
         const val STATUS = "status"
         const val REPORT = "report"
         const val RUNNING = "running"
@@ -135,7 +135,7 @@ class KalshiPatternBacktestService : Service() {
         var lastError = ""
         for (attempt in 0..3) {
             if (!active.get()) error("Scan stopped")
-            val url = "$BASE?symbol=BTCUSDT&interval=1m&limit=1000&startTime=$startTimeMs&endTime=$endTimeMs"
+            val url = "$BASE?symbol=${BtcAcmMath.BTC_SYMBOL}&interval=1m&limit=1000&startTime=$startTimeMs&endTime=$endTimeMs"
             val response = client.newCall(Request.Builder()
                 .url(url).header("Accept", "application/json").get().build())
                 .execute().use { result ->
@@ -173,7 +173,7 @@ class KalshiPatternBacktestService : Service() {
         for (offset in -60..14) {
             if (candles[start + offset * MINUTE_MS] == null) return null
         }
-        val target = candles.getValue(start - MINUTE_MS).midpoint
+        val target = BtcAcmMath.quarterTargetCandle(candles, start)?.midpoint ?: return null
         val finalBtc = candles.getValue(start + 14L * MINUTE_MS).close
         if (target <= 0.0 || finalBtc == target) return null
         val series = ArrayList<BinanceTwentySevenPatternReport.Observation>(14)

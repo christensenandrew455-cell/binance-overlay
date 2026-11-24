@@ -13,6 +13,26 @@ class BtcAcmMathTest {
             100.0 + range / 2.0, 100.0 - range / 2.0, 100.0)
     }
 
+    @Test fun quarterTargetUsesExactPriorMinuteHighLowNotClose() {
+        val step = BtcAcmMath.MINUTE_MS
+        assertEquals("BTCUSD", BtcAcmMath.BTC_SYMBOL)
+        // Include quarter rollover and all four boundaries, with deliberately
+        // different neighboring candles and a close unlike the midpoint.
+        for (start in listOf(0L, 15L, 30L, 45L, 60L).map { it * step }) {
+            val prior = BtcAcmMath.Candle(start - step, 60886.09,
+                60909.02, 60863.11, 60907.29)
+            val earlier = BtcAcmMath.Candle(start - 2 * step, 60961.76,
+                60970.0, 60950.0, 60961.76)
+            val current = BtcAcmMath.Candle(start, 60960.0,
+                61000.0, 60950.0, 60961.76)
+            val candles = listOf(earlier, prior, current).associateBy { it.at }
+            val chosen = BtcAcmMath.quarterTargetCandle(candles, start)!!
+            assertEquals(start - step, chosen.at)
+            assertEquals(60886.065, chosen.midpoint, 1e-8)
+            assertNull(BtcAcmMath.quarterTargetCandle(candles - prior.at, start))
+        }
+    }
+
     @Test fun lastThreeFifteenThirtySixtyOnlyIncludeCompletedCandles() {
         val candles = (0..59).associate { i ->
             val c = bar(i, if (i >= 57) 6.0 else 2.0)

@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Live BTCUSDT monitor. Only a single 15-minute section is ever shown.
+ * Live BTCUSD monitor. Only a single 15-minute section is ever shown.
  * Binance.US klines supply the most recent 60 *completed* one-minute ranges
  * (hidden) and the current section's price. 70% is the user's custom
  * 50%-90% distance scale, not an empirically calibrated probability.
@@ -28,7 +28,7 @@ class BtcRangeBacktestService : Service() {
         const val PREFS = "btc_live_chart_v2"
         const val START = "btc.chart.START"
         const val STOP = "btc.chart.STOP"
-        const val KEY_SNAPSHOT = "snapshot"
+        const val KEY_SNAPSHOT = "snapshot_btcusd_midpoint_v1"
         private const val CHANNEL_RUNNING = "btc_live_running_v2"
         private const val FOREGROUND_ID = 7801
         private const val MINUTE = 60_000L
@@ -101,7 +101,7 @@ class BtcRangeBacktestService : Service() {
         val open = receivedAt / MINUTE * MINUTE
         val marketStart = receivedAt / QUARTER * QUARTER
         val response = client.newCall(Request.Builder().url(
-            "https://api.binance.us/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=85")
+            "https://api.binance.us/api/v3/klines?symbol=${BtcAcmMath.BTC_SYMBOL}&interval=1m&limit=85")
             .get().build()).execute().use { res ->
                 val body = res.body?.string().orEmpty()
                 if (!res.isSuccessful) error("Binance.US HTTP ${res.code}: ${body.take(70)}")
@@ -115,8 +115,12 @@ class BtcRangeBacktestService : Service() {
                 row.getDouble(3), row.getDouble(4))
             if (candle.valid()) candles[candle.at] = candle
         }
-        val target = candles[marketStart - MINUTE]?.midpoint
-            ?: error("Waiting for current 15-minute target")
+        // Require the new quarter candle to exist before trusting the previous
+        // minute as finalized. Never substitute a close or another candle.
+        if (candles[marketStart] == null) error("Waiting for new BTC/USD quarter")
+        val targetCandle = BtcAcmMath.quarterTargetCandle(candles, marketStart)
+            ?: error("Waiting for exact prior BTC/USD minute")
+        val target = targetCandle.midpoint
         val completedOpen = open - MINUTE
         val acm = BtcAcmMath.averageRange(candles, completedOpen, 60)
             ?: error("Waiting for 60 completed Binance candles")
@@ -147,6 +151,9 @@ class BtcRangeBacktestService : Service() {
             candles, target, marketStart, completedOpen)
         val json = JSONObject().put("section", marketStart)
             .put("target", target).put("acm", acm)
+            .put("symbol", BtcAcmMath.BTC_SYMBOL)
+            .put("target_candle_open", targetCandle.at)
+            .put("target_high", targetCandle.high).put("target_low", targetCandle.low)
             .put("latest", latest).put("now", receivedAt)
             .put("percent", modeledPct)
         val series = JSONArray()

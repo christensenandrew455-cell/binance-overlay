@@ -11,7 +11,7 @@ internal object BtcMinuteRecorder {
     fun rows(start: Long, candles: Map<Long, BtcAcmMath.Candle>): String? {
         val step = BtcAcmMath.MINUTE_MS
         for (i in -60..14) if (candles[start + i * step] == null) return null
-        val target = candles.getValue(start - step).midpoint
+        val target = BtcAcmMath.quarterTargetCandle(candles, start)?.midpoint ?: return null
         fun level(price: Double, at: Long, left: Int): Double? {
             if (price == target) return 0.0
             // At settlement use the limiting signed endpoint of the capped proxy.

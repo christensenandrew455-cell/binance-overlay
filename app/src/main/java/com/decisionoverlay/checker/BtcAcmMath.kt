@@ -9,6 +9,15 @@ import kotlin.math.abs
  */
 object BtcAcmMath {
     const val MINUTE_MS = 60_000L
+    const val BTC_SYMBOL = "BTCUSD"
+
+    /** Binance kline timestamps are OPEN times. For 21:15, select the
+     * 21:14:00–21:14:59 candle, never the 21:15 candle or its close price. */
+    fun quarterTargetCandle(candles: Map<Long, Candle>, marketStart: Long): Candle? {
+        if (marketStart % (15L * MINUTE_MS) != 0L) return null
+        val targetOpen = marketStart - MINUTE_MS
+        return candles[targetOpen]?.takeIf { it.at == targetOpen && it.valid() }
+    }
     val WINDOWS = listOf(3, 15, 30, 60)
     const val FIRST_ELAPSED = 7
     const val LAST_ELAPSED = 14
