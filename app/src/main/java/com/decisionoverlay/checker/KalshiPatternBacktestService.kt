@@ -31,6 +31,13 @@ class KalshiPatternBacktestService : Service() {
         const val EDGE = "btc.edge.START"
         const val EXHAUSTIVE = "btc.exhaustive.START"
         const val FOCUSED = "btc.focused.START"
+        const val DAILY = "btc.daily.START"
+        const val DAILY_RESULT = "btc_daily_report_v1"
+        const val DAILY_CSV = "btc_daily_csv_v1"
+        const val DAILY_STATUS = "btc_daily_status_v1"
+        const val DAILY_PRICE = "daily_price_cents"
+        const val DAILY_CONTRACTS = "daily_contracts"
+        const val DAILY_FEE = "daily_fee_cents"
         const val FOCUSED_RESULT = "btc_minute_csv_v1"
         const val FOCUSED_STATUS = "btc_minute_status_v1"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
@@ -52,13 +59,17 @@ class KalshiPatternBacktestService : Service() {
     private var indicatorRun = false
     private var exhaustiveRun = false
     private var focusedRun = false
+    private var dailyRun = false
+    private var dailyConfig = BtcDailyProfitReport.Config()
     private fun statusKey(): String = when {
+        dailyRun -> DAILY_STATUS
         focusedRun -> FOCUSED_STATUS
         exhaustiveRun -> EXHAUSTIVE_STATUS
         indicatorRun -> INDICATOR_STATUS
         else -> STATUS
     }
     private fun resultKey(): String = when {
+        dailyRun -> DAILY_RESULT
         focusedRun -> FOCUSED_RESULT
         exhaustiveRun -> EXHAUSTIVE_RESULT
         indicatorRun -> EDGE_RESULT
@@ -109,6 +120,14 @@ class KalshiPatternBacktestService : Service() {
         indicatorRun = intent?.action == EDGE
         exhaustiveRun = intent?.action == EXHAUSTIVE
         focusedRun = intent?.action == FOCUSED
+        dailyRun = intent?.action == DAILY
+        if (dailyRun) {
+            dailyConfig = BtcDailyProfitReport.Config(
+                intent?.getIntExtra(DAILY_PRICE, 60) ?: 60,
+                intent?.getIntExtra(DAILY_CONTRACTS, 100) ?: 100,
+                intent?.getIntExtra(DAILY_FEE, 0) ?: 0)
+            prefs.edit().remove(DAILY_CSV).apply()
+        }
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification("Preparing Binance BTC test..."),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -209,7 +228,7 @@ class KalshiPatternBacktestService : Service() {
             val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
             val close = minOf(lastClose, day.atTime(23, 0).atZone(zone).toInstant().toEpochMilli())
             // The first hour supplies the rolling warmup from this session.
-            val fetchStart = if (focused) open - warmup * MINUTE_MS else open
+            val fetchStart = if (focused || dailyRun) open - warmup * MINUTE_MS else open
             val firstMarket = fetchStart + warmup * MINUTE_MS
             if (close - firstMarket < QUARTER_MS) continue
             val candles = getCandles(fetchStart, close - 1).associateBy { it.at }
@@ -250,6 +269,18 @@ class KalshiPatternBacktestService : Service() {
 
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
+        if (dailyRun) {
+            status("Replaying existing buy alerts and grouping daily P&L...")
+            val result = BtcDailyProfitReport.analyze(chosen, dailyConfig)
+            check(active.get()) { "Scan stopped" }
+            prefs.edit().putString(DAILY_RESULT, result.report())
+                .putString(DAILY_CSV, result.csv())
+                .putString(DAILY_STATUS,
+                    (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
+                        ": " + chosen.size + "/1000 BTC markets · daily simulation")
+                .apply()
+            return
+        }
         if (exhaustive) {
             status("Testing all 1,400 signed two-reading patterns...")
             val result = BtcExhaustivePatternReport.report(chosen)

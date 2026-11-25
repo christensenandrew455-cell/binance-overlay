@@ -11,6 +11,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
+import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -22,10 +24,15 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Keep the historical collector reusable; show only TEST, COPY, DOWNLOAD. */
+/** Existing minute export plus separate daily P&L simulation. */
 class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var test: Button
+    private lateinit var daily: Button
+    private lateinit var price: EditText
+    private lateinit var contracts: EditText
+    private lateinit var fee: EditText
+    private var dailyMode = false
     private lateinit var copy: Button
     private lateinit var save: Button
     private lateinit var status: TextView
@@ -64,10 +71,19 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         override fun run() {
             val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
             val running = KalshiPatternBacktestService.isScanning()
-            val report = prefs.getString(KalshiPatternBacktestService.FOCUSED_RESULT, "").orEmpty()
-            status.text = prefs.getString(KalshiPatternBacktestService.FOCUSED_STATUS,
-                "TEST records 100 markets. DOWNLOAD saves every minute as CSV.")
+            val key = if (dailyMode) KalshiPatternBacktestService.DAILY_RESULT
+                else KalshiPatternBacktestService.FOCUSED_RESULT
+            val statusKey = if (dailyMode) KalshiPatternBacktestService.DAILY_STATUS
+                else KalshiPatternBacktestService.FOCUSED_STATUS
+            val report = prefs.getString(key, "").orEmpty()
+            status.text = prefs.getString(statusKey, if (dailyMode)
+                "DAILY TEST simulates 1,000 markets using the current buy rules."
+                else "TEST records 100 markets. DOWNLOAD saves every minute as CSV.")
             test.isEnabled = !running
+            daily.isEnabled = !running
+            price.isEnabled = !running
+            contracts.isEnabled = !running
+            fee.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
@@ -91,6 +107,9 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingExportKey = savedInstanceState?.getString("pending_export_key")
+        val settings = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
+        dailyMode = savedInstanceState?.getBoolean("daily_mode")
+            ?: settings.getBoolean("daily_view_v1", false)
         supportActionBar?.hide()
         window.statusBarColor = Color.rgb(7, 10, 16)
         window.navigationBarColor = Color.rgb(7, 10, 16)
@@ -109,6 +128,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         }
         root.addView(commands)
         test = button("TEST") {
+            dailyMode = false
+            settings.edit().putBoolean("daily_view_v1", false).apply()
             output.text = ""
             shownReport = ""
             test.isEnabled = false
@@ -122,7 +143,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             Toast.makeText(this, "Results copied", Toast.LENGTH_SHORT).show()
         }
         save = button("DOWNLOAD") {
-            val key = KalshiPatternBacktestService.FOCUSED_RESULT
+            val key = if (dailyMode) KalshiPatternBacktestService.DAILY_CSV
+                else KalshiPatternBacktestService.FOCUSED_RESULT
             val hasReport = getSharedPreferences(
                 KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE
             ).getString(key, null)?.isNotEmpty() == true
@@ -131,13 +153,64 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             } else {
                 pendingExportKey = key
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                exportPicker.launch("BTC-minute-data-$time.csv")
+                exportPicker.launch(if (dailyMode) "BTC-daily-PnL-$time.csv"
+                    else "BTC-minute-data-$time.csv")
             }
         }
         for (b in listOf(test, copy, save)) {
             commands.addView(b, LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
+        val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun field(label: String, value: Int): EditText {
+            val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            column.addView(TextView(this).apply {
+                text = label
+                textSize = 11f
+                setTextColor(Color.WHITE)
+            })
+            val edit = EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setSingleLine(true)
+                setTextColor(Color.WHITE)
+                setText(value.toString())
+            }
+            column.addView(edit)
+            inputs.addView(column, LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            return edit
+        }
+        price = field("Entry (¢)", settings.getInt(KalshiPatternBacktestService.DAILY_PRICE, 60))
+        contracts = field("Contracts", settings.getInt(KalshiPatternBacktestService.DAILY_CONTRACTS, 100))
+        fee = field("Fee/trade (¢)", settings.getInt(KalshiPatternBacktestService.DAILY_FEE, 0))
+        root.addView(inputs)
+        daily = button("DAILY TEST — 1,000 MARKETS") {
+            val p = price.text.toString().toIntOrNull()
+            val c = contracts.text.toString().toIntOrNull()
+            val f = fee.text.toString().toIntOrNull()
+            if (p == null || p !in 1..99 || c == null || c !in 1..100000 ||
+                f == null || f !in 0..10000000) {
+                Toast.makeText(this, "Entry 1–99¢, contracts 1–100000, fee 0–10000000¢",
+                    Toast.LENGTH_LONG).show()
+            } else {
+                dailyMode = true
+                settings.edit().putBoolean("daily_view_v1", true)
+                    .putInt(KalshiPatternBacktestService.DAILY_PRICE, p)
+                    .putInt(KalshiPatternBacktestService.DAILY_CONTRACTS, c)
+                    .putInt(KalshiPatternBacktestService.DAILY_FEE, f).apply()
+                output.text = ""
+                shownReport = ""
+                daily.isEnabled = false
+                test.isEnabled = false
+                ContextCompat.startForegroundService(this,
+                    Intent(this, KalshiPatternBacktestService::class.java)
+                        .setAction(KalshiPatternBacktestService.DAILY)
+                        .putExtra(KalshiPatternBacktestService.DAILY_PRICE, p)
+                        .putExtra(KalshiPatternBacktestService.DAILY_CONTRACTS, c)
+                        .putExtra(KalshiPatternBacktestService.DAILY_FEE, f))
+            }
+        }
+        root.addView(daily)
         status = TextView(this).apply {
             textSize = 12f
             setTextColor(Color.rgb(240, 190, 80))
@@ -165,6 +238,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("pending_export_key", pendingExportKey)
+        outState.putBoolean("daily_mode", dailyMode)
         super.onSaveInstanceState(outState)
     }
     override fun onPause() {
