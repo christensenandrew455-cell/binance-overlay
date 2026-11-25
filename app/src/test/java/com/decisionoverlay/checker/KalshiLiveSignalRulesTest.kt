@@ -85,4 +85,48 @@ class KalshiLiveSignalRulesTest {
             .none { it.rule.gapMinutes == 1 })
         assertTrue(match(q(14, -55.0)).isEmpty())
     }
+
+    private fun early(elapsed: Long, vararg samples: BtcChartProxyMath.Sample) =
+        KalshiLiveSignalRules.matchingEarlyWindows(samples.toList(), elapsed)
+
+    @Test fun firstCompletedMinuteCanWarnButCannotConfirm() {
+        val warning = early(0L, q(14, -55.0)).single()
+        assertEquals("DOWN", warning.rule.side)
+        assertEquals(2, warning.rule.gapMinutes)
+        assertEquals(12, warning.window.key.finishLeft)
+        assertTrue(match(q(14, -55.0)).isEmpty())
+    }
+
+    @Test fun warningUsesOnlyExistingEligibleExactWindows() {
+        val up = early(0L, q(8, 55.0))
+        assertEquals(setOf(1, 2), up.map { it.rule.gapMinutes }.toSet())
+        assertTrue(up.all { it.rule.buyUp && it.window.eligible })
+        assertTrue(early(0L, q(14, 55.0)).isEmpty())
+        assertTrue(early(0L, q(4, -55.0)).isEmpty())
+        assertTrue(early(0L, q(8, 60.0)).isEmpty())
+        assertTrue(early(0L, q(8, 0.0)).isEmpty())
+        assertTrue(early(0L, q(1, -55.0)).isEmpty())
+    }
+
+    @Test fun expiredWindowsCannotWarn() {
+        assertEquals(2, early(59_999L, q(8, 55.0)).size)
+        assertEquals(2, early(60_000L, q(8, 55.0)).single().rule.gapMinutes)
+        assertTrue(early(120_000L, q(8, 55.0)).isEmpty())
+        assertTrue(early(-1L, q(8, 55.0)).isEmpty())
+    }
+
+    @Test fun warningDoesNotAlterConfirmationAndFailedPatternExpires() {
+        assertTrue(early(0L, q(8, 55.0)).isNotEmpty())
+        assertTrue(match(q(8, 55.0), q(7, 75.0)).isEmpty())
+        assertTrue(early(0L, q(8, 55.0), q(7, 75.0)).isEmpty())
+        assertEquals("UP", match(q(8, 55.0), q(7, 65.0)).single().rule.side)
+        assertEquals("UP", match(q(8, 55.0), q(7, 75.0), q(6, 65.0))
+            .single().rule.side)
+    }
+
+    @Test fun previouslyCompletedRuleDoesNotWarnAgain() {
+        val later = early(0L, q(13, -55.0), q(12, -65.0), q(10, -55.0))
+        assertTrue(later.none { it.rule.gapMinutes == 1 })
+        assertEquals(2, later.single().rule.gapMinutes)
+    }
 }

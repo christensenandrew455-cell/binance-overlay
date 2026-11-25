@@ -140,6 +140,43 @@ object KalshiLiveSignalRules {
             it.key.toBand == rule.toBand && it.key.gapMinutes == rule.gapMinutes &&
             it.eligible }
 
+    /** A qualifying start only, not a prediction or a confirmed buy. */
+    data class EarlySignal(val rule: Rule, val window: Window)
+
+    /**
+     * Match the latest COMPLETED signed 50-band sample to the same frozen
+     * eligible finish windows used by matchingSignedSignals. Never inspect
+     * future candles or treat an unfinished candle as a confirmed start.
+     */
+    fun matchingEarlyWindows(
+        history: List<BtcChartProxyMath.Sample>, elapsedSinceCloseMs: Long
+    ): List<EarlySignal> {
+        if (elapsedSinceCloseMs < 0L) return emptyList()
+        val samples = history.filter {
+            it.left in 1..14 && it.signedLevel.isFinite()
+        }.sortedByDescending { it.left }.distinctBy { it.left }
+        val latest = samples.lastOrNull() ?: return emptyList()
+        val byLeft = samples.associateBy { it.left }
+        val startBand = BtcExhaustivePatternReport.band(latest.signedLevel)
+        return rules.mapNotNull { rule ->
+            if (startBand != rule.fromBand ||
+                elapsedSinceCloseMs >= rule.gapMinutes * 60_000L
+            ) return@mapNotNull null
+            val window = windowFor(rule, latest.left, latest.left - rule.gapMinutes)
+                ?.takeIf { it.eligible } ?: return@mapNotNull null
+            // Mirror the existing per-rule first eligible completion guard.
+            val earlierQualified = samples.any { prior ->
+                val earlierStart = prior.left + rule.gapMinutes
+                BtcExhaustivePatternReport.band(prior.signedLevel) == rule.toBand &&
+                    BtcExhaustivePatternReport.band(
+                        byLeft[earlierStart]?.signedLevel ?: Double.NaN
+                    ) == rule.fromBand &&
+                    windowFor(rule, earlierStart, prior.left)?.eligible == true
+            }
+            if (earlierQualified) null else EarlySignal(rule, window)
+        }
+    }
+
     data class Signal(
         val rule: Rule,
         val startLeft: Int,

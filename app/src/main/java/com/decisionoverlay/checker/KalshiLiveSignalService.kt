@@ -28,6 +28,8 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         const val LAST_ALERT = "last_alert"
         private const val SIGNAL_CHANNEL = "btc_chart_proxy_signal_v1"
         private const val SIGNAL_ID = 8100
+        private const val EARLY_ID = 8101
+        private const val LAST_EARLY_CLOSE = "sent_early_start_close_v1"
         private val notificationLock = Any()
 
         fun setEnabled(context: Context, enabled: Boolean) = synchronized(notificationLock) {
@@ -105,7 +107,7 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         // Read the SAME signed, completed-minute levels used by the BTC chart.
         // Old unsigned contract "proxy_quotes" cannot represent below-target data.
         val array = chart.optJSONArray("signed_chart_levels")
-        if (array == null || array.length() < 2) {
+        if (array == null || array.length() == 0) {
             status("Waiting for completed signed BTC chart levels")
             return
         }
@@ -132,8 +134,14 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         }
         val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
         if (matched.isEmpty()) {
-            status("BTC chart | " + latest.left +
-                "m left | no exact-minute pattern with 75%+ historical win rate")
+            val early = KalshiLiveSignalRules.matchingEarlyWindows(
+                history, now - closeOfMinute)
+            if (early.isNotEmpty()) {
+                notifyEarly(start, closeOfMinute, early)
+            } else {
+                status("BTC chart | " + latest.left +
+                    "m left | no exact-minute pattern with 75%+ historical win rate")
+            }
             return
         }
         val price = chart.optDouble("latest", Double.NaN)
@@ -192,8 +200,50 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
                 .setAutoCancel(true).build()
             // Replace the prior signal, but post each new qualifying signal
             // as a fresh alert so it can pop up again.
+            nm.cancel(EARLY_ID)
             nm.cancel(SIGNAL_ID)
             nm.notify(SIGNAL_ID, note)
         }
+    }
+
+    private fun notifyEarly(
+        marketStart: Long,
+        startClose: Long,
+        windows: List<KalshiLiveSignalRules.EarlySignal>
+    ) = synchronized(notificationLock) {
+        if (!isRunning() || !prefs.getBoolean(ENABLED, true) ||
+            prefs.getLong("sent_market_section_v2", -1L) == marketStart ||
+            prefs.getLong(LAST_EARLY_CLOSE, -1L) >= startClose
+        ) return@synchronized
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+        ) return@synchronized
+
+        val now = System.currentTimeMillis()
+        val remaining = windows.filter {
+            now < startClose + it.rule.gapMinutes * MINUTE
+        }
+        if (remaining.isEmpty() || now / QUARTER * QUARTER != marketStart)
+            return@synchronized
+
+        // All matching starts have the same direction. Combine the 1- and
+        // 2-minute possibilities in one warning; don't repeat it every poll.
+        val title = "Get ready — possible " + remaining.first().rule.side
+        val expiresAt = remaining.maxOf { startClose + it.rule.gapMinutes * MINUTE }
+        val note = NotificationCompat.Builder(context, SIGNAL_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(title)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setContentIntent(viewIntent())
+            .setAutoCancel(true)
+            .setTimeoutAfter(expiresAt - now)
+            .build()
+        nm.cancel(EARLY_ID)
+        nm.notify(EARLY_ID, note)
+        // Separate from the confirmed buy marker: this never consumes a buy.
+        prefs.edit().putLong(LAST_EARLY_CLOSE, startClose)
+            .putString(STATUS, title).apply()
     }
 }
