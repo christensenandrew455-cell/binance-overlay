@@ -131,37 +131,48 @@ class KalshiLiveSignalRulesTest {
     }
 
     private fun progress(elapsed: Long, live: Double,
-        vararg samples: BtcChartProxyMath.Sample) =
-        KalshiLiveSignalRules.matchingProgressWarnings(samples.toList(), elapsed, live)
+        vararg samples: BtcChartProxyMath.Sample, touchAge: Long = 5_000L) =
+        KalshiLiveSignalRules.matchingProgressWarnings(samples.toList(), elapsed, live, touchAge)
 
-    @Test fun fiftyStartIsSilentUntilLiveProgressInSameDirection() {
-        assertTrue(progress(10_000L, 54.99, q(8, 52.0)).isEmpty())
-        assertTrue(progress(10_000L, -56.0, q(8, 52.0)).isEmpty())
-        assertTrue(progress(10_000L, 60.0, q(8, 52.0)).isEmpty())
-        assertEquals(8, progress(10_000L, 55.0, q(8, 52.0)).single().startLeft)
-        assertEquals("DOWN", progress(10_000L, -56.0, q(13, -52.0))
+    @Test fun neutralCenterCanWarnInEitherDirectionAtEligibleMinute() {
+        assertEquals("UP", progress(10_000L, 55.0, q(8, 0.0))
             .single().windows.first().rule.side)
-        assertTrue(progress(10_000L, 56.0, q(8, 57.0)).isEmpty())
-        assertTrue(progress(0L, 56.0, q(8, 52.0)).isEmpty())
+        assertEquals("DOWN", progress(10_000L, -55.0, q(8, 0.0))
+            .single().windows.first().rule.side)
+        assertTrue(progress(10_000L, 54.99, q(8, 0.0)).isEmpty())
+        assertTrue(progress(10_000L, 60.0, q(8, 0.0)).isEmpty())
+        assertTrue(progress(10_000L, -55.0, q(8, 52.0)).isEmpty())
+        assertTrue(progress(10_000L, 55.0, q(14, 0.0)).isEmpty())
     }
 
-    @Test fun progressHonorsOriginalDeadlinesAndEligibleMinutes() {
-        val at59 = progress(59_999L, 55.0, q(8, 52.0)).single()
-        assertEquals(setOf(1, 2), at59.windows.map { it.rule.gapMinutes }.toSet())
-        val at60 = progress(60_000L, 55.0, q(8, 52.0)).single()
-        assertEquals(2, at60.windows.single().rule.gapMinutes)
-        assertTrue(progress(120_000L, 55.0, q(8, 52.0)).isEmpty())
-        assertTrue(progress(10_000L, 55.0, q(14, 52.0)).isEmpty())
-        assertTrue(progress(-1L, 55.0, q(8, 52.0)).isEmpty())
+    @Test fun bothCenterTouchClockAndOriginalMinuteDeadlineMustPass() {
+        assertTrue(progress(10_000L, 55.0, q(8, 0.0), touchAge = 300_000L).isEmpty())
+        assertTrue(progress(10_000L, 55.0, q(8, 0.0), touchAge = -1L).isEmpty())
+        assertEquals(setOf(1, 2), progress(59_999L, 55.0, q(8, 0.0))
+            .single().windows.map { it.rule.gapMinutes }.toSet())
+        assertEquals(2, progress(60_000L, 55.0, q(8, 0.0))
+            .single().windows.single().rule.gapMinutes)
+        assertTrue(progress(120_000L, 55.0, q(8, 0.0)).isEmpty())
+        assertEquals(2, progress(50_000L, 55.0, q(8, 0.0), touchAge = 60_000L)
+            .single().windows.single().rule.gapMinutes)
     }
 
-    @Test fun twoMinuteWarningSurvivesInterveningCloseWithoutChangingBuy() {
-        val pending = progress(15_000L, 57.0, q(8, 52.0), q(7, 53.0))
-            .single()
+    @Test fun actualTouchOrCrossingRequiredAndSyntheticOpeningIgnored() {
+        fun point(t: Long, p: Double) = KalshiLiveSignalRules.CenterPoint(t, p)
+        fun touch(vararg p: KalshiLiveSignalRules.CenterPoint) =
+            KalshiLiveSignalRules.latestCenterTouch(p.toList(), 100.0, 1000L, 400_000L)
+        assertNull(touch(point(1000, 100.0), point(2000, 101.0)))
+        assertNull(touch(point(2000, 99.0), point(70_000, 101.0)))
+        assertEquals(2000L, touch(point(2000, 99.0), point(5000, 101.0)))
+        assertEquals(5000L, touch(point(2000, 99.0), point(5000, 100.0), point(9000, 100.0)))
+        assertEquals(9000L, touch(point(5000, 100.0), point(9000, 101.0), point(12000, 99.0)))
+    }
+
+    @Test fun twoMinuteWindowRetainedAndBuyRulesUnchanged() {
+        val pending = progress(15_000L, 57.0, q(8, 52.0), q(7, 53.0)).single()
         assertEquals(8, pending.startLeft)
         assertEquals(2, pending.windows.single().rule.gapMinutes)
-        assertTrue(progress(60_000L, 57.0, q(8, 52.0), q(7, 53.0)).isEmpty())
-        assertTrue(match(q(8, 52.0), q(7, 53.0)).isEmpty())
+        assertTrue(match(q(8, 0.0), q(7, 65.0)).isEmpty())
         assertEquals("UP", match(q(8, 52.0), q(7, 53.0), q(6, 65.0))
             .single().rule.side)
     }

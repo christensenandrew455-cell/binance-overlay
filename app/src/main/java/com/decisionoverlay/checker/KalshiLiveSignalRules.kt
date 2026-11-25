@@ -149,7 +149,8 @@ object KalshiLiveSignalRules {
      * future candles or treat an unfinished candle as a confirmed start.
      */
     fun matchingEarlyWindows(
-        history: List<BtcChartProxyMath.Sample>, elapsedSinceCloseMs: Long
+        history: List<BtcChartProxyMath.Sample>, elapsedSinceCloseMs: Long,
+        neutralBuyUp: Boolean? = null
     ): List<EarlySignal> {
         if (elapsedSinceCloseMs < 0L) return emptyList()
         val samples = history.filter {
@@ -159,7 +160,8 @@ object KalshiLiveSignalRules {
         val byLeft = samples.associateBy { it.left }
         val startBand = BtcExhaustivePatternReport.band(latest.signedLevel)
         return rules.mapNotNull { rule ->
-            if (startBand != rule.fromBand ||
+            val neutralStart = latest.signedLevel == 0.0 && neutralBuyUp == rule.buyUp
+            if ((!neutralStart && startBand != rule.fromBand) ||
                 elapsedSinceCloseMs >= rule.gapMinutes * 60_000L
             ) return@mapNotNull null
             val window = windowFor(rule, latest.left, latest.left - rule.gapMinutes)
@@ -177,24 +179,55 @@ object KalshiLiveSignalRules {
         }
     }
 
-    /** An armed 50-band start that has progressed toward 60 in time. */
+    /** Timestamped chart prices, not contract prices. */
+    data class CenterPoint(val at: Long, val price: Double)
+
+    /**
+     * An exact center reading or an observed crossing brackets a touch.
+     * Use the earlier observation timestamp for crossings conservatively.
+     * Ignore the synthetic market-opening target point and gaps over 30s.
+     * A flat stay exactly on target does not refresh the initial touch.
+     */
+    fun latestCenterTouch(points: List<CenterPoint>, target: Double,
+        marketStart: Long, observedAt: Long): Long? {
+        if (!target.isFinite() || target <= 0.0) return null
+        val ordered = points.filter {
+            it.at > marketStart && it.at <= observedAt && it.price.isFinite()
+        }.sortedBy { it.at }.distinctBy { it.at }
+        var previous: CenterPoint? = null
+        var touch: Long? = null
+        for (point in ordered) {
+            val prior = previous
+            if (point.price == target && prior?.price != target) {
+                touch = point.at
+            } else if (prior != null && point.at - prior.at in 1L..30_000L &&
+                ((prior.price < target && point.price > target) ||
+                 (prior.price > target && point.price < target))) {
+                touch = prior.at
+            }
+            previous = point
+        }
+        return touch
+    }
+
     data class ProgressWarning(val startLeft: Int, val windows: List<EarlySignal>)
 
     /**
-     * The 50-bin start remains a completed-candle observation. Live readings
-     * may only confirm the warning, never the original BUY rule. Require
-     * same-direction index 55..<60 and movement beyond the starting index.
-     * elapsedSinceLatestCloseMs refers to the live observation timestamp.
-     * Retain eligible two-minute starts across the intervening candle close.
+     * Require an actual observed center touch/crossing, then movement to
+     * +55 or -55 before both the original exact-minute finish deadline
+     * and the rule's elapsed-time limit from that center touch.
+     * Neutral completed starts can arm either side, for warnings ONLY.
+     * Existing signed completed-candle BUY rules are never changed.
      */
     fun matchingProgressWarnings(
         history: List<BtcChartProxyMath.Sample>,
         elapsedSinceLatestCloseMs: Long,
-        liveSignedLevel: Double
+        liveSignedLevel: Double,
+        centerTouchAgeMs: Long
     ): List<ProgressWarning> {
-        if (elapsedSinceLatestCloseMs < 0L || !liveSignedLevel.isFinite() ||
-            abs(liveSignedLevel) < 55.0 || abs(liveSignedLevel) >= 60.0)
-            return emptyList()
+        if (elapsedSinceLatestCloseMs < 0L || centerTouchAgeMs !in 0L..119_999L ||
+            !liveSignedLevel.isFinite() || abs(liveSignedLevel) < 55.0 ||
+            abs(liveSignedLevel) >= 60.0) return emptyList()
         val samples = history.filter {
             it.left in 1..14 && it.signedLevel.isFinite()
         }.sortedByDescending { it.left }.distinctBy { it.left }
@@ -204,10 +237,15 @@ object KalshiLiveSignalRules {
             val elapsed = (start.left - latest.left) * 60_000L +
                 elapsedSinceLatestCloseMs
             if (elapsed <= 0L || elapsed >= 120_000L ||
-                abs(liveSignedLevel) <= abs(start.signedLevel) ||
-                (liveSignedLevel > 0.0) != (start.signedLevel > 0.0))
+                centerTouchAgeMs > elapsed + 60_000L ||
+                (start.signedLevel != 0.0 &&
+                    (liveSignedLevel > 0.0) != (start.signedLevel > 0.0)))
                 return@mapNotNull null
-            val windows = matchingEarlyWindows(samples.take(i + 1), elapsed)
+            val windows = matchingEarlyWindows(samples.take(i + 1), elapsed,
+                neutralBuyUp = liveSignedLevel > 0.0).filter {
+                centerTouchAgeMs < it.rule.gapMinutes * 60_000L &&
+                    it.rule.buyUp == (liveSignedLevel > 0.0)
+            }
             if (windows.isEmpty()) null else ProgressWarning(start.left, windows)
         }
     }

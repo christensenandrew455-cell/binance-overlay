@@ -29,7 +29,8 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         private const val SIGNAL_CHANNEL = "btc_chart_proxy_signal_v1"
         private const val SIGNAL_ID = 8100
         private const val EARLY_ID = 8101
-        private const val LAST_EARLY_CLOSE = "sent_early_start_close_v2"
+        private const val LAST_EARLY_CLOSE = "sent_early_start_close_v3_"
+        private const val LAST_EARLY_TOUCH = "sent_early_touch_v3_"
         private val notificationLock = Any()
 
         fun setEnabled(context: Context, enabled: Boolean) = synchronized(notificationLock) {
@@ -146,16 +147,30 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
                 spot < anchor -> -strength
                 else -> 0.0
             }
-            val warnings = KalshiLiveSignalRules.matchingProgressWarnings(
-                history, observedAt - closeOfMinute, signed)
+            val points = ArrayList<KalshiLiveSignalRules.CenterPoint>()
+            val dots = chart.optJSONArray("points")
+            if (dots != null) for (i in 0 until dots.length()) {
+                val dot = dots.optJSONArray(i) ?: continue
+                points.add(KalshiLiveSignalRules.CenterPoint(
+                    dot.optLong(0, -1L), dot.optDouble(1, Double.NaN)))
+            }
+            val touch = KalshiLiveSignalRules.latestCenterTouch(
+                points, anchor, start, observedAt)
+            val warnings = if (touch == null) emptyList() else
+                KalshiLiveSignalRules.matchingProgressWarnings(
+                    history, observedAt - closeOfMinute, signed, observedAt - touch)
+            val side = if (signed > 0.0) "UP" else "DOWN"
             val warning = warnings.firstOrNull {
                 val close = start + QUARTER - it.startLeft * MINUTE
-                close > prefs.getLong(LAST_EARLY_CLOSE, -1L) &&
-                    it.windows.any { w -> now < close + w.rule.gapMinutes * MINUTE }
+                close > prefs.getLong(LAST_EARLY_CLOSE + side, -1L) &&
+                    touch != null && touch > prefs.getLong(LAST_EARLY_TOUCH + side, -1L) &&
+                    it.windows.any { w ->
+                        now < minOf(close, touch) + w.rule.gapMinutes * MINUTE
+                    }
             }
-            if (warning != null) {
+            if (warning != null && touch != null) {
                 val warningStart = start + QUARTER - warning.startLeft * MINUTE
-                notifyEarly(start, warningStart, warning.windows)
+                notifyEarly(start, warningStart, touch, warning.windows)
             } else {
                 status("BTC chart | " + latest.left +
                     "m left | waiting for qualifying pattern")
@@ -227,11 +242,14 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
     private fun notifyEarly(
         marketStart: Long,
         startClose: Long,
+        touch: Long,
         windows: List<KalshiLiveSignalRules.EarlySignal>
     ) = synchronized(notificationLock) {
+        val side = windows.firstOrNull()?.rule?.side ?: return@synchronized
         if (!isRunning() || !prefs.getBoolean(ENABLED, true) ||
             prefs.getLong("sent_market_section_v2", -1L) == marketStart ||
-            prefs.getLong(LAST_EARLY_CLOSE, -1L) >= startClose
+            prefs.getLong(LAST_EARLY_CLOSE + side, -1L) >= startClose ||
+            prefs.getLong(LAST_EARLY_TOUCH + side, -1L) >= touch
         ) return@synchronized
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
@@ -240,7 +258,7 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
 
         val now = System.currentTimeMillis()
         val remaining = windows.filter {
-            now < startClose + it.rule.gapMinutes * MINUTE
+            now < minOf(startClose, touch) + it.rule.gapMinutes * MINUTE
         }
         if (remaining.isEmpty() || now / QUARTER * QUARTER != marketStart)
             return@synchronized
@@ -248,7 +266,7 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         // All matching starts have the same direction. Combine the 1- and
         // 2-minute possibilities in one warning; don't repeat it every poll.
         val title = "Get ready — possible " + remaining.first().rule.side
-        val expiresAt = remaining.maxOf { startClose + it.rule.gapMinutes * MINUTE }
+        val expiresAt = remaining.maxOf { minOf(startClose, touch) + it.rule.gapMinutes * MINUTE }
         val note = NotificationCompat.Builder(context, SIGNAL_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title)
@@ -261,7 +279,8 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         nm.cancel(EARLY_ID)
         nm.notify(EARLY_ID, note)
         // Separate from the confirmed buy marker: this never consumes a buy.
-        prefs.edit().putLong(LAST_EARLY_CLOSE, startClose)
+        prefs.edit().putLong(LAST_EARLY_CLOSE + side, startClose)
+            .putLong(LAST_EARLY_TOUCH + side, touch)
             .putString(STATUS, title).apply()
     }
 }
