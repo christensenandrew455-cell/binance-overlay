@@ -129,4 +129,40 @@ class KalshiLiveSignalRulesTest {
         assertTrue(later.none { it.rule.gapMinutes == 1 })
         assertEquals(2, later.single().rule.gapMinutes)
     }
+
+    private fun progress(elapsed: Long, live: Double,
+        vararg samples: BtcChartProxyMath.Sample) =
+        KalshiLiveSignalRules.matchingProgressWarnings(samples.toList(), elapsed, live)
+
+    @Test fun fiftyStartIsSilentUntilLiveProgressInSameDirection() {
+        assertTrue(progress(10_000L, 54.99, q(8, 52.0)).isEmpty())
+        assertTrue(progress(10_000L, -56.0, q(8, 52.0)).isEmpty())
+        assertTrue(progress(10_000L, 60.0, q(8, 52.0)).isEmpty())
+        assertEquals(8, progress(10_000L, 55.0, q(8, 52.0)).single().startLeft)
+        assertEquals("DOWN", progress(10_000L, -56.0, q(13, -52.0))
+            .single().windows.first().rule.side)
+        assertTrue(progress(10_000L, 56.0, q(8, 57.0)).isEmpty())
+        assertTrue(progress(0L, 56.0, q(8, 52.0)).isEmpty())
+    }
+
+    @Test fun progressHonorsOriginalDeadlinesAndEligibleMinutes() {
+        val at59 = progress(59_999L, 55.0, q(8, 52.0)).single()
+        assertEquals(setOf(1, 2), at59.windows.map { it.rule.gapMinutes }.toSet())
+        val at60 = progress(60_000L, 55.0, q(8, 52.0)).single()
+        assertEquals(2, at60.windows.single().rule.gapMinutes)
+        assertTrue(progress(120_000L, 55.0, q(8, 52.0)).isEmpty())
+        assertTrue(progress(10_000L, 55.0, q(14, 52.0)).isEmpty())
+        assertTrue(progress(-1L, 55.0, q(8, 52.0)).isEmpty())
+    }
+
+    @Test fun twoMinuteWarningSurvivesInterveningCloseWithoutChangingBuy() {
+        val pending = progress(15_000L, 57.0, q(8, 52.0), q(7, 53.0))
+            .single()
+        assertEquals(8, pending.startLeft)
+        assertEquals(2, pending.windows.single().rule.gapMinutes)
+        assertTrue(progress(60_000L, 57.0, q(8, 52.0), q(7, 53.0)).isEmpty())
+        assertTrue(match(q(8, 52.0), q(7, 53.0)).isEmpty())
+        assertEquals("UP", match(q(8, 52.0), q(7, 53.0), q(6, 65.0))
+            .single().rule.side)
+    }
 }

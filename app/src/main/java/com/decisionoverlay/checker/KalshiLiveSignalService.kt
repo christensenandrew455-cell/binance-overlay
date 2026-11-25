@@ -29,7 +29,7 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         private const val SIGNAL_CHANNEL = "btc_chart_proxy_signal_v1"
         private const val SIGNAL_ID = 8100
         private const val EARLY_ID = 8101
-        private const val LAST_EARLY_CLOSE = "sent_early_start_close_v1"
+        private const val LAST_EARLY_CLOSE = "sent_early_start_close_v2"
         private val notificationLock = Any()
 
         fun setEnabled(context: Context, enabled: Boolean) = synchronized(notificationLock) {
@@ -134,13 +134,31 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         }
         val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
         if (matched.isEmpty()) {
-            val early = KalshiLiveSignalRules.matchingEarlyWindows(
-                history, now - closeOfMinute)
-            if (early.isNotEmpty()) {
-                notifyEarly(start, closeOfMinute, early)
+            // Arm silently at the existing 50-bin start. Use the live chart
+            // index, stamped at observation time, to warn at 55 before 60.
+            val spot = chart.optDouble("latest", Double.NaN)
+            val anchor = chart.optDouble("target", Double.NaN)
+            val strength = chart.optDouble("percent", Double.NaN)
+            val observedAt = chart.optLong("now", 0L)
+            val signed = when {
+                !spot.isFinite() || !anchor.isFinite() || anchor <= 0.0 -> Double.NaN
+                spot > anchor -> strength
+                spot < anchor -> -strength
+                else -> 0.0
+            }
+            val warnings = KalshiLiveSignalRules.matchingProgressWarnings(
+                history, observedAt - closeOfMinute, signed)
+            val warning = warnings.firstOrNull {
+                val close = start + QUARTER - it.startLeft * MINUTE
+                close > prefs.getLong(LAST_EARLY_CLOSE, -1L) &&
+                    it.windows.any { w -> now < close + w.rule.gapMinutes * MINUTE }
+            }
+            if (warning != null) {
+                val warningStart = start + QUARTER - warning.startLeft * MINUTE
+                notifyEarly(start, warningStart, warning.windows)
             } else {
                 status("BTC chart | " + latest.left +
-                    "m left | no exact-minute pattern with 75%+ historical win rate")
+                    "m left | waiting for qualifying pattern")
             }
             return
         }

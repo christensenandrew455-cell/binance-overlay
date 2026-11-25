@@ -177,6 +177,41 @@ object KalshiLiveSignalRules {
         }
     }
 
+    /** An armed 50-band start that has progressed toward 60 in time. */
+    data class ProgressWarning(val startLeft: Int, val windows: List<EarlySignal>)
+
+    /**
+     * The 50-bin start remains a completed-candle observation. Live readings
+     * may only confirm the warning, never the original BUY rule. Require
+     * same-direction index 55..<60 and movement beyond the starting index.
+     * elapsedSinceLatestCloseMs refers to the live observation timestamp.
+     * Retain eligible two-minute starts across the intervening candle close.
+     */
+    fun matchingProgressWarnings(
+        history: List<BtcChartProxyMath.Sample>,
+        elapsedSinceLatestCloseMs: Long,
+        liveSignedLevel: Double
+    ): List<ProgressWarning> {
+        if (elapsedSinceLatestCloseMs < 0L || !liveSignedLevel.isFinite() ||
+            abs(liveSignedLevel) < 55.0 || abs(liveSignedLevel) >= 60.0)
+            return emptyList()
+        val samples = history.filter {
+            it.left in 1..14 && it.signedLevel.isFinite()
+        }.sortedByDescending { it.left }.distinctBy { it.left }
+        val latest = samples.lastOrNull() ?: return emptyList()
+        return samples.indices.reversed().mapNotNull { i ->
+            val start = samples[i]
+            val elapsed = (start.left - latest.left) * 60_000L +
+                elapsedSinceLatestCloseMs
+            if (elapsed <= 0L || elapsed >= 120_000L ||
+                abs(liveSignedLevel) <= abs(start.signedLevel) ||
+                (liveSignedLevel > 0.0) != (start.signedLevel > 0.0))
+                return@mapNotNull null
+            val windows = matchingEarlyWindows(samples.take(i + 1), elapsed)
+            if (windows.isEmpty()) null else ProgressWarning(start.left, windows)
+        }
+    }
+
     data class Signal(
         val rule: Rule,
         val startLeft: Int,
