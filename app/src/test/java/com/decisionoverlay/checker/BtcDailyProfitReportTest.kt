@@ -20,31 +20,42 @@ class BtcDailyProfitReportTest {
             if (win) 99.0 else 101.0, levels)
     }
 
+    @Test fun fixedStakePayoutAndTwoWins() {
+        val c = BtcDailyProfitReport.Config()
+        assertEquals(1000L, c.cost)
+        assertEquals(1400L, c.payout)
+        assertEquals(400L, c.win)
+        assertEquals(-1000L, c.loss)
+        val r = BtcDailyProfitReport.analyze(listOf(market(1, 0, true), market(1, 1, true)))
+        assertEquals(800L, r.net)
+        assertEquals(2000L, r.days.single().grossCost)
+        assertTrue(r.csv().contains("8.00,PROFIT"))
+    }
+
     @Test fun dollarMathAndDailyOutcomes() {
         val markets = listOf(market(1, 0, true), market(1, 1, true),
             market(1, 2, false), market(2, 0, false), market(3, 0, true, false),
             market(5, 0, true), market(5, 1, true), market(5, 2, true),
-            market(5, 3, false), market(5, 4, false))
+            market(5, 3, true), market(5, 4, true), market(5, 5, false),
+            market(5, 6, false), market(6, 0, true), market(6, 1, true))
         val r = BtcDailyProfitReport.analyze(markets)
-        assertEquals(listOf(2000L, -6000L, 0L, 0L, 0L), r.days.map { it.net })
-        assertEquals(listOf("PROFIT", "LOSS", "NO TRADES", "MISSING", "BREAK EVEN"),
+        assertEquals(listOf(-200L, -1000L, 0L, 0L, 0L, 800L), r.days.map { it.net })
+        assertEquals(listOf("LOSS", "LOSS", "NO TRADES", "MISSING", "BREAK EVEN", "PROFIT"),
             r.days.map { it.outcome })
-        assertEquals(-4000L, r.net)
-        assertEquals(10, r.totalMarkets)
-        assertEquals(4, r.observed.size)
+        assertEquals(-400L, r.net)
+        assertEquals(14, r.totalMarkets)
+        assertEquals(5, r.observed.size)
         assertTrue(r.report().contains("Break even with trades: 1"))
-        assertTrue(r.csv().contains("20.00,PROFIT"))
+        assertTrue(r.csv().contains("8.00,PROFIT"))
     }
 
-    @Test fun all52MarketsFullDayAndFeesAndDeduplication() {
+    @Test fun all52MarketsFullDayAndDeduplication() {
         val markets = (0..51).map { market(1, it, true, it == 0) }
-        val r = BtcDailyProfitReport.analyze(markets + markets.first(),
-            BtcDailyProfitReport.Config(60, 100, 200))
+        val r = BtcDailyProfitReport.analyze(markets + markets.first())
         assertEquals(52, r.totalMarkets)
         assertEquals(1, r.full.size)
         assertEquals(1, r.wins)
-        assertEquals(3800L, r.net)
-        assertEquals(200L, r.days.single().fees)
+        assertEquals(400L, r.net)
     }
 
     @Test fun multipleMatchingWindowsOnlyCountOneTrade() {
@@ -55,6 +66,6 @@ class BtcDailyProfitReportTest {
         })
         val r = BtcDailyProfitReport.analyze(listOf(more))
         assertEquals(1, r.wins)
-        assertEquals(4000L, r.net)
+        assertEquals(400L, r.net)
     }
 }

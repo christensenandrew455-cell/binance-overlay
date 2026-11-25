@@ -11,8 +11,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.EditText
-import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -29,9 +27,6 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var test: Button
     private lateinit var daily: Button
-    private lateinit var price: EditText
-    private lateinit var contracts: EditText
-    private lateinit var fee: EditText
     private var dailyMode = false
     private lateinit var copy: Button
     private lateinit var save: Button
@@ -81,9 +76,6 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 else "TEST records 100 markets. DOWNLOAD saves every minute as CSV.")
             test.isEnabled = !running
             daily.isEnabled = !running
-            price.isEnabled = !running
-            contracts.isEnabled = !running
-            fee.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
@@ -161,54 +153,21 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             commands.addView(b, LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        val inputs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun field(label: String, value: Int): EditText {
-            val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            column.addView(TextView(this).apply {
-                text = label
-                textSize = 11f
-                setTextColor(Color.WHITE)
-            })
-            val edit = EditText(this).apply {
-                inputType = InputType.TYPE_CLASS_NUMBER
-                setSingleLine(true)
-                setTextColor(Color.WHITE)
-                setText(value.toString())
-            }
-            column.addView(edit)
-            inputs.addView(column, LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            return edit
-        }
-        price = field("Entry (¢)", settings.getInt(KalshiPatternBacktestService.DAILY_PRICE, 60))
-        contracts = field("Contracts", settings.getInt(KalshiPatternBacktestService.DAILY_CONTRACTS, 100))
-        fee = field("Fee/trade (¢)", settings.getInt(KalshiPatternBacktestService.DAILY_FEE, 0))
-        root.addView(inputs)
+        root.addView(TextView(this).apply {
+            text = "Daily test: \$10 per BUY · 60¢ reference · 1.4x payout\nWin +\$4 / Loss -\$10 (no extra fees)"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+        })
         daily = button("DAILY TEST — 1,000 MARKETS") {
-            val p = price.text.toString().toIntOrNull()
-            val c = contracts.text.toString().toIntOrNull()
-            val f = fee.text.toString().toIntOrNull()
-            if (p == null || p !in 1..99 || c == null || c !in 1..100000 ||
-                f == null || f !in 0..10000000) {
-                Toast.makeText(this, "Entry 1–99¢, contracts 1–100000, fee 0–10000000¢",
-                    Toast.LENGTH_LONG).show()
-            } else {
-                dailyMode = true
-                settings.edit().putBoolean("daily_view_v1", true)
-                    .putInt(KalshiPatternBacktestService.DAILY_PRICE, p)
-                    .putInt(KalshiPatternBacktestService.DAILY_CONTRACTS, c)
-                    .putInt(KalshiPatternBacktestService.DAILY_FEE, f).apply()
-                output.text = ""
-                shownReport = ""
-                daily.isEnabled = false
-                test.isEnabled = false
-                ContextCompat.startForegroundService(this,
-                    Intent(this, KalshiPatternBacktestService::class.java)
-                        .setAction(KalshiPatternBacktestService.DAILY)
-                        .putExtra(KalshiPatternBacktestService.DAILY_PRICE, p)
-                        .putExtra(KalshiPatternBacktestService.DAILY_CONTRACTS, c)
-                        .putExtra(KalshiPatternBacktestService.DAILY_FEE, f))
-            }
+            dailyMode = true
+            settings.edit().putBoolean("daily_view_v1", true).apply()
+            output.text = ""
+            shownReport = ""
+            daily.isEnabled = false
+            test.isEnabled = false
+            ContextCompat.startForegroundService(this,
+                Intent(this, KalshiPatternBacktestService::class.java)
+                    .setAction(KalshiPatternBacktestService.DAILY))
         }
         root.addView(daily)
         status = TextView(this).apply {

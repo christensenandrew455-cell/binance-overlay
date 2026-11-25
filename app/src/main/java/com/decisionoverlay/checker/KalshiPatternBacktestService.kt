@@ -32,12 +32,9 @@ class KalshiPatternBacktestService : Service() {
         const val EXHAUSTIVE = "btc.exhaustive.START"
         const val FOCUSED = "btc.focused.START"
         const val DAILY = "btc.daily.START"
-        const val DAILY_RESULT = "btc_daily_report_v1"
-        const val DAILY_CSV = "btc_daily_csv_v1"
-        const val DAILY_STATUS = "btc_daily_status_v1"
-        const val DAILY_PRICE = "daily_price_cents"
-        const val DAILY_CONTRACTS = "daily_contracts"
-        const val DAILY_FEE = "daily_fee_cents"
+        const val DAILY_RESULT = "btc_daily_report_v2"
+        const val DAILY_CSV = "btc_daily_csv_v2"
+        const val DAILY_STATUS = "btc_daily_status_v2"
         const val FOCUSED_RESULT = "btc_minute_csv_v1"
         const val FOCUSED_STATUS = "btc_minute_status_v1"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
@@ -122,10 +119,7 @@ class KalshiPatternBacktestService : Service() {
         focusedRun = intent?.action == FOCUSED
         dailyRun = intent?.action == DAILY
         if (dailyRun) {
-            dailyConfig = BtcDailyProfitReport.Config(
-                intent?.getIntExtra(DAILY_PRICE, 60) ?: 60,
-                intent?.getIntExtra(DAILY_CONTRACTS, 100) ?: 100,
-                intent?.getIntExtra(DAILY_FEE, 0) ?: 0)
+            dailyConfig = BtcDailyProfitReport.Config()
             prefs.edit().remove(DAILY_CSV).apply()
         }
         if (Build.VERSION.SDK_INT >= 34) {

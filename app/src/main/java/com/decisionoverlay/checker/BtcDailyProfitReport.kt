@@ -10,15 +10,14 @@ internal object BtcDailyProfitReport {
     private val zone = ZoneId.of("America/New_York")
     private const val EXPECTED_MARKETS = 52
 
-    data class Config(val priceCents: Int = 60, val contracts: Int = 100,
-        val feeCents: Int = 0) {
-        init {
-            require(priceCents in 1..99 && contracts in 1..100000 &&
-                feeCents in 0..10000000)
-        }
-        val cost: Long get() = priceCents.toLong() * contracts
-        val win: Long get() = 100L * contracts - cost - feeCents
-        val loss: Long get() = -cost - feeCents
+    /** User-requested fixed-stake model, not the theoretical 60-cent contract payout. */
+    class Config {
+        val priceCents = 60
+        val cost = 1000L
+        val payoutPercent = 140
+        val payout = cost * payoutPercent / 100
+        val win = payout - cost
+        val loss = -cost
     }
 
     data class Day(val date: LocalDate, val markets: Int, val wins: Int, val losses: Int,
@@ -26,7 +25,6 @@ internal object BtcDailyProfitReport {
         val trades get() = wins + losses
         val net: Long get() = wins * config.win + losses * config.loss
         val grossCost: Long get() = trades * config.cost
-        val fees: Long get() = trades.toLong() * config.feeCents
         val complete get() = markets == EXPECTED_MARKETS
         val outcome get() = when {
             markets == 0 -> "MISSING"
@@ -67,14 +65,14 @@ internal object BtcDailyProfitReport {
             appendLine("Best / worst: " + money(sorted.last()) + " / " + money(sorted.first()))
             appendLine("Daily net distribution:")
             val buckets = listOf(
-                "Loss at least \$200" to { n: Long -> n <= -20000L },
-                "Loss \$100 to <\$200" to { n: Long -> n > -20000L && n <= -10000L },
-                "Loss >\$0 to <\$100" to { n: Long -> n > -10000L && n < 0L },
+                "Loss \$30 or more" to { n: Long -> n <= -3000L },
+                "Loss \$10 to <\$30" to { n: Long -> n > -3000L && n <= -1000L },
+                "Loss >\$0 to <\$10" to { n: Long -> n > -1000L && n < 0L },
                 "Zero" to { n: Long -> n == 0L },
-                "Profit >\$0 to <\$100" to { n: Long -> n > 0L && n < 10000L },
-                "Profit \$100 to <\$200" to { n: Long -> n >= 10000L && n < 20000L },
-                "Profit \$200 to <\$300" to { n: Long -> n >= 20000L && n < 30000L },
-                "Profit \$300 or more" to { n: Long -> n >= 30000L })
+                "Profit >\$0 to <\$10" to { n: Long -> n > 0L && n < 1000L },
+                "Profit \$10 to <\$20" to { n: Long -> n >= 1000L && n < 2000L },
+                "Profit \$20 to <\$30" to { n: Long -> n >= 2000L && n < 3000L },
+                "Profit \$30 or more" to { n: Long -> n >= 3000L })
             for ((name, check) in buckets) {
                 val count = sample.count { check(it.net) }
                 appendLine("  " + name + ": " + count + " (" + pct(count, sample.size) + ")")
@@ -88,9 +86,9 @@ internal object BtcDailyProfitReport {
             if (totalMarkets != 1000) appendLine("INCOMPLETE: provisional results.")
             appendLine("First qualifying existing BUY alert only, at candle close.")
             appendLine("Early warnings are NOT trades. No rule changes or refitting.")
-            appendLine("Assumed entry: " + config.priceCents + "¢ x " + config.contracts +
-                " contracts = " + money(config.cost) + " per trade.")
-            appendLine("Assumed total fee/trade: " + money(config.feeCents.toLong()))
+            appendLine("Fixed stake: " + money(config.cost) + " per BUY; reference entry: " + config.priceCents + "¢.")
+            appendLine("Assumed total win payout: " + money(config.payout) + " (1.4x stake).")
+            appendLine("User-specified payout model; no separate fees or contract rounding.")
             appendLine("Net win: " + money(config.win) + "; net loss: " + money(config.loss))
             appendLine("Trades: " + (wins + losses) + "; wins: " + wins +
                 "; losses: " + losses + "; win rate: " + pct(wins, wins + losses))
@@ -113,14 +111,15 @@ internal object BtcDailyProfitReport {
         }
 
         fun csv(): String = buildString {
-            appendLine("date_et,markets,full_day,trades,wins,losses,win_rate_pct,entry_cents,contracts_per_trade,fee_cents_per_trade,entry_cost_usd,total_fees_usd,net_pnl_usd,outcome")
+            appendLine("date_et,markets,full_day,trades,wins,losses,win_rate_pct,reference_entry_cents,stake_per_trade_usd,win_payout_multiplier,win_payout_usd,net_win_usd,net_loss_usd,total_staked_usd,net_pnl_usd,outcome")
             for (d in days) {
                 val missing = d.markets == 0
                 appendLine(listOf(d.date, d.markets, d.complete, d.trades, d.wins,
                     d.losses, if (d.trades == 0) "" else decimal(100.0 * d.wins / d.trades),
-                    config.priceCents, config.contracts, config.feeCents,
+                    config.priceCents, decimal(config.cost / 100.0), "1.4",
+                    decimal(config.payout / 100.0), decimal(config.win / 100.0),
+                    decimal(config.loss / 100.0),
                     if (missing) "" else decimal(d.grossCost / 100.0),
-                    if (missing) "" else decimal(d.fees / 100.0),
                     if (missing) "" else decimal(d.net / 100.0), d.outcome).joinToString(","))
             }
         }
