@@ -27,6 +27,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var test: Button
     private lateinit var daily: Button
+    private lateinit var reversal: Button
+    private var reversalMode = false
     private var dailyMode = false
     private lateinit var copy: Button
     private lateinit var save: Button
@@ -66,16 +68,21 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         override fun run() {
             val prefs = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
             val running = KalshiPatternBacktestService.isScanning()
-            val key = if (dailyMode) KalshiPatternBacktestService.DAILY_RESULT
+            val key = if (reversalMode) KalshiPatternBacktestService.REVERSAL_RESULT
+                else if (dailyMode) KalshiPatternBacktestService.DAILY_RESULT
                 else KalshiPatternBacktestService.FOCUSED_RESULT
-            val statusKey = if (dailyMode) KalshiPatternBacktestService.DAILY_STATUS
+            val statusKey = if (reversalMode) KalshiPatternBacktestService.REVERSAL_STATUS
+                else if (dailyMode) KalshiPatternBacktestService.DAILY_STATUS
                 else KalshiPatternBacktestService.FOCUSED_STATUS
             val report = prefs.getString(key, "").orEmpty()
-            status.text = prefs.getString(statusKey, if (dailyMode)
+            status.text = prefs.getString(statusKey, if (reversalMode)
+                "REVERSAL TEST compares 1,000 markets; download full CSV. No Kalshi price data."
+                else if (dailyMode)
                 "DAILY TEST simulates 1,000 markets using the current buy rules."
                 else "TEST records 100 markets. DOWNLOAD saves every minute as CSV.")
             test.isEnabled = !running
             daily.isEnabled = !running
+            reversal.isEnabled = !running
             copy.isEnabled = !running && report.isNotEmpty()
             save.isEnabled = !running && report.isNotEmpty()
             if (report != shownReport) {
@@ -102,6 +109,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         val settings = getSharedPreferences(KalshiPatternBacktestService.PREFS, MODE_PRIVATE)
         dailyMode = savedInstanceState?.getBoolean("daily_mode")
             ?: settings.getBoolean("daily_view_v1", false)
+        reversalMode = savedInstanceState?.getBoolean("reversal_mode")
+            ?: settings.getBoolean("reversal_view_v1", false)
         supportActionBar?.hide()
         window.statusBarColor = Color.rgb(7, 10, 16)
         window.navigationBarColor = Color.rgb(7, 10, 16)
@@ -121,7 +130,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         root.addView(commands)
         test = button("TEST") {
             dailyMode = false
-            settings.edit().putBoolean("daily_view_v1", false).apply()
+            reversalMode = false
+            settings.edit().putBoolean("daily_view_v1", false).putBoolean("reversal_view_v1", false).apply()
             output.text = ""
             shownReport = ""
             test.isEnabled = false
@@ -135,7 +145,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             Toast.makeText(this, "Results copied", Toast.LENGTH_SHORT).show()
         }
         save = button("DOWNLOAD") {
-            val key = if (dailyMode) KalshiPatternBacktestService.DAILY_CSV
+            val key = if (reversalMode) KalshiPatternBacktestService.REVERSAL_RESULT
+                else if (dailyMode) KalshiPatternBacktestService.DAILY_CSV
                 else KalshiPatternBacktestService.FOCUSED_RESULT
             val hasReport = getSharedPreferences(
                 KalshiPatternBacktestService.PREFS, Context.MODE_PRIVATE
@@ -145,7 +156,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
             } else {
                 pendingExportKey = key
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                exportPicker.launch(if (dailyMode) "BTC-daily-PnL-$time.csv"
+                exportPicker.launch(if (reversalMode) "BTC-reversal-$time.csv"
+                    else if (dailyMode) "BTC-daily-PnL-$time.csv"
                     else "BTC-minute-data-$time.csv")
             }
         }
@@ -160,7 +172,8 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
         })
         daily = button("DAILY TEST — 1,000 MARKETS") {
             dailyMode = true
-            settings.edit().putBoolean("daily_view_v1", true).apply()
+            reversalMode = false
+            settings.edit().putBoolean("daily_view_v1", true).putBoolean("reversal_view_v1", false).apply()
             output.text = ""
             shownReport = ""
             daily.isEnabled = false
@@ -170,6 +183,20 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                     .setAction(KalshiPatternBacktestService.DAILY))
         }
         root.addView(daily)
+        reversal = button("REVERSAL & TIMING TEST — 1,000 MARKETS") {
+            reversalMode = true
+            dailyMode = false
+            settings.edit().putBoolean("daily_view_v1", false).putBoolean("reversal_view_v1", true).apply()
+            output.text = ""
+            shownReport = ""
+            reversal.isEnabled = false
+            daily.isEnabled = false
+            test.isEnabled = false
+            ContextCompat.startForegroundService(this,
+                Intent(this, KalshiPatternBacktestService::class.java)
+                    .setAction(KalshiPatternBacktestService.REVERSAL))
+        }
+        root.addView(reversal)
         status = TextView(this).apply {
             textSize = 12f
             setTextColor(Color.rgb(240, 190, 80))
@@ -198,6 +225,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("pending_export_key", pendingExportKey)
         outState.putBoolean("daily_mode", dailyMode)
+        outState.putBoolean("reversal_mode", reversalMode)
         super.onSaveInstanceState(outState)
     }
     override fun onPause() {
