@@ -12,7 +12,8 @@ internal object BtcReversalTimingReport {
     private val zone = ZoneId.of("America/New_York")
     private val bands = listOf(50, 60, 70, 80, 90)
     data class Row(val minute: Int, val level: Double, val momentum1: Double,
-        val momentum3: Double, val acceleration: Double, val trend15: Double, val volumeRatio: Double)
+        val momentum3: Double, val acceleration: Double, val trend15: Double, val volumeRatio: Double,
+        val priorAcm: Double = Double.NaN, val close: Double = Double.NaN, val candleVolume: Double = Double.NaN)
     data class Market(val base: BinanceTwentySevenPatternReport.Market, val rows: List<Row>)
 
     fun market(base: BinanceTwentySevenPatternReport.Market, candles: Map<Long,BtcAcmMath.Candle>): Market {
@@ -27,7 +28,8 @@ internal object BtcReversalTimingReport {
             val avg = volumes.average()
             val ratio = if (v.isFinite() && v >= 0 && volumes.all { it.isFinite() && it >= 0 } && avg > 0) v/avg else Double.NaN
             Row(obs.minute,obs.signedChartLevel,one,change(close(0),close(3)),one-previous,
-                change(close(0),close(15)),ratio)
+                change(close(0),close(15)),ratio,
+                BtcAcmMath.averageRange(candles,t-M,60) ?: Double.NaN,close(0),v)
         }
         return Market(base,rows)
     }
