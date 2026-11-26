@@ -59,10 +59,12 @@ internal object BtcReversalTimingReport {
         val splits=listOf("older_discovery" to markets.take(cut),"newer_check" to markets.drop(cut),"all_descriptive" to markets)
         val keys=linkedSetOf<Key>()
         val results=mutableMapOf<String,Map<Key,Count>>()
+        val daily=mutableMapOf<String,MutableMap<Key,Count>>()
         for ((split, sample) in splits) {
             val counts=mutableMapOf<Key,Count>()
             for (m in sample) {
-                val hour=Instant.ofEpochMilli(m.base.startMs).atZone(zone).hour
+                val localStart=Instant.ofEpochMilli(m.base.startMs).atZone(zone)
+                val hour=localStart.hour
                 val seen=mutableSetOf<Key>()
                 val history=mutableListOf<BtcChartProxyMath.Sample>()
                 val peaks=mutableMapOf<Int,Int>()
@@ -89,6 +91,20 @@ internal object BtcReversalTimingReport {
                         val signal=KalshiLiveSignalRules.matchingSignedSignals(history).firstOrNull()
                         if(signal!=null) {
                             emit("existing_first_alert",if(signal.rule.buyUp) "UP" else "DOWN","frozen_buy",signal.rule.buyUp)
+                            // Capture the exact same first BUY once per market, not early warnings.
+                            if(split=="all_descriptive") {
+                                val dayCounts=daily.getOrPut(localStart.toLocalDate().toString()){mutableMapOf()}
+                                for(d in listOf("BOTH", if(signal.rule.buyUp) "UP" else "DOWN")) {
+                                    for(l in listOf(0,left)) {
+                                        val c=dayCounts.getOrPut(Key("existing_first_alert",d,"frozen_buy",l,-1)){Count()}
+                                        c.hits++
+                                        if(signal.rule.buyUp==m.base.upWon)c.wins++
+                                        if(signal.rule.buyUp==m.base.upWon || m.base.minutes.any { o ->
+                                            o.minute>r.minute && (if(signal.rule.buyUp) o.high>m.base.targetBtc else o.low<m.base.targetBtc)
+                                        })c.crosses++
+                                    }
+                                }
+                            }
                             existing=true
                         }
                     }
@@ -146,6 +162,25 @@ internal object BtcReversalTimingReport {
                             n,c.hits,pct(c.hits,n),c.wins,c.hits-c.wins,pct(c.wins,c.hits),lower(c.wins,c.hits),
                             c.crosses,if(family=="existing_first_alert") "" else c.follow,
                             if(family=="existing_first_alert") "" else pct(c.follow,c.hits),first,last).joinToString(","))
+                    }
+                }
+            }
+            // Include every tested date and minute, including zero-alert cells.
+            // Preserve the original CSV schema and all aggregate rows.
+            for ((date,dayMarkets) in markets.groupBy {
+                Instant.ofEpochMilli(it.base.startMs).atZone(zone).toLocalDate().toString()
+            }) {
+                val dayCounts=daily[date].orEmpty()
+                val first=Instant.ofEpochMilli(dayMarkets.first().base.startMs).atZone(zone).toString()
+                val last=Instant.ofEpochMilli(dayMarkets.last().base.startMs).atZone(zone).toString()
+                for(d in listOf("BOTH","UP","DOWN")) {
+                    for(l in listOf(0)+(14 downTo 1).toList()) {
+                        val c=dayCounts[Key("existing_first_alert",d,"frozen_buy",l,-1)] ?: Count()
+                        val n=dayMarkets.size
+                        appendLine(listOf("day_"+date,"existing_first_alert",d,"frozen_buy",
+                            if(l==0)"ALL" else l,"ALL",n,c.hits,pct(c.hits,n),
+                            c.wins,c.hits-c.wins,pct(c.wins,c.hits),lower(c.wins,c.hits),
+                            c.crosses,"","",first,last).joinToString(","))
                     }
                 }
             }
