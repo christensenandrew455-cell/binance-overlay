@@ -57,7 +57,7 @@ class BtcReversalTimingReportTest {
         val c=market(96,listOf(85.0,85.0,85.0),101.0)
         val rows=BtcReversalTimingReport.report(listOf(b,c,a,a)).lineSequence()
             .filter { it.isNotBlank() }.map { it.split(',') }.toList()
-        assertTrue(rows.all { it.size==23 })
+        assertTrue(rows.all { it.size==31 })
         val ledger=rows.filter { it[0]=="trade_ledger" }
         assertEquals(3,ledger.size)
         assertEquals(listOf("1","0","0"),ledger.map { it[9] })
@@ -66,5 +66,26 @@ class BtcReversalTimingReportTest {
         assertEquals(listOf("200.00","60.00","164.00","-36.00","day_end"),all.subList(18,23))
         val filtered=rows.first { it[0]=="rounded80_in_sample_no_daily_stop" }
         assertEquals(listOf("200.00","60.00","200.00","0.00","day_end"),filtered.subList(18,23))
+    }
+
+    @Test fun warningsCountFalseAlarmsAndRequireExactFirstBuy() {
+        val a=market(0,listOf(-55.0,-55.0,-65.0),99.0)
+        val b=market(1,listOf(-55.0,-55.0,-65.0),101.0)
+        val c=market(2,listOf(-55.0,-55.0,-55.0),101.0)
+        val rows=BtcReversalTimingReport.report(listOf(a,b,c)).lineSequence()
+            .filter { it.startsWith("all_descriptive,early_warning,BOTH,signed_50,ALL,ALL,") }
+            .map { it.split(',') }.toList()
+        for (lead in listOf("1","2")) {
+            val row=rows.single { it[23]==lead }
+            assertEquals("3",row[7])
+            assertEquals(listOf("2","2","1","66.67","100.00","1","50.00"),
+                row.subList(24,31))
+        }
+        val hold=BtcReversalTimingReport.report(listOf(a,b,c)).lineSequence()
+            .first { it.startsWith("newer_older80,early_warning,BOTH,signed_50,ALL,ALL,") }
+            .split(',')
+        // Discovery has a 50% hour/minute cell, which must not be used in the check.
+        assertEquals("0",hold[7])
+        assertEquals("0",hold[24])
     }
 }
