@@ -16,7 +16,7 @@ internal object BtcSecondWarningReport {
     private data class Count(var buys: Int=0,var coveredBuys: Int=0,var warnings: Int=0,
         var wins: Int=0,var confirmed: Int=0,var confirmedWins: Int=0)
     private data class Replay(val start: Long,val actual: Buy?,val covered: Boolean,
-        val warnings: Map<Pair<Int,Double>,List<Warning>>)
+        val warnings: Map<Pair<Int,Double>,List<Warning>>,val timedNear: Warning?=null)
     private val leads=listOf(15,30)
     private val thresholds=listOf(55.0,56.0,57.0,57.5,58.0,59.0,60.0)
     private fun hour(start: Long)=Instant.ofEpochMilli(start).atZone(zone).hour
@@ -86,7 +86,32 @@ internal object BtcSecondWarningReport {
             }
             observed[left]=row.level
         }
-        return Replay(start,actual,true,warnings)
+        // Replay the exact new live rule on a nominal 5s polling grid. Actual
+        // device polling/network latency can differ; no invented subsecond prices.
+        val liveHistory=mutableListOf<BtcChartProxyMath.Sample>()
+        val readings=mutableListOf<KalshiLiveSignalRules.LiveReading>()
+        var timed: Warning?=null
+        for(row in rows) {
+            val left=15-row.minute
+            val closeAt=start+row.minute*M
+            for(sec in 0..55 step 5) {
+                val cutoff=closeAt-M+sec*1000L
+                val price=priceAt(trades,cutoff) ?: continue
+                val level=BtcChartProxyMath.signedStrength(price,m.base.targetBtc,
+                    row.priorAcm,(start+15*M-cutoff).toDouble()/M)
+                readings.removeAll { cutoff-it.at>30_000L }
+                readings.add(KalshiLiveSignalRules.LiveReading(cutoff,level,price))
+                val near=KalshiLiveSignalRules.matchingFilteredNearBuy(liveHistory,readings,start,hour(start))
+                if(near!=null) {
+                    timed=Warning(near.finishLeft,near.rule.buyUp,near.rule.buyUp==m.base.upWon,
+                        ((closeAt-cutoff)/1000L).toInt())
+                    break
+                }
+            }
+            if(timed!=null) break
+            liveHistory.add(BtcChartProxyMath.Sample(left,row.level))
+        }
+        return Replay(start,actual,true,warnings,timed)
     }
 
     /** Existing 31-column reversal CSV schema. Warning lead is expressed in minutes. */
@@ -242,6 +267,34 @@ internal object BtcSecondWarningReport {
                         emit(days[date] ?: DirectCount(),group.size,"ALL","ALL","near_buy_day_"+date,
                             Instant.ofEpochMilli(group.first().start).atZone(zone).toString(),
                             Instant.ofEpochMilli(group.last().start).atZone(zone).toString(),baseline)
+                    }
+                }
+                // Report fixed all-1000 schedule on each split, without refitting.
+                // The newer split is not independent for this fixed in-sample schedule.
+                if(sample.filter==null) {
+                    val keys=mutableListOf(0 to -1)
+                    keys.addAll((14 downTo 1).map { it to -1 })
+                    keys.addAll((10..22).map { 0 to it })
+                    keys.addAll((10..22).flatMap { h -> (14 downTo 1).map { l -> l to h } })
+                    for((left,h) in keys) {
+                        val group=verified.filter { h<0 || hour(it.start)==h }
+                        val alerts=group.filter { r -> r.timedNear?.let { left==0 || it.left==left }==true }
+                        val wins=alerts.count { it.timedNear?.won==true }
+                        val matches=alerts.filter { r -> r.actual?.let { a ->
+                            a.left==r.timedNear?.left && a.up==r.timedNear?.up
+                        }==true }
+                        val baseline=group.count { r -> r.actual?.let { a ->
+                            (left==0 || a.left==left) && KalshiLiveSignalRules.filteredTime(hour(r.start),a.left)
+                        }==true }
+                        val lead=if(alerts.isEmpty())"" else fmt(alerts.map { it.timedNear!!.seconds }.average())
+                        appendLine(listOf(sample.label,"timed_52_to_55_live_replay","BOTH","fixed_in_sample_80_schedule",
+                            if(left==0)"ALL" else left,if(h<0)"ALL" else h,group.size,alerts.size,
+                            pct(alerts.size,group.size),wins,alerts.size-wins,pct(wins,alerts.size),
+                            "","","","",first,last,"","","","",
+                            "mean_seconds_before_close="+lead,"",baseline,matches.size,alerts.size-matches.size,
+                            pct(matches.size,alerts.size),pct(matches.size,baseline),
+                            matches.count { it.timedNear?.won==true },
+                            pct(matches.count { it.timedNear?.won==true },matches.size)).joinToString(","))
                     }
                 }
                 // Matched verified-data baseline, for a like-for-like comparison.
