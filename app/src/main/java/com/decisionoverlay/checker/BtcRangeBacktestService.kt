@@ -76,14 +76,9 @@ class BtcRangeBacktestService : Service() {
         val alerts = KalshiLiveSignalService(this) { running.get() }
         Thread {
             while (running.get()) {
-                alerts.tick()
-                try { Thread.sleep(7_000L) } catch (_: InterruptedException) { break }
-            }
-        }.start()
-        Thread {
-            while (running.get()) {
                 try {
                     update()
+                    alerts.tick()
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .remove("last_error").apply()
                 } catch (e: Exception) {
@@ -163,6 +158,7 @@ class BtcRangeBacktestService : Service() {
             .put("target_candle_open", targetCandle.at)
             .put("target_high", targetCandle.high).put("target_low", targetCandle.low)
             .put("latest", latest).put("now", receivedAt)
+            .put("live_price", candles[open]!=null && System.currentTimeMillis()/MINUTE==open/MINUTE)
             .put("percent", modeledPct)
         val series = JSONArray()
         for (dot in points) {
