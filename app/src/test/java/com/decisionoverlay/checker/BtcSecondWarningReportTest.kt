@@ -41,6 +41,24 @@ class BtcSecondWarningReportTest {
             it[3]=="threshold_55.00" && it[4]=="ALL" && it[5]=="ALL" }
         assertEquals(2,warnings.size)
         assertTrue(warnings.all { it[7]=="1" && it[25]=="1" && it[26]=="0" })
+        // A direct entry counts even if the close never confirms the signal.
+        val secondStart=start+15*60_000L
+        val secondBase=BinanceTwentySevenPatternReport.Market(secondStart,100.0,101.0,
+            levels.mapIndexed { i,_ -> BinanceTwentySevenPatternReport.Observation(i+1,-55.0,96.0,100.0) })
+        val second=BtcReversalTimingReport.Market(secondBase,rows.map { it.copy(level=-55.0) })
+        val replay=BtcSecondWarningReport.report(listOf(market,second),{from,_->
+            if(from==start)trades else trades.map { it.copy(at=it.at+15*60_000L) }
+        },{_,_->})
+        val direct=replay.lineSequence().first {
+            it.startsWith("all_rounded80_in_sample,near_buy_direct,BOTH,first_15_or_30s_threshold_55.00,ALL,ALL,")
+        }.split(',')
+        assertEquals(listOf("2","2","100.00","1","1","50.00"),direct.subList(6,12))
+        assertEquals("1",direct[25])
+        assertEquals("lead15=0;lead30=2",direct[22])
+        val hold=replay.lineSequence().first {
+            it.startsWith("newer_older80,near_buy_direct,BOTH,first_15_or_30s_threshold_55.00,ALL,ALL,")
+        }.split(',')
+        assertEquals(listOf("1","1","100.00","0","1","0.00"),hold.subList(6,12))
         val missing=BtcSecondWarningReport.report(listOf(market),{_,_->null},{_,_->})
         val row=missing.lineSequence().first { it.startsWith("all_descriptive,second_data_coverage,BOTH,trade_candle_reconciliation,ALL,ALL,") }.split(',')
         assertEquals("0",row[7])
