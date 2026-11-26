@@ -184,6 +184,43 @@ class KalshiPatternBacktestService : Service() {
     }
 
 
+    // Split saturated responses by timestamp instead of silently accepting a
+    // truncated 1,000-trade page. No interpolation of missing seconds.
+    private fun getSecondTrades(start: Long, end: Long): List<BtcSecondWarningReport.Trade>? {
+        var requests=0
+        fun fetch(a: Long,b: Long): List<BtcSecondWarningReport.Trade>? {
+            if(!active.get()) error("Scan stopped")
+            if(++requests>64) return null
+            Thread.sleep(100L)
+            val url="https://api.binance.us/api/v3/aggTrades?symbol="+BtcAcmMath.BTC_SYMBOL+
+                "&limit=1000&startTime="+a+"&endTime="+b
+            val arr=client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+                val body=response.body?.string().orEmpty()
+                if(!response.isSuccessful) error("Historical trades HTTP "+response.code+": "+body.take(120))
+                JSONArray(body)
+            }
+            if(arr.length()>=1000) {
+                if(a==b) return null
+                val mid=a+(b-a)/2
+                val left=fetch(a,mid) ?: return null
+                val right=fetch(mid+1,b) ?: return null
+                return left+right
+            }
+            val trades=ArrayList<BtcSecondWarningReport.Trade>(arr.length())
+            for(i in 0 until arr.length()) {
+                val item=arr.getJSONObject(i)
+                val t=BtcSecondWarningReport.Trade(item.getLong("a"),item.getLong("T"),
+                    item.getDouble("p"),item.getDouble("q"))
+                if(t.at !in a..b || !t.price.isFinite() || t.price<=0 ||
+                    !t.qty.isFinite() || t.qty<=0) return null
+                trades.add(t)
+            }
+            if(trades.map { it.id }.distinct().size!=trades.size) return null
+            return trades
+        }
+        return fetch(start,end)
+    }
+
     private fun buildMarket(
         start: Long, candles: Map<Long, BtcAcmMath.Candle>
     ): BinanceTwentySevenPatternReport.Market? {
@@ -274,11 +311,25 @@ class KalshiPatternBacktestService : Service() {
             .take(TARGET_MARKETS).sortedBy { it.startMs }
         if (reversalRun) {
             status("Analyzing fixed-direction reversals and existing alert timing...")
-            val csv = BtcReversalTimingReport.report(chosen.map { reversalExamples.getValue(it.startMs) })
+            val examplesForReport=chosen.map { reversalExamples.getValue(it.startMs) }
+            val csv=BtcReversalTimingReport.report(examplesForReport)
             check(active.get()) { "Scan stopped" }
-            prefs.edit().putString(REVERSAL_RESULT, csv).putString(REVERSAL_STATUS,
+            // Preserve the minute report if the exchange blocks the more expensive tick replay.
+            prefs.edit().putString(REVERSAL_RESULT,csv).apply()
+            status("Downloading historical BTC trades for 15/30-second warnings...")
+            val secondReport=try {
+                BtcSecondWarningReport.report(examplesForReport,::getSecondTrades) { done,total ->
+                    if(done%25==0 || done==total)
+                        status("15/30-second historical trade replay: "+done+"/"+total+" markets")
+                }
+            } catch(e: Exception) {
+                status("Minute report saved; 15/30-second replay INCOMPLETE: "+(e.message ?: e.javaClass.simpleName))
+                return
+            }
+            check(active.get()) { "Scan stopped" }
+            prefs.edit().putString(REVERSAL_RESULT,csv+secondReport).putString(REVERSAL_STATUS,
                 (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
-                    ": " + chosen.size + "/1000 markets; Binance index only, not Kalshi prices. Download CSV for all rows.").apply()
+                    ": "+chosen.size+"/1000 markets; 15/30-second replay included. Check trade-data coverage in CSV. Binance index only.").apply()
             return
         }
         if (dailyRun) {
