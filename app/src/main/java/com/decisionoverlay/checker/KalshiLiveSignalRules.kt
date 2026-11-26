@@ -250,6 +250,81 @@ object KalshiLiveSignalRules {
         }
     }
 
+    // Frozen from BTC-reversal-20261125-223617.csv: combined UP/DOWN first BUY,
+    // all 1,000 markets, rounded win rate >=80%. In-sample research, not
+    // a validated probability for the new early trigger.
+    private val filteredFinishMinutes = mapOf(
+        10 to setOf(4,7,9,11,12),
+        11 to setOf(4,5,7,9,12),
+        12 to setOf(4,6,8,9,11,12),
+        13 to setOf(4,5,6,7,11,12),
+        14 to setOf(5,7,8,11,12),
+        15 to setOf(4,10,12),
+        16 to setOf(5,6,9),
+        17 to setOf(5,7,8,9,10,12),
+        18 to setOf(4,5,7,9),
+        19 to setOf(7,11),
+        20 to setOf(6,7,8,10,11,12),
+        21 to setOf(4,5,6,7,8,9,11,12),
+        22 to setOf(4,8,9,10,12)
+    )
+    fun filteredTime(hour: Int, finishLeft: Int): Boolean =
+        filteredFinishMinutes[hour]?.contains(finishLeft) == true
+
+    data class LiveReading(val at: Long, val level: Double, val price: Double)
+    data class NearBuy(val rule: Rule, val window: Window, val finishLeft: Int,
+        val elapsedMs: Long, val projectedMsTo60: Long)
+
+    /**
+     * Only fresh observed readings, no synthetic minute-close or center points.
+     * Same side 50..52 to 55..59.99 in <=30s, outward price movement, and
+     * projected 60 before the original eligible destination candle closes.
+     * No claim that the price will actually reach 60 or settle in this direction.
+     */
+    fun matchingFilteredNearBuy(history: List<BtcChartProxyMath.Sample>,
+        readings: List<LiveReading>, marketStart: Long, hour: Int): NearBuy? {
+        val latest=readings.lastOrNull() ?: return null
+        val previous=readings.getOrNull(readings.lastIndex-1) ?: return null
+        val magnitude=abs(latest.level)
+        if (!magnitude.isFinite() || magnitude<55.0 || magnitude>=60.0 ||
+            !latest.price.isFinite() || latest.price<=0 ||
+            abs(previous.level)>=55.0 || latest.at-previous.at !in 1L..10_000L ||
+            latest.at !in (marketStart+60_000L) until (marketStart+14*60_000L)) return null
+        val side=if(latest.level>0) 1 else -1
+        if (previous.level*side<=0) return null
+        val prior=readings.asReversed().drop(1).firstOrNull {
+            it.at>=marketStart && latest.at-it.at in 1L..30_000L &&
+                it.level*side in 50.0..52.0
+        } ?: return null
+        val path=readings.filter { it.at in prior.at..latest.at }
+        if(path.any { !it.level.isFinite() || !it.price.isFinite() || it.level*side<=0 } ||
+            path.zipWithNext().any { (a,b) -> b.at-a.at !in 1L..10_000L ||
+                abs(b.level)<abs(a.level) || (b.price-a.price)*side<0 } ||
+            (latest.price-prior.price)*side<=0) return null
+        val elapsed=latest.at-prior.at
+        val velocity=(magnitude-abs(prior.level))/elapsed
+        if (velocity<=0 || !velocity.isFinite()) return null
+        val projected=kotlin.math.ceil((60.0-magnitude)/velocity).toLong()
+        val finishAt=marketStart+((latest.at-marketStart)/60_000L+1)*60_000L
+        val finishLeft=((marketStart+15*60_000L-finishAt)/60_000L).toInt()
+        if(!filteredTime(hour,finishLeft) || projected>finishAt-latest.at) return null
+        val completed=history.filter { it.left>finishLeft && it.left in 1..14 }.associateBy { it.left }
+        return rules.mapNotNull { rule ->
+            if(rule.buyUp!=(side>0)) return@mapNotNull null
+            val startLeft=finishLeft+rule.gapMinutes
+            if(BtcExhaustivePatternReport.band(completed[startLeft]?.signedLevel ?: Double.NaN)!=rule.fromBand)
+                return@mapNotNull null
+            val window=windowFor(rule,startLeft,finishLeft)?.takeIf { it.eligible }
+                ?: return@mapNotNull null
+            val alreadyMatched=completed.values.any { earlier ->
+                BtcExhaustivePatternReport.band(earlier.signedLevel)==rule.toBand &&
+                    BtcExhaustivePatternReport.band(completed[earlier.left+rule.gapMinutes]?.signedLevel ?: Double.NaN)==rule.fromBand &&
+                    windowFor(rule,earlier.left+rule.gapMinutes,earlier.left)?.eligible==true
+            }
+            if(alreadyMatched) null else NearBuy(rule,window,finishLeft,elapsed,projected)
+        }.maxByOrNull { it.window.winRatePercent }
+    }
+
     data class Signal(
         val rule: Rule,
         val startLeft: Int,
