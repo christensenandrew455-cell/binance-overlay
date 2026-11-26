@@ -11,14 +11,14 @@ internal object BtcSecondWarningReport {
     private val zone = ZoneId.of("America/New_York")
     data class Trade(val id: Long, val at: Long, val price: Double, val qty: Double)
     private data class Buy(val left: Int,val up: Boolean,val won: Boolean)
-    private data class Warning(val left: Int,val up: Boolean,val won: Boolean)
+    private data class Warning(val left: Int,val up: Boolean,val won: Boolean,val seconds: Int)
     private data class Key(val seconds: Int,val threshold: Double,val left: Int,val hour: Int)
     private data class Count(var buys: Int=0,var coveredBuys: Int=0,var warnings: Int=0,
         var wins: Int=0,var confirmed: Int=0,var confirmedWins: Int=0)
     private data class Replay(val start: Long,val actual: Buy?,val covered: Boolean,
         val warnings: Map<Pair<Int,Double>,List<Warning>>)
     private val leads=listOf(15,30)
-    private val thresholds=listOf(55.0,57.5,60.0)
+    private val thresholds=listOf(55.0,56.0,57.0,57.5,58.0,59.0,60.0)
     private fun hour(start: Long)=Instant.ofEpochMilli(start).atZone(zone).hour
     private fun fmt(n: Double)=String.format(Locale.US,"%.2f",n)
     private fun pct(n: Int,d: Int)=if(d==0) "" else fmt(100.0*n/d)
@@ -58,7 +58,6 @@ internal object BtcSecondWarningReport {
         val warnings=mutableMapOf<Pair<Int,Double>,MutableList<Warning>>()
         for(row in rows) {
             val left=15-row.minute
-            if(actual!=null && left<actual.left) break
             val closeAt=start+row.minute*M
             for(seconds in leads) {
                 val cutoff=closeAt-seconds*1000L
@@ -71,13 +70,18 @@ internal object BtcSecondWarningReport {
                     val from=left+rule.gapMinutes
                     rule.buyUp==up && from in 1..14 &&
                         BtcExhaustivePatternReport.band(observed[from] ?: Double.NaN)==rule.fromBand &&
-                        KalshiLiveSignalRules.windowFor(rule,from,left)?.eligible==true
+                        KalshiLiveSignalRules.windowFor(rule,from,left)?.eligible==true &&
+                        observed.none { (prior,priorLevel) ->
+                            prior>left && BtcExhaustivePatternReport.band(priorLevel)==rule.toBand &&
+                                BtcExhaustivePatternReport.band(observed[prior+rule.gapMinutes] ?: Double.NaN)==rule.fromBand &&
+                                KalshiLiveSignalRules.windowFor(rule,prior+rule.gapMinutes,prior)?.eligible==true
+                        }
                 }
                 if(!hasStart) continue
                 for(threshold in thresholds) {
                     if(abs(level)<threshold) continue
                     warnings.getOrPut(seconds to threshold){mutableListOf()}
-                        .add(Warning(left,up,up==m.base.upWon))
+                        .add(Warning(left,up,up==m.base.upWon,seconds))
                 }
             }
             observed[left]=row.level
@@ -102,9 +106,13 @@ internal object BtcSecondWarningReport {
             .groupBy({it.first},{it.second})
         val keep=olderCells.filterValues { it.isNotEmpty() && 1000L*it.count { b -> b.won }>=795L*it.size }.keys
         val keep10=olderCells.filterValues { it.size>=10 && 1000L*it.count { b -> b.won }>=795L*it.size }.keys
+        val allCells=results.mapNotNull { r -> r.actual?.let { (hour(r.start) to it.left) to it } }
+            .groupBy({it.first},{it.second})
+        val allKeep=allCells.filterValues { 1000L*it.count { b -> b.won }>=795L*it.size }.keys
         data class Sample(val label: String,val rows: List<Replay>,val filter: Set<Pair<Int,Int>>?)
         val samples=listOf(Sample("older_discovery",older,null),Sample("newer_check",newer,null),
-            Sample("all_descriptive",results,null),Sample("newer_older80",newer,keep),
+            Sample("all_descriptive",results,null),Sample("all_rounded80_in_sample",results,allKeep),
+            Sample("older_rounded80_discovery",older,keep),Sample("newer_older80",newer,keep),
             Sample("newer_older80_min10",newer,keep10))
         return buildString {
             for(sample in samples) {
@@ -135,7 +143,7 @@ internal object BtcSecondWarningReport {
                         }
                         // First warning per market, with filter applied before selecting it.
                         val w=r.warnings[s to t].orEmpty().firstOrNull {
-                            sample.filter==null || (h to it.left) in sample.filter
+                            (a==null || it.left>=a.left) && (sample.filter==null || (h to it.left) in sample.filter)
                         } ?: continue
                         val confirmed=eligible && a!=null && a.left==w.left && a.up==w.up
                         for(k in keys(s,t,w.left,h)) {
@@ -167,6 +175,84 @@ internal object BtcSecondWarningReport {
                             c.confirmedWins,pct(c.confirmedWins,c.confirmed)).joinToString(","))
                     }
                 }
+                // Direct entry: one candidate per market, no subsequent confirmation required.
+                // A skipped confirmed BUY does not stop the direct strategy from finding a later
+                // eligible setup. Both cutoff choices are individually tested, plus earliest of either.
+                data class DirectCount(var entries: Int=0,var wins: Int=0,var exactMatches: Int=0,
+                    var matchedWins: Int=0,var lead15: Int=0,var lead30: Int=0)
+                val verified=sample.rows.filter { it.covered }
+                for (mode in listOf(15,30,0)) for(t in thresholds) {
+                    val cells=mutableMapOf<Pair<Int,Int>,DirectCount>()
+                    val days=mutableMapOf<String,DirectCount>()
+                    val dates=verified.groupBy { Instant.ofEpochMilli(it.start).atZone(zone).toLocalDate().toString() }
+                    for(r in verified) {
+                        val h=hour(r.start)
+                        val candidates=(if(mode==0) leads else listOf(mode))
+                            .flatMap { r.warnings[it to t].orEmpty() }
+                            .filter { sample.filter==null || (h to it.left) in sample.filter }
+                        // More minutes left is earlier; at the same minute 30s is earlier than 15s.
+                        val w=candidates.sortedWith(compareByDescending<Warning>{it.left}
+                            .thenByDescending{it.seconds}).firstOrNull() ?: continue
+                        val a=r.actual
+                        val exact=a!=null && a.left==w.left && a.up==w.up
+                        fun add(c: DirectCount) {
+                            c.entries++
+                            if(w.won)c.wins++
+                            if(exact){c.exactMatches++; if(w.won)c.matchedWins++}
+                            if(w.seconds==15)c.lead15++ else c.lead30++
+                        }
+                        for(k in listOf(0 to -1,w.left to -1,0 to h,w.left to h)) {
+                            add(cells.getOrPut(k){DirectCount()})
+                        }
+                        val date=Instant.ofEpochMilli(r.start).atZone(zone).toLocalDate().toString()
+                        add(days.getOrPut(date){DirectCount()})
+                    }
+                    val setup=(if(mode==0) "first_15_or_30s_" else mode.toString()+"s_")+"threshold_"+fmt(t)
+                    fun emit(c: DirectCount,n: Int,left: Any,hour: Any,label: String,
+                        firstTime: String,lastTime: String,baselineBuys: Int) {
+                        appendLine(listOf(sample.label,label,"BOTH",setup,left,hour,n,
+                            c.entries,pct(c.entries,n),c.wins,c.entries-c.wins,pct(c.wins,c.entries),
+                            "","","","",firstTime,lastTime,"","","","",
+                            "lead15="+c.lead15+";lead30="+c.lead30,
+                            if(mode==0)"" else if(mode==15)"0.25" else "0.50",
+                            baselineBuys,c.exactMatches,c.entries-c.exactMatches,
+                            pct(c.exactMatches,c.entries),pct(c.exactMatches,baselineBuys),
+                            c.matchedWins,pct(c.matchedWins,c.exactMatches)).joinToString(","))
+                    }
+                    val output=linkedSetOf(0 to -1)
+                    output.addAll((14 downTo 1).map { it to -1 })
+                    output.addAll((10..22).map { 0 to it })
+                    output.addAll(cells.keys.filter { it.first>0 && it.second>=0 }
+                        .sortedWith(compareBy<Pair<Int,Int>>{it.second}.thenByDescending{it.first}))
+                    for((left,h) in output) {
+                        val group=if(h<0)verified else verified.filter { hour(it.start)==h }
+                        val baseline=group.count { r ->
+                            val a=r.actual
+                            a!=null && (left==0 || a.left==left) &&
+                                (sample.filter==null || (hour(r.start) to a.left) in sample.filter)
+                        }
+                        emit(cells[left to h] ?: DirectCount(),group.size,
+                            if(left==0)"ALL" else left,if(h<0)"ALL" else h,"near_buy_direct",
+                            first,last,baseline)
+                    }
+                    for((date,group) in dates) {
+                        val baseline=group.count { r -> r.actual?.let {
+                            sample.filter==null || (hour(r.start) to it.left) in sample.filter
+                        }==true }
+                        emit(days[date] ?: DirectCount(),group.size,"ALL","ALL","near_buy_day_"+date,
+                            Instant.ofEpochMilli(group.first().start).atZone(zone).toString(),
+                            Instant.ofEpochMilli(group.last().start).atZone(zone).toString(),baseline)
+                    }
+                }
+                // Matched verified-data baseline, for a like-for-like comparison.
+                val baseline=verified.filter { r -> r.actual?.let {
+                    sample.filter==null || (hour(r.start) to it.left) in sample.filter
+                }==true }
+                val wins=baseline.count { it.actual?.won==true }
+                appendLine(listOf(sample.label,"confirmed_buy_baseline","BOTH","first_buy_verified_markets",
+                    "ALL","ALL",verified.size,baseline.size,pct(baseline.size,verified.size),
+                    wins,baseline.size-wins,pct(wins,baseline.size),"","","","",first,last,
+                    "","","","","","","","","","","","","").joinToString(","))
             }
         }
     }
