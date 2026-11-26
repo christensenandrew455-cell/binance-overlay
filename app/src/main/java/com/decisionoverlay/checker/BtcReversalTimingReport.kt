@@ -67,10 +67,105 @@ internal object BtcReversalTimingReport {
             appendLine(listOf(label,"bankroll_simulation","BOTH","day_" + date,"ALL","ALL",
                 group.size,wins+losses,pct(wins+losses,group.size),wins,losses,pct(wins,wins+losses),
                 "","","","",first,last,fmt(opening/100.0),fmt(stake/100.0),fmt(balance/100.0),
-                fmt(net/100.0),reason).joinToString(","))
+                fmt(net/100.0),reason).joinToString(",") + ",,,,,,,,")
             priorProfit = net
             if (balance >= 200_000L || balance <= 0L) break
         }
+    }
+    private data class WarningCell(val left: Int,val hour: Int)
+    private data class WarningCount(var alerts: Int=0,var directionWins: Int=0,
+        var eligibleBuys: Int=0,var confirmed: Int=0,var confirmedWins: Int=0)
+
+    // A warning is a forecast at a completed candle, not an order or a BUY.
+    // Every strategy emits at most one warning per market. A match must be the
+    // actual first BUY, on the warned side at the exact predicted finish minute.
+    private fun StringBuilder.warningRows(markets: List<Market>, buys: List<FirstBuy>, cut: Int) {
+        val buyByStart=buys.associateBy { it.startMs }
+        val olderStarts=markets.take(cut).map { it.base.startMs }.toSet()
+        val olderCells=buys.filter { it.startMs in olderStarts }.groupBy { clockCell(it) }
+        val keep80=olderCells.filterValues { a -> 1000L*a.count { it.won } >= 795L*a.size }.keys
+        val keep80Min10=olderCells.filterValues { a ->
+            a.size>=10 && 1000L*a.count { it.won } >= 795L*a.size
+        }.keys
+        data class Sample(val label: String,val markets: List<Market>,val keep: Set<Pair<Int,Int>>?)
+        val samples=listOf(Sample("older_discovery",markets.take(cut),null),
+            Sample("newer_check",markets.drop(cut),null),Sample("all_descriptive",markets,null),
+            Sample("newer_older80",markets.drop(cut),keep80),
+            Sample("newer_older80_min10",markets.drop(cut),keep80Min10))
+        val summaries=mutableListOf<String>()
+        val details=mutableListOf<String>()
+        for (sample in samples) {
+            val first=sample.markets.firstOrNull()?.let { Instant.ofEpochMilli(it.base.startMs).atZone(zone).toString() }.orEmpty()
+            val last=sample.markets.lastOrNull()?.let { Instant.ofEpochMilli(it.base.startMs).atZone(zone).toString() }.orEmpty()
+            val hourCounts=sample.markets.groupingBy { Instant.ofEpochMilli(it.base.startMs).atZone(zone).hour }.eachCount()
+            for (lead in 1..4) for (variant in listOf("signed_50","signed_55","momentum_volume")) {
+                val counts=mutableMapOf<WarningCell,WarningCount>()
+                fun cells(left: Int,hour: Int) = listOf(WarningCell(0,-1),WarningCell(left,-1),
+                    WarningCell(0,hour),WarningCell(left,hour))
+                for (m in sample.markets) {
+                    val hour=Instant.ofEpochMilli(m.base.startMs).atZone(zone).hour
+                    val actual=buyByStart[m.base.startMs]
+                    val eligible=actual!=null && (sample.keep==null || clockCell(actual) in sample.keep)
+                    if (actual!=null && eligible) for (key in cells(actual.left,hour)) {
+                        counts.getOrPut(key){WarningCount()}.eligibleBuys++
+                    }
+                    val observed=mutableMapOf<Int,Row>()
+                    for (row in m.rows.sortedBy { it.minute }) {
+                        val left=15-row.minute
+                        if (left !in 1..14 || !row.level.isFinite()) continue
+                        // Once the real first BUY has occurred, do not issue a warning.
+                        if (actual!=null && left<=actual.left) break
+                        observed[left]=row
+                        val finish=left-lead
+                        if (finish !in 1..14 || (sample.keep!=null && (hour to finish) !in sample.keep)) continue
+                        val currentBand=BtcExhaustivePatternReport.band(row.level) ?: continue
+                        if (abs(currentBand)!=50) continue
+                        val sign=if(currentBand>0) 1 else -1
+                        if (variant=="signed_55" && abs(row.level)<55.0) continue
+                        if (variant=="momentum_volume" && !(row.momentum1*sign>0 &&
+                            row.momentum3*sign>0 && row.volumeRatio.isFinite() && row.volumeRatio>=1.0)) continue
+                        val candidates=KalshiLiveSignalRules.rules.filter { rule ->
+                            if (rule.fromBand!=currentBand) return@filter false
+                            val start=finish+rule.gapMinutes
+                            if (start !in 1..14 || KalshiLiveSignalRules.windowFor(rule,start,finish)?.eligible!=true) return@filter false
+                            // If rule start is in the past or now, require its observed band.
+                            // Otherwise forecast that the current 50-band persists to the future start.
+                            start<left || BtcExhaustivePatternReport.band(
+                                observed[start]?.level ?: Double.NaN)==rule.fromBand
+                        }
+                        if (candidates.isEmpty()) continue
+                        val buyUp=sign>0
+                        val won=buyUp==m.base.upWon
+                        val confirmed=eligible && actual!=null && actual.left==finish && actual.buyUp==buyUp
+                        for (key in cells(finish,hour)) {
+                            val c=counts.getOrPut(key){WarningCount()}
+                            c.alerts++; if(won)c.directionWins++
+                            if(confirmed){c.confirmed++; if(won)c.confirmedWins++}
+                        }
+                        break
+                    }
+                }
+                val outputCells=linkedSetOf(WarningCell(0,-1))
+                outputCells.addAll((14 downTo 1).map { WarningCell(it,-1) })
+                outputCells.addAll((10..22).map { WarningCell(0,it) })
+                outputCells.addAll(counts.keys.filter { it.left>0 && it.hour>=0 }.sortedWith(
+                    compareBy<WarningCell>{it.hour}.thenByDescending{it.left}))
+                for (key in outputCells) {
+                    val c=counts[key] ?: WarningCount()
+                    val n=if(key.hour<0)sample.markets.size else hourCounts[key.hour] ?: 0
+                    val line=listOf(sample.label,"early_warning","BOTH",variant,
+                        if(key.left==0)"ALL" else key.left,if(key.hour<0)"ALL" else key.hour,
+                        n,c.alerts,pct(c.alerts,n),c.directionWins,c.alerts-c.directionWins,
+                        pct(c.directionWins,c.alerts),lower(c.directionWins,c.alerts),
+                        "","","",first,last,"","","","","",lead,c.eligibleBuys,c.confirmed,
+                        c.alerts-c.confirmed,pct(c.confirmed,c.alerts),pct(c.confirmed,c.eligibleBuys),
+                        c.confirmedWins,pct(c.confirmedWins,c.confirmed)).joinToString(",")
+                    if(key.left==0 && key.hour<0) summaries.add(line) else details.add(line)
+                }
+            }
+        }
+        summaries.forEach { appendLine(it) }
+        details.forEach { appendLine(it) }
     }
     private fun band(level: Double): Int = if (level == 0.0) 0 else
         (abs(level)/10).toInt().coerceIn(5,9)*10
@@ -187,7 +282,7 @@ internal object BtcReversalTimingReport {
             1000L*a.count { it.won } >= 795L*a.size
         }.keys
         return buildString {
-            appendLine("split,family,side,setup,minutes_left_or_ALL,market_start_hour_ET_or_ALL,eligible_markets,hits,hit_rate_pct,settlement_wins,settlement_losses,win_rate_pct,wilson95_lower_pct,later_target_cross_or_win,subsequent_opposite_close,opposite_close_pct,first_market_ET,last_market_ET,opening_balance_usd,stake_usd,ending_balance_usd,net_pnl_usd,stop_reason")
+            appendLine("split,family,side,setup,minutes_left_or_ALL,market_start_hour_ET_or_ALL,eligible_markets,hits,hit_rate_pct,settlement_wins,settlement_losses,win_rate_pct,wilson95_lower_pct,later_target_cross_or_win,subsequent_opposite_close,opposite_close_pct,first_market_ET,last_market_ET,opening_balance_usd,stake_usd,ending_balance_usd,net_pnl_usd,stop_reason,warning_lead_minutes,eligible_first_buys,confirmed_buy_alerts,unconfirmed_warnings,confirmation_rate_pct,buy_coverage_pct,confirmed_buy_wins,confirmed_buy_win_rate_pct")
             for ((split,sample) in splits) {
                 val map=results.getValue(split)
                 val hourCounts=sample.groupingBy { Instant.ofEpochMilli(it.base.startMs).atZone(zone).hour }.eachCount()
@@ -205,7 +300,7 @@ internal object BtcReversalTimingReport {
                         appendLine(listOf(split,family,side,setup,if(left==0)"ALL" else left,if(hour<0)"ALL" else hour,
                             n,c.hits,pct(c.hits,n),c.wins,c.hits-c.wins,pct(c.wins,c.hits),lower(c.wins,c.hits),
                             c.crosses,if(family=="existing_first_alert") "" else c.follow,
-                            if(family=="existing_first_alert") "" else pct(c.follow,c.hits),first,last,"","","","","").joinToString(","))
+                            if(family=="existing_first_alert") "" else pct(c.follow,c.hits),first,last,"","","","","").joinToString(",") + ",,,,,,,,")
                     }
                 }
             }
@@ -224,7 +319,7 @@ internal object BtcReversalTimingReport {
                         appendLine(listOf("day_"+date,"existing_first_alert",d,"frozen_buy",
                             if(l==0)"ALL" else l,"ALL",n,c.hits,pct(c.hits,n),
                             c.wins,c.hits-c.wins,pct(c.wins,c.hits),lower(c.wins,c.hits),
-                            c.crosses,"","",first,last,"","","","","").joinToString(","))
+                            c.crosses,"","",first,last,"","","","","").joinToString(",") + ",,,,,,,,")
                     }
                 }
             }
@@ -240,8 +335,9 @@ internal object BtcReversalTimingReport {
                     if(a==null) "no_buy" else if(clockCell(a) in selectedCells) "rounded80_keep" else "rounded80_skip",
                     a?.left?.toString().orEmpty(),time.hour,1,hit,pct(hit,1),win,hit-win,
                     pct(win,hit),"","","","",time.toString(),
-                    time.plusMinutes(15).toString(),"","","","","").joinToString(","))
+                    time.plusMinutes(15).toString(),"","","","","").joinToString(",") + ",,,,,,,,")
             }
+            warningRows(markets,firstBuys,cut)
             // In-sample filter is descriptive only. Never changes the live alert rules.
             for (dailyStop in listOf(false,true)) {
                 bankrollRows(markets,firstBuys,selectedCells,false,dailyStop)
