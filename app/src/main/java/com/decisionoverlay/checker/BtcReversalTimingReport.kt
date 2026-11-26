@@ -22,7 +22,7 @@ internal object BtcReversalTimingReport {
             fun change(a: Double,b: Double) = 100*(a/b-1)
             val one = change(close(0),close(1))
             val previous = change(close(1),close(2))
-            val volumes = (1..59).map { candles.getValue(t-it*M).volume }
+            val volumes = (1..60).map { candles.getValue(t-it*M).volume }
             val v = candles.getValue(t).volume
             val avg = volumes.average()
             val ratio = if (v.isFinite() && v >= 0 && volumes.all { it.isFinite() && it >= 0 } && avg > 0) v/avg else Double.NaN
@@ -75,7 +75,9 @@ internal object BtcReversalTimingReport {
                         // A subsequent candle touch is not the same as a winning settlement.
                         val crossed=m.base.minutes.any { o -> o.minute>r.minute &&
                             if(buyUp) o.high>m.base.targetBtc else o.low<m.base.targetBtc } || won
-                        for ((l,h) in listOf(0 to -1,left to -1,0 to hour,left to hour)) {
+                        val cells = mutableListOf(0 to -1,left to -1,0 to hour)
+                        if(family=="existing_first_alert" || family=="band_reversal" || family=="same_side_pullback") cells.add(left to hour)
+                        for ((l,h) in cells) {
                             val key=Key(family,name,setup,l,h)
                             if(!seen.add(key)) continue
                             val c=counts.getOrPut(key){Count()}
@@ -121,8 +123,9 @@ internal object BtcReversalTimingReport {
         }
         // Include zero-match cells for each observed setup and each clock/minute group.
         // Overall counts use the first match per market; exact-time rows use the first match within that cell.
+        val jointCells=keys.filter { it.left>0 && it.hour>=0 && (it.family=="existing_first_alert" || it.family=="band_reversal" || it.family=="same_side_pullback") }.groupBy { Triple(it.family,it.side,it.setup) }
         val setups=keys.map { Triple(it.family,it.side,it.setup) }.distinct().sortedWith(
-            compareBy<Triple<String,String,String>>{it.first}.thenBy{it.second}.thenBy{it.third})
+            compareBy<Triple<String,String,String>>{ if(it.first=="existing_first_alert") 0 else if(it.first=="same_side_pullback") 1 else if(it.first=="band_reversal") 2 else 3 }.thenBy{it.first}.thenBy{it.second}.thenBy{it.third})
         return buildString {
             appendLine("split,family,side,setup,minutes_left_or_ALL,market_start_hour_ET_or_ALL,eligible_markets,hits,hit_rate_pct,settlement_wins,settlement_losses,win_rate_pct,wilson95_lower_pct,later_target_cross_or_win,subsequent_opposite_close,opposite_close_pct,first_market_ET,last_market_ET")
             for ((split,sample) in splits) {
@@ -135,7 +138,7 @@ internal object BtcReversalTimingReport {
                     val cells=mutableListOf(0 to -1)
                     cells.addAll((14 downTo 1).map { it to -1 })
                     cells.addAll((10..22).map { 0 to it })
-                    cells.addAll(keys.filter { it.family==family && it.side==side && it.setup==setup && it.left>0 && it.hour>=0 }.map { it.left to it.hour })
+                    cells.addAll(jointCells[Triple(family,side,setup)].orEmpty().map { it.left to it.hour })
                     for ((left,hour) in cells.distinct()) {
                         val c=map[Key(family,side,setup,left,hour)] ?: Count()
                         val n=if(hour<0) sample.size else hourCounts[hour] ?: 0
