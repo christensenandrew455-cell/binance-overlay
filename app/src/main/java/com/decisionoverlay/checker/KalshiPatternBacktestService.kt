@@ -32,6 +32,9 @@ class KalshiPatternBacktestService : Service() {
         const val EXHAUSTIVE = "btc.exhaustive.START"
         const val FOCUSED = "btc.focused.START"
         const val DAILY = "btc.daily.START"
+        const val REVERSAL = "btc.reversal.START"
+        const val REVERSAL_RESULT = "btc_reversal_csv_v1"
+        const val REVERSAL_STATUS = "btc_reversal_status_v1"
         const val DAILY_RESULT = "btc_daily_report_v2"
         const val DAILY_CSV = "btc_daily_csv_v2"
         const val DAILY_STATUS = "btc_daily_status_v2"
@@ -57,8 +60,10 @@ class KalshiPatternBacktestService : Service() {
     private var exhaustiveRun = false
     private var focusedRun = false
     private var dailyRun = false
+    private var reversalRun = false
     private var dailyConfig = BtcDailyProfitReport.Config()
     private fun statusKey(): String = when {
+        reversalRun -> REVERSAL_STATUS
         dailyRun -> DAILY_STATUS
         focusedRun -> FOCUSED_STATUS
         exhaustiveRun -> EXHAUSTIVE_STATUS
@@ -66,6 +71,7 @@ class KalshiPatternBacktestService : Service() {
         else -> STATUS
     }
     private fun resultKey(): String = when {
+        reversalRun -> REVERSAL_RESULT
         dailyRun -> DAILY_RESULT
         focusedRun -> FOCUSED_RESULT
         exhaustiveRun -> EXHAUSTIVE_RESULT
@@ -118,6 +124,7 @@ class KalshiPatternBacktestService : Service() {
         exhaustiveRun = intent?.action == EXHAUSTIVE
         focusedRun = intent?.action == FOCUSED
         dailyRun = intent?.action == DAILY
+        reversalRun = intent?.action == REVERSAL
         if (dailyRun) {
             dailyConfig = BtcDailyProfitReport.Config()
             prefs.edit().remove(DAILY_CSV).apply()
@@ -214,6 +221,7 @@ class KalshiPatternBacktestService : Service() {
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
         val selected = LinkedHashMap<Long, BinanceTwentySevenPatternReport.Market>()
         val examples = mutableMapOf<Long, BtcEdgeTest.Market>()
+        val reversalExamples = mutableMapOf<Long, BtcReversalTimingReport.Market>()
         val warmup = if (edge) 345L else 60L
         var pageCount = 0
         for (page in 1..MAX_PAGES) {
@@ -222,7 +230,7 @@ class KalshiPatternBacktestService : Service() {
             val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
             val close = minOf(lastClose, day.atTime(23, 0).atZone(zone).toInstant().toEpochMilli())
             // The first hour supplies the rolling warmup from this session.
-            val fetchStart = if (focused || dailyRun) open - warmup * MINUTE_MS else open
+            val fetchStart = if (focused || dailyRun || reversalRun) open - warmup * MINUTE_MS else open
             val firstMarket = fetchStart + warmup * MINUTE_MS
             if (close - firstMarket < QUARTER_MS) continue
             val candles = getCandles(fetchStart, close - 1).associateBy { it.at }
@@ -236,6 +244,7 @@ class KalshiPatternBacktestService : Service() {
                 }
                 val market = buildMarket(start, candles) ?: continue
                 if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
+                if (reversalRun) reversalExamples[start] = BtcReversalTimingReport.market(market, candles)
                 selected[start] = market
                 if (selected.size == TARGET_MARKETS) break
             }
@@ -263,6 +272,15 @@ class KalshiPatternBacktestService : Service() {
 
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
+        if (reversalRun) {
+            status("Analyzing fixed-direction reversals and existing alert timing...")
+            val csv = BtcReversalTimingReport.report(chosen.map { reversalExamples.getValue(it.startMs) })
+            check(active.get()) { "Scan stopped" }
+            prefs.edit().putString(REVERSAL_RESULT, csv).putString(REVERSAL_STATUS,
+                (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
+                    ": " + chosen.size + "/1000 markets; Binance index only, not Kalshi prices. Download CSV for all rows.").apply()
+            return
+        }
         if (dailyRun) {
             status("Replaying existing buy alerts and grouping daily P&L...")
             val result = BtcDailyProfitReport.analyze(chosen, dailyConfig)
