@@ -50,4 +50,21 @@ class BtcReversalTimingReportTest {
         assertEquals(listOf("1","0","0.00","0","0",""),row("2026-11-02","12").subList(6,12))
         assertEquals(listOf("2","0","0.00","0","0",""),row("2026-11-01","14").subList(6,12))
     }
+
+    @Test fun bankrollUsesFirstBuysInOrderAndSkipsLowRateCell() {
+        val a=market(0,listOf(-55.0,-55.0,-65.0),99.0)
+        val b=market(1,listOf(-55.0,-55.0,-65.0),101.0)
+        val c=market(96,listOf(85.0,85.0,85.0),101.0)
+        val rows=BtcReversalTimingReport.report(listOf(b,c,a,a)).lineSequence()
+            .filter { it.isNotBlank() }.map { it.split(',') }.toList()
+        assertTrue(rows.all { it.size==23 })
+        val ledger=rows.filter { it[0]=="trade_ledger" }
+        assertEquals(3,ledger.size)
+        assertEquals(listOf("1","0","0"),ledger.map { it[9] })
+        assertEquals(listOf("rounded80_skip","rounded80_skip","no_buy"),ledger.map { it[3] })
+        val all=rows.first { it[0]=="all_alerts_no_daily_stop" }
+        assertEquals(listOf("200.00","60.00","164.00","-36.00","day_end"),all.subList(18,23))
+        val filtered=rows.first { it[0]=="rounded80_in_sample_no_daily_stop" }
+        assertEquals(listOf("200.00","60.00","200.00","0.00","day_end"),filtered.subList(18,23))
+    }
 }
