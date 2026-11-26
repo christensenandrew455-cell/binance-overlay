@@ -33,6 +33,45 @@ internal object BtcReversalTimingReport {
     }
     private data class Key(val family: String,val side: String,val setup: String,val left: Int,val hour: Int)
     private data class Count(var hits: Int=0,var wins: Int=0,var crosses: Int=0,var follow: Int=0)
+    private data class FirstBuy(val startMs: Long, val left: Int, val buyUp: Boolean, val won: Boolean)
+    private fun clockCell(a: FirstBuy) = Instant.ofEpochMilli(a.startMs).atZone(zone).hour to a.left
+
+    // All amounts are integer cents. Stakes are fixed at the beginning of each Eastern date.
+    private fun StringBuilder.bankrollRows(markets: List<Market>, buys: List<FirstBuy>,
+        selected: Set<Pair<Int,Int>>, filtered: Boolean, dailyStop: Boolean) {
+        val label = (if (filtered) "rounded80_in_sample" else "all_alerts") +
+            (if (dailyStop) "_prior_profit_stop" else "_no_daily_stop")
+        val byDate = buys.groupBy { Instant.ofEpochMilli(it.startMs).atZone(zone).toLocalDate() }
+        var balance = 20_000L
+        var priorProfit = 0L
+        val dates = markets.groupBy { Instant.ofEpochMilli(it.base.startMs).atZone(zone).toLocalDate() }
+        for ((date, group) in dates) {
+            val opening = balance
+            val stake = minOf(60_000L, (opening * 30 + 50) / 100)
+            var wins = 0
+            var losses = 0
+            var reason = "day_end"
+            val candidates = byDate[date].orEmpty().filter { !filtered || clockCell(it) in selected }
+            for (a in candidates) {
+                if (stake <= 0 || balance < stake) { reason = "insufficient_funds"; break }
+                if (a.won) { balance += (stake * 40 + 50) / 100; wins++ }
+                else { balance -= stake; losses++ }
+                if (balance >= 200_000L) { reason = "target_reached"; break }
+                if (dailyStop && priorProfit > 0 && (opening - balance) * 2 > priorProfit) {
+                    reason = "daily_loss_stop"; break
+                }
+            }
+            val net = balance - opening
+            val first = Instant.ofEpochMilli(group.first().base.startMs).atZone(zone).toString()
+            val last = Instant.ofEpochMilli(group.last().base.startMs).atZone(zone).toString()
+            appendLine(listOf(label,"bankroll_simulation","BOTH","day_" + date,"ALL","ALL",
+                group.size,wins+losses,pct(wins+losses,group.size),wins,losses,pct(wins,wins+losses),
+                "","","","",first,last,fmt(opening/100.0),fmt(stake/100.0),fmt(balance/100.0),
+                fmt(net/100.0),reason).joinToString(","))
+            priorProfit = net
+            if (balance >= 200_000L || balance <= 0L) break
+        }
+    }
     private fun band(level: Double): Int = if (level == 0.0) 0 else
         (abs(level)/10).toInt().coerceIn(5,9)*10
     private fun pct(n: Int,d: Int) = if (d == 0) "" else fmt(100.0*n/d)
@@ -60,6 +99,7 @@ internal object BtcReversalTimingReport {
         val keys=linkedSetOf<Key>()
         val results=mutableMapOf<String,Map<Key,Count>>()
         val daily=mutableMapOf<String,MutableMap<Key,Count>>()
+        val firstBuys=mutableListOf<FirstBuy>()
         for ((split, sample) in splits) {
             val counts=mutableMapOf<Key,Count>()
             for (m in sample) {
@@ -93,6 +133,7 @@ internal object BtcReversalTimingReport {
                             emit("existing_first_alert",if(signal.rule.buyUp) "UP" else "DOWN","frozen_buy",signal.rule.buyUp)
                             // Capture the exact same first BUY once per market, not early warnings.
                             if(split=="all_descriptive") {
+                                firstBuys.add(FirstBuy(m.base.startMs,left,signal.rule.buyUp,signal.rule.buyUp==m.base.upWon))
                                 val dayCounts=daily.getOrPut(localStart.toLocalDate().toString()){mutableMapOf()}
                                 for(d in listOf("BOTH", if(signal.rule.buyUp) "UP" else "DOWN")) {
                                     for(l in listOf(0,left)) {
@@ -142,8 +183,11 @@ internal object BtcReversalTimingReport {
         val jointCells=keys.filter { it.left>0 && it.hour>=0 && (it.family=="existing_first_alert" || it.family=="band_reversal" || it.family=="same_side_pullback") }.groupBy { Triple(it.family,it.side,it.setup) }
         val setups=keys.map { Triple(it.family,it.side,it.setup) }.distinct().sortedWith(
             compareBy<Triple<String,String,String>>{ if(it.first=="existing_first_alert") 0 else if(it.first=="same_side_pullback") 1 else if(it.first=="band_reversal") 2 else 3 }.thenBy{it.first}.thenBy{it.second}.thenBy{it.third})
+        val selectedCells=firstBuys.groupBy { clockCell(it) }.filterValues { a ->
+            1000L*a.count { it.won } >= 795L*a.size
+        }.keys
         return buildString {
-            appendLine("split,family,side,setup,minutes_left_or_ALL,market_start_hour_ET_or_ALL,eligible_markets,hits,hit_rate_pct,settlement_wins,settlement_losses,win_rate_pct,wilson95_lower_pct,later_target_cross_or_win,subsequent_opposite_close,opposite_close_pct,first_market_ET,last_market_ET")
+            appendLine("split,family,side,setup,minutes_left_or_ALL,market_start_hour_ET_or_ALL,eligible_markets,hits,hit_rate_pct,settlement_wins,settlement_losses,win_rate_pct,wilson95_lower_pct,later_target_cross_or_win,subsequent_opposite_close,opposite_close_pct,first_market_ET,last_market_ET,opening_balance_usd,stake_usd,ending_balance_usd,net_pnl_usd,stop_reason")
             for ((split,sample) in splits) {
                 val map=results.getValue(split)
                 val hourCounts=sample.groupingBy { Instant.ofEpochMilli(it.base.startMs).atZone(zone).hour }.eachCount()
@@ -161,7 +205,7 @@ internal object BtcReversalTimingReport {
                         appendLine(listOf(split,family,side,setup,if(left==0)"ALL" else left,if(hour<0)"ALL" else hour,
                             n,c.hits,pct(c.hits,n),c.wins,c.hits-c.wins,pct(c.wins,c.hits),lower(c.wins,c.hits),
                             c.crosses,if(family=="existing_first_alert") "" else c.follow,
-                            if(family=="existing_first_alert") "" else pct(c.follow,c.hits),first,last).joinToString(","))
+                            if(family=="existing_first_alert") "" else pct(c.follow,c.hits),first,last,"","","","","").joinToString(","))
                     }
                 }
             }
@@ -180,9 +224,28 @@ internal object BtcReversalTimingReport {
                         appendLine(listOf("day_"+date,"existing_first_alert",d,"frozen_buy",
                             if(l==0)"ALL" else l,"ALL",n,c.hits,pct(c.hits,n),
                             c.wins,c.hits-c.wins,pct(c.wins,c.hits),lower(c.wins,c.hits),
-                            c.crosses,"","",first,last).joinToString(","))
+                            c.crosses,"","",first,last,"","","","","").joinToString(","))
                     }
                 }
+            }
+            // One ledger row for every tested market, even if no BUY occurred.
+            val byMarket=firstBuys.associateBy { it.startMs }
+            for (m in markets) {
+                val a=byMarket[m.base.startMs]
+                val time=Instant.ofEpochMilli(m.base.startMs).atZone(zone)
+                val hit=if(a==null) 0 else 1
+                val win=if(a?.won==true) 1 else 0
+                appendLine(listOf("trade_ledger","market_first_alert",
+                    if(a==null) "NONE" else if(a.buyUp) "UP" else "DOWN",
+                    if(a==null) "no_buy" else if(clockCell(a) in selectedCells) "rounded80_keep" else "rounded80_skip",
+                    a?.left?.toString().orEmpty(),time.hour,1,hit,pct(hit,1),win,hit-win,
+                    pct(win,hit),"","","","",time.toString(),
+                    time.plusMinutes(15).toString(),"","","","","").joinToString(","))
+            }
+            // In-sample filter is descriptive only. Never changes the live alert rules.
+            for (dailyStop in listOf(false,true)) {
+                bankrollRows(markets,firstBuys,selectedCells,false,dailyStop)
+                bankrollRows(markets,firstBuys,selectedCells,true,dailyStop)
             }
         }
     }
