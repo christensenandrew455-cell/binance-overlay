@@ -12,7 +12,6 @@ import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
-import java.util.Locale
 
 /**
  * Background pattern watch using ONLY the Binance BTC chart snapshot.
@@ -29,8 +28,6 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         private const val SIGNAL_CHANNEL = "btc_chart_proxy_signal_v1"
         private const val SIGNAL_ID = 8100
         private const val EARLY_ID = 8101
-        private const val LAST_EARLY_CLOSE = "sent_early_start_close_v3_"
-        private const val LAST_EARLY_TOUCH = "sent_early_touch_v3_"
         private val notificationLock = Any()
 
         fun setEnabled(context: Context, enabled: Boolean) = synchronized(notificationLock) {
@@ -46,6 +43,8 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         private const val QUARTER = 15L * MINUTE
     }
 
+    private var readingSection = -1L
+    private val readings = ArrayList<KalshiLiveSignalRules.LiveReading>()
     private val tz = ZoneId.of("America/New_York")
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -121,166 +120,61 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
                 (level != 0.0 && kotlin.math.abs(level) !in 50.0..90.0)) continue
             history.add(BtcChartProxyMath.Sample(left, level))
         }
-        val latest = history.minByOrNull { it.left } ?: return
-        val closeOfMinute = start + QUARTER - latest.left * MINUTE
-        if (now - closeOfMinute !in 0L..90_000L) {
-            status("Waiting for the next chart minute close")
+        val observedAt = chart.optLong("now",0L)
+        if (readingSection != start) {
+            readingSection=start
+            readings.clear()
+        }
+        if (now-observedAt !in 0L..7_000L || !chart.optBoolean("live_price",false)) {
+            status("Waiting for fresh intraminute BTC price")
             return
         }
-        // One actionable research notification at most per 15-minute market.
-        // Ordinary foreground service status notifications stay silent.
-        if (prefs.getLong("sent_market_section_v2", -1L) == start) {
-            status("BTC chart | already alerted in this 15-minute market")
+        val price=chart.optDouble("latest",Double.NaN)
+        val target=chart.optDouble("target",Double.NaN)
+        val strength=chart.optDouble("percent",Double.NaN)
+        if (!price.isFinite() || !target.isFinite() || target<=0 || !strength.isFinite()) return
+        val signed=when {
+            price>target -> strength
+            price<target -> -strength
+            else -> 0.0
+        }
+        if (observedAt <= (readings.lastOrNull()?.at ?: -1L)) return
+        readings.removeAll { observedAt-it.at>30_000L }
+        readings.add(KalshiLiveSignalRules.LiveReading(observedAt,signed,price))
+        if (prefs.getLong("sent_market_section_v2",-1L)==start) return
+        val signal=KalshiLiveSignalRules.matchingFilteredNearBuy(history,readings,start,hour)
+        if(signal==null) {
+            status("BTC chart | waiting for timed 52 to 55 in an eligible window")
             return
         }
-        val matched = KalshiLiveSignalRules.matchingSignedSignals(history)
-        if (matched.isEmpty()) {
-            // Arm silently at the existing 50-bin start. Use the live chart
-            // index, stamped at observation time, to warn at 55 before 60.
-            val spot = chart.optDouble("latest", Double.NaN)
-            val anchor = chart.optDouble("target", Double.NaN)
-            val strength = chart.optDouble("percent", Double.NaN)
-            val observedAt = chart.optLong("now", 0L)
-            val signed = when {
-                !spot.isFinite() || !anchor.isFinite() || anchor <= 0.0 -> Double.NaN
-                spot > anchor -> strength
-                spot < anchor -> -strength
-                else -> 0.0
-            }
-            val points = ArrayList<KalshiLiveSignalRules.CenterPoint>()
-            val dots = chart.optJSONArray("points")
-            if (dots != null) for (i in 0 until dots.length()) {
-                val dot = dots.optJSONArray(i) ?: continue
-                points.add(KalshiLiveSignalRules.CenterPoint(
-                    dot.optLong(0, -1L), dot.optDouble(1, Double.NaN)))
-            }
-            val touch = KalshiLiveSignalRules.latestCenterTouch(
-                points, anchor, start, observedAt)
-            val warnings = if (touch == null) emptyList() else
-                KalshiLiveSignalRules.matchingProgressWarnings(
-                    history, observedAt - closeOfMinute, signed, observedAt - touch)
-            val side = if (signed > 0.0) "UP" else "DOWN"
-            val warning = warnings.firstOrNull {
-                val close = start + QUARTER - it.startLeft * MINUTE
-                close > prefs.getLong(LAST_EARLY_CLOSE + side, -1L) &&
-                    touch != null && touch > prefs.getLong(LAST_EARLY_TOUCH + side, -1L) &&
-                    it.windows.any { w ->
-                        now < minOf(close, touch) + w.rule.gapMinutes * MINUTE
-                    }
-            }
-            if (warning != null && touch != null) {
-                val warningStart = start + QUARTER - warning.startLeft * MINUTE
-                notifyEarly(start, warningStart, touch, warning.windows)
-            } else {
-                status("BTC chart | " + latest.left +
-                    "m left | waiting for qualifying pattern")
-            }
-            return
-        }
-        val price = chart.optDouble("latest", Double.NaN)
-        val target = chart.optDouble("target", Double.NaN)
-        if (!price.isFinite() || !target.isFinite() || target <= 0.0) {
-            status("Waiting for valid BTC spot and target")
-            return
-        }
-        // Check that the live BTC price has not crossed back through target
-        // since the qualifying minute closed.
-        val best = matched.firstOrNull {
-            if (it.rule.buyUp) price > target else price < target
-        } ?: run {
-            status("BTC chart | pattern matched but price crossed target")
-            return
-        }
-        if (!isRunning() || !prefs.getBoolean(ENABLED, true)) return
-        val rule = best.rule
-        val direction = if (rule.buyUp) "ABOVE TARGET at settlement"
-            else "BELOW TARGET at settlement"
-        val position = if (price > target) "ABOVE" else "BELOW"
-        val title = if (rule.buyUp) "BUY UP" else "BUY DOWN"
-        val signedLevel = String.format(Locale.US,
-            "%+.0f%%", best.signedChartLevel)
-        val spotText = String.format(Locale.US, "$%,.2f", price)
-        val targetText = String.format(Locale.US, "$%,.2f", target)
-        val distanceText = String.format(Locale.US, "$%,.2f", kotlin.math.abs(price - target))
-        val w = best.window
-        val stats = String.format(Locale.US,
-            "exact-minute %s win %.1f%% (%d/%d) | chart index %.0f | edge +%.1f points | newer %.1f%% (%d hits)",
-            rule.side, w.winRatePercent, w.wins, w.hits,
-            w.chartSideIndex, w.edgePoints, w.newerWinPercent, w.newerHits)
-        val detail = rule.name + " | " + best.startLeft + " -> " + best.left +
-            "m left | " + stats + " | BTC " + spotText +
-            " (" + distanceText + " " + position + " target " + targetText + ")" +
-            " | chart " + signedLevel + " | overall occurrence " +
-            String.format(Locale.US, "%.1f%%", rule.hitRatePercent) + ". " + rule.side +
-            " means " + direction + ". RESEARCH ONLY: check actual contract ask/fees."
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+        val finish=start+QUARTER-signal.finishLeft*MINUTE
+        val title=if(signal.rule.buyUp) "BUY UP" else "BUY DOWN"
+        if (Build.VERSION.SDK_INT>=33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=
                 PackageManager.PERMISSION_GRANTED) {
             status("Allow Android notification permission to receive BTC watches")
             return
         }
         synchronized(notificationLock) {
-            if (!isRunning() || !prefs.getBoolean(ENABLED, true)) return
-            prefs.edit().putLong("sent_market_section_v2", start)
-                .putString(LAST_ALERT, title + "\n" + detail)
-                .putString(STATUS, "Last watch: " + title).apply()
-            val note = NotificationCompat.Builder(context, SIGNAL_CHANNEL)
+            if (!isRunning() || !prefs.getBoolean(ENABLED,true) ||
+                prefs.getLong("sent_market_section_v2",-1L)==start ||
+                System.currentTimeMillis()>=finish ||
+                System.currentTimeMillis()-observedAt>7_000L) return
+            val note=NotificationCompat.Builder(context,SIGNAL_CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat)
                 .setContentTitle(title)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_EVENT)
                 .setContentIntent(viewIntent())
                 .setAutoCancel(true).build()
-            // Replace the prior signal, but post each new qualifying signal
-            // as a fresh alert so it can pop up again.
             nm.cancel(EARLY_ID)
             nm.cancel(SIGNAL_ID)
-            nm.notify(SIGNAL_ID, note)
+            nm.notify(SIGNAL_ID,note)
+            prefs.edit().putLong("sent_market_section_v2",start)
+                .putString(LAST_ALERT,title+" | early 55 index; 52-to-55 in "+
+                    signal.elapsedMs+" ms; estimated 60 in "+signal.projectedMsTo60+
+                    " ms; finish "+signal.finishLeft+"m left; unconfirmed research signal")
+                .putString(STATUS,"Last watch: "+title).apply()
         }
-    }
-
-    private fun notifyEarly(
-        marketStart: Long,
-        startClose: Long,
-        touch: Long,
-        windows: List<KalshiLiveSignalRules.EarlySignal>
-    ) = synchronized(notificationLock) {
-        val side = windows.firstOrNull()?.rule?.side ?: return@synchronized
-        if (!isRunning() || !prefs.getBoolean(ENABLED, true) ||
-            prefs.getLong("sent_market_section_v2", -1L) == marketStart ||
-            prefs.getLong(LAST_EARLY_CLOSE + side, -1L) >= startClose ||
-            prefs.getLong(LAST_EARLY_TOUCH + side, -1L) >= touch
-        ) return@synchronized
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-        ) return@synchronized
-
-        val now = System.currentTimeMillis()
-        val remaining = windows.filter {
-            now < minOf(startClose, touch) + it.rule.gapMinutes * MINUTE
-        }
-        if (remaining.isEmpty() || now / QUARTER * QUARTER != marketStart)
-            return@synchronized
-
-        // All matching starts have the same direction. Combine the 1- and
-        // 2-minute possibilities in one warning; don't repeat it every poll.
-        val title = "Get ready — possible " + remaining.first().rule.side
-        val expiresAt = remaining.maxOf { minOf(startClose, touch) + it.rule.gapMinutes * MINUTE }
-        val note = NotificationCompat.Builder(context, SIGNAL_CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle(title)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_EVENT)
-            .setContentIntent(viewIntent())
-            .setAutoCancel(true)
-            .setTimeoutAfter(expiresAt - now)
-            .build()
-        nm.cancel(EARLY_ID)
-        nm.notify(EARLY_ID, note)
-        // Separate from the confirmed buy marker: this never consumes a buy.
-        prefs.edit().putLong(LAST_EARLY_CLOSE + side, startClose)
-            .putLong(LAST_EARLY_TOUCH + side, touch)
-            .putString(STATUS, title).apply()
     }
 }
