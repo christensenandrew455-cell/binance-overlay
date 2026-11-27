@@ -312,9 +312,35 @@ class KalshiPatternBacktestService : Service() {
         if (reversalRun) {
             status("Analyzing fixed-direction reversals and existing alert timing...")
             val examplesForReport=chosen.map { reversalExamples.getValue(it.startMs) }
-            val csv=BtcReversalTimingReport.report(examplesForReport)
+            val minuteCsv=BtcReversalTimingReport.report(examplesForReport)
             check(active.get()) { "Scan stopped" }
-            // Preserve the minute report if the exchange blocks the more expensive tick replay.
+            prefs.edit().putString(REVERSAL_RESULT,minuteCsv).apply()
+            // Fetch contiguous history across sessions for native-aligned EMA candles.
+            // Separate from market selection, so the existing tests keep the same sample.
+            var emaStatus = "EMA slope grid included"
+            val emaCsv = try {
+                val history=HashMap<Long,BtcAcmMath.Candle>()
+                val from=chosen.first().startMs-BtcEmaSlopeReport.WARMUP_MINUTES*MINUTE_MS
+                val until=chosen.last().startMs
+                var cursor=from
+                while(cursor<until) {
+                    check(active.get()) { "Scan stopped" }
+                    val end=minOf(until,cursor+1000L*MINUTE_MS)
+                    getCandles(cursor,end-1).forEach { history[it.at]=it }
+                    cursor=end
+                    status("EMA history: "+history.size+" completed 1m candles")
+                    if(cursor<until) Thread.sleep(140L)
+                }
+                status("Ranking 900 EMA slope configurations...")
+                BtcEmaSlopeReport.report(chosen,history)
+            } catch(e: Exception) {
+                check(active.get()) { "Scan stopped" }
+                emaStatus = "EMA grid INCOMPLETE: "+(e.message ?: e.javaClass.simpleName)
+                ""
+            }
+            val csv=minuteCsv+emaCsv
+            check(active.get()) { "Scan stopped" }
+            // Preserve both minute reports if exchange blocks the expensive tick replay.
             prefs.edit().putString(REVERSAL_RESULT,csv).apply()
             status("Downloading historical BTC trades for 15/30-second warnings...")
             val secondReport=try {
@@ -323,13 +349,13 @@ class KalshiPatternBacktestService : Service() {
                         status("15/30-second historical trade replay: "+done+"/"+total+" markets")
                 }
             } catch(e: Exception) {
-                status("Minute report saved; 15/30-second replay INCOMPLETE: "+(e.message ?: e.javaClass.simpleName))
+                status("Minute report saved; "+emaStatus+"; 15/30-second replay INCOMPLETE: "+(e.message ?: e.javaClass.simpleName))
                 return
             }
             check(active.get()) { "Scan stopped" }
             prefs.edit().putString(REVERSAL_RESULT,csv+secondReport).putString(REVERSAL_STATUS,
-                (if (chosen.size == TARGET_MARKETS) "COMPLETE" else "INCOMPLETE") +
-                    ": "+chosen.size+"/1000 markets; 15/30-second replay included. Check trade-data coverage in CSV. Binance index only.").apply()
+                (if (chosen.size == TARGET_MARKETS && emaCsv.isNotEmpty()) "COMPLETE" else "INCOMPLETE") +
+                    ": "+chosen.size+"/1000 markets; "+emaStatus+"; 15/30-second replay included. Check data coverage in CSV. Binance index only.").apply()
             return
         }
         if (dailyRun) {
