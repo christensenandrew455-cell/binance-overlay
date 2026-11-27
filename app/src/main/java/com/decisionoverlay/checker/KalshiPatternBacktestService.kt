@@ -38,8 +38,8 @@ class KalshiPatternBacktestService : Service() {
         const val DAILY_RESULT = "btc_daily_report_v2"
         const val DAILY_CSV = "btc_daily_csv_v2"
         const val DAILY_STATUS = "btc_daily_status_v2"
-        const val FOCUSED_RESULT = "btc_ema_split_csv_v1"
-        const val FOCUSED_STATUS = "btc_ema_split_status_v1"
+        const val FOCUSED_RESULT = "btc_hour_timing_csv_v1"
+        const val FOCUSED_STATUS = "btc_hour_timing_status_v1"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
         const val EXHAUSTIVE_STATUS = "btc_exhaustive_status_v1"
         const val EDGE_RESULT = "indicator_ranking_v1"
@@ -49,7 +49,7 @@ class KalshiPatternBacktestService : Service() {
         const val STOP = "kalshi.pattern.STOP"
         private const val BASE = "https://api.binance.us/api/v3/klines"
         private const val TARGET_MARKETS = 1000
-        private const val MAX_PAGES = 80
+        private const val MAX_PAGES = 105
         private const val MINUTE_MS = 60_000L
         private const val QUARTER_MS = 15L * MINUTE_MS
         private const val CHANNEL = "binance_27_pattern_backtest"
@@ -250,8 +250,8 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan(edge: Boolean, exhaustive: Boolean, focused: Boolean) {
-        val limit = TARGET_MARKETS
-        status("Downloading Binance BTC 1-minute candles for $limit markets...")
+        val limit = if (focused) Int.MAX_VALUE else TARGET_MARKETS
+        status(if (focused) "Downloading 100 days of Binance BTC 1-minute candles..." else "Downloading Binance BTC 1-minute candles for $limit markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
@@ -260,7 +260,7 @@ class KalshiPatternBacktestService : Service() {
         val reversalExamples = mutableMapOf<Long, BtcReversalTimingReport.Market>()
         val warmup = if (edge) 345L else 60L
         var pageCount = 0
-        for (page in 1..MAX_PAGES) {
+        for (page in 1..(if (focused) 100 else MAX_PAGES)) {
             if (!active.get()) error("Scan stopped")
             val day = now.toLocalDate().minusDays(page.toLong() - 1)
             val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
@@ -276,10 +276,10 @@ class KalshiPatternBacktestService : Service() {
                 if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
                 if (reversalRun) reversalExamples[start] = BtcReversalTimingReport.market(market, candles)
                 selected[start] = market
-                if (selected.size == TARGET_MARKETS) break
+                if (!focused && selected.size == TARGET_MARKETS) break
             }
             val collected = selected.size
-            if (collected >= limit) break
+            if (!focused && collected >= limit) break
             status("Binance BTC historical pages: $page; complete 15m " +
                 "markets: $collected/$limit")
             try { Thread.sleep(140L) } catch (_: InterruptedException) { break }
@@ -289,26 +289,13 @@ class KalshiPatternBacktestService : Service() {
                 "Check Binance.US connectivity.")
 
         val chosen = selected.values.sortedByDescending { it.startMs }
-            .take(TARGET_MARKETS).sortedBy { it.startMs }
+            .take(if (focused) Int.MAX_VALUE else TARGET_MARKETS).sortedBy { it.startMs }
         if (focused) {
-            require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. EMA test requires 1000." }
-            val history = HashMap<Long, BtcAcmMath.Candle>()
-            var cursor = chosen.first().startMs - BtcEmaSlopeReport.WARMUP_MINUTES * MINUTE_MS
-            val until = chosen.last().startMs + 15L * MINUTE_MS
-            while (cursor < until) {
-                check(active.get()) { "Scan stopped" }
-                val end = minOf(until, cursor + 1000L * MINUTE_MS)
-                getCandles(cursor, end - 1).forEach { history[it.at] = it }
-                cursor = end
-                status("EMA history: ${history.size} completed 1m candles")
-                if (cursor < until) Thread.sleep(140L)
-            }
-            status("Testing EMA range proportions against actual settlement...")
-            val header = listOf("split","family","side","configuration","minutes_left","elapsed_minutes","markets","valid_forecasts","data_coverage_pct","settled_inside","settled_outside","settlement_coverage_pct","path_inside","path_coverage_pct","settled_above","settled_below","first_market","last_market","missing","mean_half_width_pct","reserved20","reserved21","notes","reserved23","reserved24","reserved25","reserved26","reserved27","reserved28","reserved29","reserved30").joinToString(",")
-            val csv = BtcEmaSlopeReport.splitReport(chosen, history)
+            status("Analyzing 50-to-60 one-minute signals by Eastern hour and minute...")
+            val csv = BtcHourTimingReport.report(chosen)
             check(active.get()) { "Scan stopped" }
             prefs.edit().putString(FOCUSED_RESULT, csv).putString(FOCUSED_STATUS,
-                "Complete · 1000/1000 markets · EMA range split accuracy by side, band and time").apply()
+                "Complete: 100 calendar days scanned; ${chosen.size} usable markets; hourly and minute-level signal frequency and settlement accuracy.").apply()
             return
         }
         if (reversalRun) {
