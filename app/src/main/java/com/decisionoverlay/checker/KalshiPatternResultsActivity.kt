@@ -79,7 +79,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 "REVERSAL TEST compares 1,000 markets; download full CSV. No Kalshi price data."
                 else if (dailyMode)
                 "DAILY TEST simulates 1,000 markets using the current buy rules."
-                else "TEST checks 100 days of 50-to-60 moves in one minute, ranked by Eastern hour and minutes left.")
+                else "TEST checks 1,000 markets: four 50-to-60 alerts, combined hit/win rates for 15 to 1 minutes left, and average alert timing.")
             test.isEnabled = !running
             daily.isEnabled = !running
             reversal.isEnabled = !running
