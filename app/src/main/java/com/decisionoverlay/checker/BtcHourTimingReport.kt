@@ -5,7 +5,7 @@ import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.sqrt
 
-/** 100-day timing study of the four EXISTING signed-band live BUY rules. */
+/** 1,000-market timing study of the four EXISTING signed-band live BUY rules. */
 internal object BtcHourTimingReport {
     private val zone = ZoneId.of("America/New_York")
     private data class Signal(val start: Long, val hour: Int, val left: Int,
@@ -50,6 +50,9 @@ internal object BtcHourTimingReport {
             "newer_check" to ordered.drop(cut),
             "all_descriptive" to ordered)
         return buildString {
+            val earliest = signals.groupBy { it.start }.values.mapNotNull { it.maxByOrNull { s -> s.left } }
+            val avg = earliest.map { it.left }.average()
+            appendLine("# average_minutes_left_at_first_alert=" + if(avg.isNaN()) "n/a" else String.format(Locale.US,"%.2f",avg))
             appendLine("split,market_start_hour_ET,minutes_left,side,gap_minutes,eligible_markets,alerts,hit_rate_pct,wins,losses,win_rate_pct,wilson95_lower_pct,first_market_ET,last_market_ET,notes")
             for ((split, sample) in splits) {
                 val starts = sample.map { it.startMs }.toHashSet()
@@ -61,7 +64,11 @@ internal object BtcHourTimingReport {
                     Instant.ofEpochMilli(it.startMs).atZone(zone).toString()
                 }.orEmpty()
                 for (hour in listOf(-1) + (10..22).toList()) {
-                    for (left in listOf(-1) + (14 downTo 1).toList()) {
+                    for (left in listOf(-1) + (15 downTo 1).toList()) {
+                        val eligibleStarts = sample.filter { hour < 0 || Instant.ofEpochMilli(it.startMs).atZone(zone).hour == hour }.map { it.startMs }.toSet()
+                        val combined = subset.filter { it.start in eligibleStarts }.groupBy { it.start }.values.mapNotNull { it.maxByOrNull { s -> s.left } }.filter { left < 0 || it.left == left }
+                        val combinedWins = combined.count { it.won }
+                        appendLine(listOf(split, if(hour<0) "ALL" else hour, if(left<0) "ALL" else left, "COMBINED", "ALL", eligibleStarts.size, combined.size, pct(combined.size,eligibleStarts.size), combinedWins, combined.size-combinedWins, pct(combinedWins,combined.size), lower(combinedWins,combined.size), first,last,"first_alert_per_market").joinToString(","))
                         for (rule in KalshiLiveSignalRules.rules) {
                             val eligible = sample.count {
                                 hour < 0 || Instant.ofEpochMilli(it.startMs)
