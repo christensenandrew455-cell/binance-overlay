@@ -287,7 +287,7 @@ internal object BtcSecondWarningReport {
                             (left==0 || a.left==left) && KalshiLiveSignalRules.filteredTime(hour(r.start),a.left)
                         }==true }
                         val lead=if(alerts.isEmpty())"" else fmt(alerts.map { it.timedNear!!.seconds }.average())
-                        appendLine(listOf(sample.label,"timed_52_to_55_live_replay","BOTH","fixed_in_sample_80_schedule",
+                        appendLine(listOf(sample.label,"timed_50_to_55_live_replay","BOTH","fixed_in_sample_80_schedule",
                             if(left==0)"ALL" else left,if(h<0)"ALL" else h,group.size,alerts.size,
                             pct(alerts.size,group.size),wins,alerts.size-wins,pct(wins,alerts.size),
                             "","","","",first,last,"","","","",
