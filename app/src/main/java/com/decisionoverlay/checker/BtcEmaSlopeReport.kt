@@ -225,4 +225,64 @@ internal object BtcEmaSlopeReport {
         }
     }
 
+    /** Range split versus the actual target; all observations are frozen at the checkpoint. */
+    fun splitReport(input: List<BinanceTwentySevenPatternReport.Market>,
+        candles: Map<Long,BtcAcmMath.Candle>): String {
+        val markets = input.distinctBy { it.startMs }.sortedBy { it.startMs }
+        val cut = (markets.size * 0.7).toInt()
+        val config = Config(5,25,12)
+        val emaValues = ema(candles,5,25)
+        val result = StringBuilder()
+        result.appendLine("split,minutes_left,band,majority_side,majority_bucket,markets,valid,correct,accuracy_pct,mean_majority_share_pct,actual_up,actual_down,inside_range,inside_pct,notes")
+        for (left in 15 downTo 1) for (band in listOf(60,70,80,90)) {
+            val fraction = (band-50)/40.0
+            data class Sample(val majority: String,val bucket: Int,val share: Double,
+                val correct: Boolean,val up: Boolean,val inside: Boolean)
+            val observations = markets.map { market ->
+                val at = market.startMs + (15-left)*M
+                val anchor = candles[at-M]?.takeIf { it.valid() }?.close
+                val rate = slope(emaValues,at,config)
+                val acm = BtcAcmMath.averageRange(candles,at-M,60)
+                val final = candles[market.startMs+14*M]?.takeIf { it.valid() }?.close
+                if (anchor==null || rate==null || acm==null || acm<=0 || final==null) null
+                else {
+                    val center = anchor*(1.0+rate*left/100.0)
+                    val half = anchor*acm*fraction*left/100.0
+                    val lo = center-half
+                    val hi = center+half
+                    val target = market.targetBtc
+                    val above = ((hi-maxOf(lo,target))/(hi-lo)).coerceIn(0.0,1.0)
+                    val majority = if (above>=0.5) "UP" else "DOWN"
+                    val share = maxOf(above,1.0-above)
+                    val bucket = minOf(90, ((share*100.0).toInt()/10)*10)
+                    Sample(majority,bucket,share, (final>target)==(majority=="UP"),
+                        final>target,final in lo..hi)
+                }
+            }
+            for ((split, indices) in listOf("all" to markets.indices,
+                "older_discovery" to (0 until cut),
+                "newer_check" to (cut until markets.size))) {
+                val valid = indices.mapNotNull { observations[it] }
+                for (side in listOf("UP","DOWN","BOTH")) for (bucket in listOf(50,60,70,80,90, -1)) {
+                    val subset = valid.filter {
+                        (side=="BOTH" || it.majority==side) && (bucket==-1 || it.bucket==bucket)
+                    }
+                    if (subset.isEmpty()) continue
+                    val correct = subset.count { it.correct }
+                    val up = subset.count { it.up }
+                    val inside = subset.count { it.inside }
+                    val meanShare = subset.map { it.share }.average()*100.0
+                    val fmt = { v: Double -> String.format(Locale.US,"%.4f",v) }
+                    result.appendLine(listOf(split,left,band,side,
+                        if(bucket==-1) "ALL" else "${bucket}-${if(bucket==90)100 else bucket+10}",
+                        markets.size,subset.size,correct,fmt(correct*100.0/subset.size),
+                        fmt(meanShare),up,subset.size-up,inside,fmt(inside*100.0/subset.size),
+                        "fixed_ema_5m_25_12;acm60;geometric_share_not_probability")
+                        .joinToString(","))
+                }
+            }
+        }
+        return result.toString()
+    }
+
 }
