@@ -164,4 +164,65 @@ internal object BtcEmaSlopeReport {
         }
     }
 
+    /** Freeze the forecast at each checkpoint; never use future candles to set its bounds. */
+    fun rangeReport(input: List<BinanceTwentySevenPatternReport.Market>,
+        candles: Map<Long,BtcAcmMath.Candle>): String {
+        val markets = input.distinctBy { it.startMs }.sortedBy { it.startMs }
+        val c = Config(5,25,12)
+        val values = ema(candles,c.timeframe,c.period)
+        val cut = (markets.size*0.7).toInt()
+        return buildString {
+            for (left in 15 downTo 1) {
+                for (band in listOf(60,70,80,90)) {
+                    val fraction = (band-50)/40.0
+                    for ((split,sample) in listOf("all" to markets,
+                        "older_discovery" to markets.take(cut), "newer_check" to markets.drop(cut))) {
+                        var valid = 0
+                        var settle = 0
+                        var stay = 0
+                        var above = 0
+                        var below = 0
+                        var widthSum = 0.0
+                        for (m in sample) {
+                            val at = m.startMs+(15-left)*M
+                            val anchor = candles[at-M]?.takeIf { it.valid() }?.close ?: continue
+                            val rate = slope(values,at,c) ?: continue
+                            val acm = BtcAcmMath.averageRange(candles,at-M,60) ?: continue
+                            if (acm <= 0.0) continue
+                            val future = (0 until left).map { candles[at+it*M] }
+                            if (future.any { it == null || !it.valid() }) continue
+                            fun center(t: Int) = anchor*(1.0+rate*t/100.0)
+                            fun width(t: Int) = anchor*acm*fraction*t/100.0
+                            val lower = center(left)-width(left)
+                            val upper = center(left)+width(left)
+                            val final = future.last()!!.close
+                            valid++
+                            widthSum += width(left)/anchor*100.0
+                            if (final in lower..upper) settle++
+                            else if (final > upper) above++ else below++
+                            // A widening fan: test each minute's entire high/low against
+                            // the envelope swept during that minute, not just its close.
+                            if (future.withIndex().all { (i,bar) ->
+                                val lo = minOf(center(i)-width(i),center(i+1)-width(i+1))
+                                val hi = maxOf(center(i)+width(i),center(i+1)+width(i+1))
+                                bar!!.low >= lo && bar.high <= hi
+                            }) stay++
+                        }
+                        val f = MutableList(31){""}
+                        f[0]=split; f[1]="ema_projected_range"; f[2]="±$band"; f[3]=c.label
+                        f[4]=left.toString(); f[5]=(15-left).toString(); f[6]=sample.size.toString()
+                        f[7]=valid.toString(); f[8]=pct(valid,sample.size)
+                        f[9]=settle.toString(); f[10]=(valid-settle).toString(); f[11]=pct(settle,valid)
+                        f[12]=stay.toString(); f[13]=pct(stay,valid)
+                        f[14]=above.toString(); f[15]=below.toString()
+                        f[18]=(sample.size-valid).toString()
+                        f[19]=if(valid==0) "" else String.format(Locale.US,"%.6f",widthSum/valid)
+                        f[22]="frozen_forecast;closed_5m_slope;acm60;minute_swept_envelope;not_kalshi_odds"
+                        appendLine(f.joinToString(","))
+                    }
+                }
+            }
+        }
+    }
+
 }
