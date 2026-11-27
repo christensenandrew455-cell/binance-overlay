@@ -79,7 +79,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 "REVERSAL TEST compares 1,000 markets; download full CSV. No Kalshi price data."
                 else if (dailyMode)
                 "DAILY TEST simulates 1,000 markets using the current buy rules."
-                else "TEST measures projected EMA range coverage at bands 60/70/80/90 and 15 through 1 minutes left across 1,000 markets.")
+                else "TEST checks whether the larger yellow range share predicts UP/DOWN settlement across 1,000 markets.")
             test.isEnabled = !running
             daily.isEnabled = !running
             reversal.isEnabled = !running
@@ -158,7 +158,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
                 exportPicker.launch(if (reversalMode) "BTC-reversal-$time.csv"
                     else if (dailyMode) "BTC-daily-PnL-$time.csv"
-                    else "BTC-EMA-range-$time.csv")
+                    else "BTC-EMA-split-$time.csv")
             }
         }
         for (b in listOf(test, copy, save)) {
