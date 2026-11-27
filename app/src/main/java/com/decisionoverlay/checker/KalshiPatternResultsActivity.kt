@@ -22,7 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Existing minute export plus separate daily P&L simulation. */
+/** EMA slope research plus separate daily P&L and reversal simulations. */
 class KalshiPatternResultsActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var test: Button
@@ -79,7 +79,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 "REVERSAL TEST compares 1,000 markets; download full CSV. No Kalshi price data."
                 else if (dailyMode)
                 "DAILY TEST simulates 1,000 markets using the current buy rules."
-                else "TEST records 100 markets. DOWNLOAD saves every minute as CSV.")
+                else "TEST ranks 900 EMA slope configurations across 1,000 markets. DOWNLOAD saves the full EMA report.")
             test.isEnabled = !running
             daily.isEnabled = !running
             reversal.isEnabled = !running
@@ -158,7 +158,7 @@ class KalshiPatternResultsActivity : AppCompatActivity() {
                 val time = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
                 exportPicker.launch(if (reversalMode) "BTC-reversal-$time.csv"
                     else if (dailyMode) "BTC-daily-PnL-$time.csv"
-                    else "BTC-minute-data-$time.csv")
+                    else "BTC-EMA-slope-$time.csv")
             }
         }
         for (b in listOf(test, copy, save)) {
