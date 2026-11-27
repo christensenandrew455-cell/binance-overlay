@@ -38,8 +38,8 @@ class KalshiPatternBacktestService : Service() {
         const val DAILY_RESULT = "btc_daily_report_v2"
         const val DAILY_CSV = "btc_daily_csv_v2"
         const val DAILY_STATUS = "btc_daily_status_v2"
-        const val FOCUSED_RESULT = "btc_ema_timing_csv_v3"
-        const val FOCUSED_STATUS = "btc_ema_timing_status_v3"
+        const val FOCUSED_RESULT = "btc_ema_range_csv_v4"
+        const val FOCUSED_STATUS = "btc_ema_range_status_v4"
         const val EXHAUSTIVE_RESULT = "btc_exhaustive_results_v1"
         const val EXHAUSTIVE_STATUS = "btc_exhaustive_status_v1"
         const val EDGE_RESULT = "indicator_ranking_v1"
@@ -303,12 +303,12 @@ class KalshiPatternBacktestService : Service() {
                 status("EMA history: ${history.size} completed 1m candles")
                 if (cursor < until) Thread.sleep(140L)
             }
-            status("Testing fixed EMA slope at 15 through 1 minutes remaining...")
-            val header = listOf("split","family","side","configuration","minutes_left","elapsed_minutes","markets","predictions","coverage_pct","correct","incorrect","accuracy_pct","reserved12","reserved13","reserved14","reserved15","first_market","last_market","reserved18","reserved19","reserved20","reserved21","notes","reserved23","reserved24","reserved25","reserved26","reserved27","reserved28","reserved29","reserved30").joinToString(",")
-            val csv = header + "\n" + BtcEmaSlopeReport.timingReport(chosen, history)
+            status("Testing EMA projected range bands at 15 through 1 minutes remaining...")
+            val header = listOf("split","family","side","configuration","minutes_left","elapsed_minutes","markets","valid_forecasts","data_coverage_pct","settled_inside","settled_outside","settlement_coverage_pct","path_inside","path_coverage_pct","settled_above","settled_below","first_market","last_market","missing","mean_half_width_pct","reserved20","reserved21","notes","reserved23","reserved24","reserved25","reserved26","reserved27","reserved28","reserved29","reserved30").joinToString(",")
+            val csv = header + "\n" + BtcEmaSlopeReport.rangeReport(chosen, history)
             check(active.get()) { "Scan stopped" }
             prefs.edit().putString(FOCUSED_RESULT, csv).putString(FOCUSED_STATUS,
-                "Complete · 1000/1000 markets · 15 EMA timing checkpoints; check coverage in CSV").apply()
+                "Complete · 1000/1000 markets · 60 EMA range checkpoints; check coverage in CSV").apply()
             return
         }
         if (reversalRun) {
