@@ -144,7 +144,7 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
         if (prefs.getLong("sent_market_section_v2",-1L)==start) return
         val signal=KalshiLiveSignalRules.matchingFilteredNearBuy(history,readings,start,hour)
         if(signal==null) {
-            status("BTC chart | waiting for timed 52 to 55 in an eligible window")
+            status("BTC chart | waiting for timed 50 to 55 in an eligible window")
             return
         }
         val finish=start+QUARTER-signal.finishLeft*MINUTE
@@ -171,7 +171,7 @@ class KalshiLiveSignalService(private val context: Context, private val isRunnin
             nm.cancel(SIGNAL_ID)
             nm.notify(SIGNAL_ID,note)
             prefs.edit().putLong("sent_market_section_v2",start)
-                .putString(LAST_ALERT,title+" | early 55 index; 52-to-55 in "+
+                .putString(LAST_ALERT,title+" | early 55 index; 50-to-55 in "+
                     signal.elapsedMs+" ms; estimated 60 in "+signal.projectedMsTo60+
                     " ms; finish "+signal.finishLeft+"m left; unconfirmed research signal")
                 .putString(STATUS,"Last watch: "+title).apply()
