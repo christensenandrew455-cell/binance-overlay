@@ -277,7 +277,7 @@ object KalshiLiveSignalRules {
 
     /**
      * Only fresh observed readings, no synthetic minute-close or center points.
-     * Same side 50..52 to 55..59.99 in <=30s, outward price movement, and
+     * Observed center 50 touch/cross to same-side 55..59.99 in <=30s, outward price movement, and
      * projected 60 before the original eligible destination candle closes.
      * No claim that the price will actually reach 60 or settle in this direction.
      */
@@ -288,21 +288,33 @@ object KalshiLiveSignalRules {
         val magnitude=abs(latest.level)
         if (!magnitude.isFinite() || magnitude<55.0 || magnitude>=60.0 ||
             !latest.price.isFinite() || latest.price<=0 ||
-            abs(previous.level)>=55.0 || latest.at-previous.at !in 1L..10_000L ||
+            previous.level*latest.level>0 && abs(previous.level)>=55.0 || latest.at-previous.at !in 1L..10_000L ||
             latest.at !in (marketStart+60_000L) until (marketStart+14*60_000L)) return null
         val side=if(latest.level>0) 1 else -1
-        if (previous.level*side<=0) return null
-        val prior=readings.asReversed().drop(1).firstOrNull {
-            it.at>=marketStart && latest.at-it.at in 1L..30_000L &&
-                it.level*side in 50.0..52.0
+        // The signed chart represents the exact 50 center as zero. A
+        // bracketed crossing also establishes a center touch; use the earlier
+        // timestamp so the measured duration is conservative.
+        val anchorIndex=(readings.lastIndex-1 downTo 0).firstOrNull { i ->
+            val a=readings[i]
+            val b=readings[i+1]
+            a.at>=marketStart && latest.at-a.at in 1L..30_000L &&
+                a.level.isFinite() && b.level.isFinite() &&
+                b.at-a.at in 1L..10_000L &&
+                (a.level==0.0 || a.level*side==50.0 ||
+                    (a.level*side<0 && b.level*side>0))
         } ?: return null
-        val path=readings.filter { it.at in prior.at..latest.at }
-        if(path.any { !it.level.isFinite() || !it.price.isFinite() || it.level*side<=0 } ||
-            path.zipWithNext().any { (a,b) -> b.at-a.at !in 1L..10_000L ||
-                abs(b.level)<abs(a.level) || (b.price-a.price)*side<0 } ||
-            (latest.price-prior.price)*side<=0) return null
+        val prior=readings[anchorIndex]
+        val path=readings.subList(anchorIndex,readings.size)
+        if(path.any { !it.level.isFinite() || !it.price.isFinite() || it.price<=0 } ||
+            path.drop(1).any { it.level*side<=0 } ||
+            path.zipWithNext().withIndex().any { (i,pair) ->
+                val (a,b)=pair
+                b.at-a.at !in 1L..10_000L ||
+                    (i>0 && abs(b.level)<abs(a.level)) ||
+                    (b.price-a.price)*side<0
+            } || (latest.price-prior.price)*side<=0) return null
         val elapsed=latest.at-prior.at
-        val velocity=(magnitude-abs(prior.level))/elapsed
+        val velocity=(magnitude-50.0)/elapsed
         if (velocity<=0 || !velocity.isFinite()) return null
         val projected=kotlin.math.ceil((60.0-magnitude)/velocity).toLong()
         val finishAt=marketStart+((latest.at-marketStart)/60_000L+1)*60_000L
