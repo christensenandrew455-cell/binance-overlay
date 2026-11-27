@@ -250,8 +250,7 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan(edge: Boolean, exhaustive: Boolean, focused: Boolean) {
-        val limit = if (focused) BtcMinuteRecorder.MARKETS else TARGET_MARKETS
-        val recorded = sortedMapOf<Long, String>()
+        val limit = TARGET_MARKETS
         status("Downloading Binance BTC 1-minute candles for $limit markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
@@ -273,35 +272,17 @@ class KalshiPatternBacktestService : Service() {
             val candles = getCandles(fetchStart, close - 1).associateBy { it.at }
             pageCount++
             for (start in (close - QUARTER_MS) downTo firstMarket step QUARTER_MS) {
-                if (focused) {
-                    val rows = BtcMinuteRecorder.rows(start, candles) ?: continue
-                    recorded[start] = rows
-                    if (recorded.size == limit) break
-                    continue
-                }
                 val market = buildMarket(start, candles) ?: continue
                 if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
                 if (reversalRun) reversalExamples[start] = BtcReversalTimingReport.market(market, candles)
                 selected[start] = market
                 if (selected.size == TARGET_MARKETS) break
             }
-            val collected = if (focused) recorded.size else selected.size
+            val collected = selected.size
             if (collected >= limit) break
             status("Binance BTC historical pages: $page; complete 15m " +
                 "markets: $collected/$limit")
             try { Thread.sleep(140L) } catch (_: InterruptedException) { break }
-        }
-        if (focused) {
-            check(active.get()) { "Scan stopped" }
-            check(recorded.isNotEmpty()) { "No complete BTC markets were available." }
-            val csv = buildString {
-                appendLine(BtcMinuteRecorder.header)
-                recorded.values.forEach { append(it) }
-            }
-            val state = if (recorded.size == limit) "Complete" else "Incomplete"
-            prefs.edit().putString(FOCUSED_RESULT, csv).putString(FOCUSED_STATUS,
-                "$state · ${recorded.size}/$limit markets · ${recorded.size * 15} minute rows").apply()
-            return
         }
         if (selected.isEmpty())
             error("No complete Binance BTC 15-minute markets found. " +
@@ -309,6 +290,27 @@ class KalshiPatternBacktestService : Service() {
 
         val chosen = selected.values.sortedByDescending { it.startMs }
             .take(TARGET_MARKETS).sortedBy { it.startMs }
+        if (focused) {
+            require(chosen.size == TARGET_MARKETS) { "Only ${chosen.size}/1000 usable markets. EMA test requires 1000." }
+            val history = HashMap<Long, BtcAcmMath.Candle>()
+            var cursor = chosen.first().startMs - BtcEmaSlopeReport.WARMUP_MINUTES * MINUTE_MS
+            val until = chosen.last().startMs
+            while (cursor < until) {
+                check(active.get()) { "Scan stopped" }
+                val end = minOf(until, cursor + 1000L * MINUTE_MS)
+                getCandles(cursor, end - 1).forEach { history[it.at] = it }
+                cursor = end
+                status("EMA history: ${history.size} completed 1m candles")
+                if (cursor < until) Thread.sleep(140L)
+            }
+            status("Ranking 900 EMA slope configurations...")
+            val header = listOf("split","family","side","configuration","market_minutes","minute","markets","predictions","coverage_pct","correct","incorrect","accuracy_pct","reserved12","reserved13","reserved14","reserved15","first_market","last_market","reserved18","reserved19","reserved20","reserved21","notes","reserved23","reserved24","reserved25","reserved26","reserved27","reserved28","reserved29","reserved30").joinToString(",")
+            val csv = header + "\n" + BtcEmaSlopeReport.report(chosen, history)
+            check(active.get()) { "Scan stopped" }
+            prefs.edit().putString(FOCUSED_RESULT, csv).putString(FOCUSED_STATUS,
+                "Complete · 1000/1000 markets · 900 EMA configurations; check coverage in CSV").apply()
+            return
+        }
         if (reversalRun) {
             status("Analyzing fixed-direction reversals and existing alert timing...")
             val examplesForReport=chosen.map { reversalExamples.getValue(it.startMs) }
