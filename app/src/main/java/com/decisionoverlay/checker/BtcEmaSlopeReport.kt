@@ -136,4 +136,32 @@ internal object BtcEmaSlopeReport {
                 "discovery_majority",newer,newer.size,newer.count{it.upWon==majorityUp},"no_ema")
         }
     }
+    /** Fixed configuration; only completed native 5m candles at each observation. */
+    fun timingReport(input: List<BinanceTwentySevenPatternReport.Market>,
+        candles: Map<Long,BtcAcmMath.Candle>): String {
+        val markets = input.distinctBy { it.startMs }.sortedBy { it.startMs }
+        val c = Config(5,25,12)
+        val values = ema(candles,c.timeframe,c.period)
+        val cut = (markets.size*0.7).toInt()
+        return buildString {
+            for (left in 15 downTo 1) {
+                for ((split,sample) in listOf("all" to markets,
+                    "older_discovery" to markets.take(cut), "newer_check" to markets.drop(cut))) {
+                    val count = Count()
+                    for (m in sample) count.add(slope(values,m.startMs+(15-left)*M,c),m.upWon)
+                    for ((side,hits,wins) in listOf(Triple("BOTH",count.hits,count.wins),
+                        Triple("UP",count.up,count.upWins),Triple("DOWN",count.down,count.downWins))) {
+                        val f = MutableList(31){""}
+                        f[0]=split; f[1]="ema_slope_timing"; f[2]=side; f[3]=c.label
+                        f[4]=left.toString(); f[5]=(15-left).toString(); f[6]=sample.size.toString()
+                        f[7]=hits.toString(); f[8]=pct(hits,sample.size)
+                        f[9]=wins.toString(); f[10]=(hits-wins).toString(); f[11]=pct(wins,hits)
+                        f[22]="minutes_left=$left;flat=${count.flat};missing=${count.missing};closed_5m_only"
+                        appendLine(f.joinToString(","))
+                    }
+                }
+            }
+        }
+    }
+
 }
