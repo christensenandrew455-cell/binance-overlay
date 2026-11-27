@@ -250,8 +250,8 @@ class KalshiPatternBacktestService : Service() {
     }
 
     private fun scan(edge: Boolean, exhaustive: Boolean, focused: Boolean) {
-        val limit = if (focused) Int.MAX_VALUE else TARGET_MARKETS
-        status(if (focused) "Downloading 100 days of Binance BTC 1-minute candles..." else "Downloading Binance BTC 1-minute candles for $limit markets...")
+        val limit = TARGET_MARKETS
+        status("Downloading Binance BTC 1-minute candles for $limit markets...")
         val zone = java.time.ZoneId.of("America/New_York")
         val now = java.time.ZonedDateTime.now(zone)
         val lastClose = now.toInstant().toEpochMilli() / QUARTER_MS * QUARTER_MS
@@ -260,7 +260,7 @@ class KalshiPatternBacktestService : Service() {
         val reversalExamples = mutableMapOf<Long, BtcReversalTimingReport.Market>()
         val warmup = if (edge) 345L else 60L
         var pageCount = 0
-        for (page in 1..(if (focused) 100 else MAX_PAGES)) {
+        for (page in 1..MAX_PAGES) {
             if (!active.get()) error("Scan stopped")
             val day = now.toLocalDate().minusDays(page.toLong() - 1)
             val open = day.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
@@ -276,10 +276,10 @@ class KalshiPatternBacktestService : Service() {
                 if (edge) examples[start] = BtcEdgeTest.market(start, market.targetBtc, market.upWon, candles, market.minutes.map { it.signedChartLevel }) ?: continue
                 if (reversalRun) reversalExamples[start] = BtcReversalTimingReport.market(market, candles)
                 selected[start] = market
-                if (!focused && selected.size == TARGET_MARKETS) break
+                if (selected.size == TARGET_MARKETS) break
             }
             val collected = selected.size
-            if (!focused && collected >= limit) break
+            if (collected >= limit) break
             status("Binance BTC historical pages: $page; complete 15m " +
                 "markets: $collected/$limit")
             try { Thread.sleep(140L) } catch (_: InterruptedException) { break }
@@ -289,13 +289,13 @@ class KalshiPatternBacktestService : Service() {
                 "Check Binance.US connectivity.")
 
         val chosen = selected.values.sortedByDescending { it.startMs }
-            .take(if (focused) Int.MAX_VALUE else TARGET_MARKETS).sortedBy { it.startMs }
+            .take(TARGET_MARKETS).sortedBy { it.startMs }
         if (focused) {
             status("Analyzing 50-to-60 one-minute signals by Eastern hour and minute...")
             val csv = BtcHourTimingReport.report(chosen)
             check(active.get()) { "Scan stopped" }
             prefs.edit().putString(FOCUSED_RESULT, csv).putString(FOCUSED_STATUS,
-                "Complete: 100 calendar days scanned; ${chosen.size} usable markets; hourly and minute-level signal frequency and settlement accuracy.").apply()
+                "Complete: ${chosen.size}/1000 markets; signal frequency and settlement win rate by minutes remaining.").apply()
             return
         }
         if (reversalRun) {
