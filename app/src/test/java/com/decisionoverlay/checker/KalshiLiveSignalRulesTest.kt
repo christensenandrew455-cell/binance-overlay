@@ -181,13 +181,17 @@ class KalshiLiveSignalRulesTest {
         val history=listOf(q(14,-52.0),q(13,-52.0))
         fun r(t: Long, level: Double,price: Double)=
             KalshiLiveSignalRules.LiveReading(t,level,price)
-        val good=listOf(r(123000,-52.0,99.8),r(133000,-53.5,99.65),r(143000,-55.0,99.5))
+        val good=listOf(r(123000,0.0,100.0),r(133000,-52.5,99.75),r(143000,-55.0,99.5))
         val result=KalshiLiveSignalRules.matchingFilteredNearBuy(history,good,0,10)!!
         assertFalse(result.rule.buyUp)
         assertEquals(12,result.finishLeft)
         assertEquals(20000L,result.elapsedMs)
         assertNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,good,0,19))
-        assertNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,good.map { it.copy(at=it.at+17000) },0,10))
+        assertNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,
+            listOf(good[0].copy(level=-52.0),good[1],good[2]),0,10))
+        val crossing=good.toMutableList().apply { this[0]=r(123000,51.0,100.1) }
+        assertNotNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,crossing,0,10))
+        assertNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,good.map { it.copy(at=it.at+28000) },0,10))
         assertNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,
             listOf(good[0],good[2]),0,10))
         assertNull(KalshiLiveSignalRules.matchingFilteredNearBuy(history,
