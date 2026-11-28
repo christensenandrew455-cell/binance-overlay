@@ -40,7 +40,7 @@ phone-to-worker control and real balance/settlement sync are installed.
 
 On the private worker process use exact environment names already selected:
 
-- `KEY_API_ID`: production Kalshi API key ID
+- `KALSHI_API_ID`: production Kalshi API key ID
 - `KALSHI_API_KEY`: private PEM (full BEGIN/END block)
 
 Never store these in GitHub, the APK, or a public Vercel function response.
