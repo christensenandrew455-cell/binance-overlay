@@ -11,7 +11,9 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.WindowManager
+import android.text.InputType
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -144,6 +146,33 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
             Toast.makeText(this,"Service error: ${e.message}",Toast.LENGTH_LONG).show()
         }
     }
+    private fun ownerAccessKey() {
+        if(!unlocked || isFinishing) return
+        val field=EditText(this).apply {
+            hint="Permanent Vercel access key"
+            isSingleLine=true
+            inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSelectAllOnFocus(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Secure connection")
+            .setMessage("Enter your permanent access key once. It will be encrypted on this phone and checked by Vercel on every request. This is NOT your Kalshi private key.")
+            .setView(field)
+            .setNegativeButton("CANCEL",null)
+            .setPositiveButton("SAVE") {_,_->
+                try {
+                    KalshiPhoneAccess.save(this,field.text.toString())
+                    Toast.makeText(this,"Permanent access key saved securely",Toast.LENGTH_SHORT).show()
+                    refresh()
+                    command(KalshiPhoneTradingService.ACTION_CONNECT)
+                } catch(e:Exception) {
+                    Toast.makeText(this,"Access key not saved: ${e.message}",Toast.LENGTH_LONG).show()
+                } finally {
+                    field.text?.clear()
+                }
+            }.show()
+    }
+
     private fun dashboard(){
         if(!unlocked)return
         root.removeAllViews();root.gravity=Gravity.TOP
@@ -171,6 +200,7 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         row.addView(startButton,LinearLayout.LayoutParams(0,dp(54),1f))
         row.addView(stopButton,LinearLayout.LayoutParams(0,dp(54),1f))
         content.addView(row)
+        content.addView(button("CHANGE ACCESS KEY") { ownerAccessKey() })
         content.addView(button("CHECK VERCEL CONNECTION & BALANCE") {
             command(KalshiPhoneTradingService.ACTION_CONNECT)
         })
@@ -201,13 +231,16 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         content.addView(label("TRADE LOGS",17f))
         content.addView(button("EXPORT ALL TRADES CSV") {exportPicker.launch("kalshi-trades.csv")})
         logs=label("—",11f,muted).apply {gravity=Gravity.START}.also{content.addView(it)}
-        content.addView(label("Your Kalshi private key remains in Vercel. Trading stays blocked until server access is verified.",11f,muted))
+        content.addView(label("Kalshi private key remains in Vercel. Your permanent access key is encrypted on this phone and checked on every request.",11f,muted))
         if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(
             this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
         refresh()
         handler.removeCallbacks(refreshTimer)
         handler.postDelayed(refreshTimer,3000)
+        if (!KalshiPhoneAccess.hasCode(this)) {
+            handler.postDelayed({ if(unlocked) ownerAccessKey() }, 400)
+        }
     }
 
     private fun money(cents:Long):String="$"+BigDecimal(cents)
@@ -217,6 +250,7 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         val s=ledger.status()
         val recent=s.updated>0L && System.currentTimeMillis()-s.updated<60_000L
         state.text=when{
+            !KalshiPhoneAccess.hasCode(this) -> "ENTER PERMANENT ACCESS KEY"
             s.locked -> "FORCE STOP · ${s.reason}"
             s.active && !recent -> "SERVICE INTERRUPTED · ACCOUNT DATA STALE"
             s.active -> "TRADING ACTIVE"
@@ -226,7 +260,7 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         state.setTextColor(if(s.active&&recent)green else if(s.locked)red else muted)
         balance.text=if(recent) s.equity?.let{money(it)}?:"—" else "—"
         wager.text="FIXED WAGER  "+(if(s.wager==0L)"—" else money(s.wager))
-        startButton.isEnabled=recent&&!s.active&&!s.locked&&(s.equity?:0L)>=10000L
+        startButton.isEnabled=KalshiPhoneAccess.hasCode(this)&&recent&&!s.active&&!s.locked&&(s.equity?:0L)>=10000L
         stopButton.isEnabled=s.active
         resetButton.isEnabled=s.locked&&!s.active
         val t=ledger.today()
