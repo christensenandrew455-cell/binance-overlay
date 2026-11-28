@@ -29,13 +29,51 @@ function authenticate(req) {
     throw Object.assign(new Error("AUTH_FAILED"),{status:401});
 }
 
+function readKalshiPrivateKey(input) {
+  if (typeof input!=="string") throw new Error("NOT_STRING");
+  let value=input.trim();
+  // Vercel values sometimes arrive as quoted JSON, literal "\n" escapes,
+  // or base64 PKCS#8. Unwrap formatting without logging any secret bytes.
+  for(let i=0;i<2;i++){
+    if(value.startsWith('"') && value.endsWith('"')){
+      const parsed=JSON.parse(value);
+      if(typeof parsed!=="string")throw new Error("NOT_PEM_STRING");
+      value=parsed.trim();
+    }else if(value.startsWith("{") && value.endsWith("}")){
+      const obj=JSON.parse(value);
+      const v=obj.privateKey??obj.private_key??obj.pem;
+      if(typeof v!=="string") throw new Error("NO_PRIVATE_KEY_IN_JSON");
+      value=v.trim();
+    }else break;
+  }
+  value=value.replace(/\\r\\n/g,"\n").replace(/\\n/g,"\n")
+    .replace(/\\r/g,"\n").replace(/\r\n/g,"\n").replace(/\r/g,"\n").trim();
+  const pemMatch=value.match(/-----BEGIN (RSA PRIVATE KEY|PRIVATE KEY|EC PRIVATE KEY)-----([\s\S]*?)-----END \1-----/);
+  if(pemMatch){
+    const label=pemMatch[1];
+    const encoded=pemMatch[2].replace(/\s/g,"");
+    if(!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw new Error("PEM_BASE64_INVALID");
+    const lines=encoded.match(/.{1,64}/g).join("\n");
+    const normalized="-----BEGIN "+label+"-----\n"+lines+"\n-----END "+label+"-----\n";
+    return crypto.createPrivateKey(normalized);
+  }
+  // Some environment-variable helpers store the DER key as one base64 string.
+  if(/^[A-Za-z0-9+/]{80,}={0,2}$/.test(value)){
+    const der=Buffer.from(value,"base64");
+    for(const type of ["pkcs8","pkcs1","sec1"]){
+      try {return crypto.createPrivateKey({key:der,format:"der",type});}
+      catch {/* Try another private-key encoding; never leak input. */}
+    }
+  }
+  throw new Error("NOT_PRIVATE_PEM_OR_PKCS8");
+}
 function kalshiCredentials() {
   const id = process.env.KALSHI_API_ID;
   const pem = process.env.KALSHI_API_KEY;
   if (!id || !pem) throw Object.assign(new Error("KALSHI_NOT_CONFIGURED"),{status:503});
   let privateKey;
   try {
-    privateKey=crypto.createPrivateKey(pem.replace(/\\n/g,"\n"));
+    privateKey=readKalshiPrivateKey(pem);
   } catch {
     throw Object.assign(new Error("KALSHI_PRIVATE_KEY_FORMAT_INVALID"),{status:503});
   }
