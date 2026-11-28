@@ -47,7 +47,7 @@ class KalshiAdapterTests(unittest.TestCase):
 
     def test_exact_production_env_names(self):
         with patch.dict(os.environ, {
-            "KEY_API_ID": "synthetic-id",
+            "KALSHI_API_ID": "synthetic-id",
             "KALSHI_API_KEY": "synthetic-private-pem",
             "KALSHI_DEMO_API_KEY_ID": "demo-id",
             "KALSHI_DEMO_PRIVATE_KEY_FILE": "/tmp/demo.pem",
