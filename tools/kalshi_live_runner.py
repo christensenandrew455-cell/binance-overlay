@@ -264,7 +264,7 @@ def main():
         return
     keyid,pem,keyfile=credentials_from_env("production")
     if not keyid or not pem:
-        raise RuntimeError("Production env KEY_API_ID and KALSHI_API_KEY required on the private worker")
+        raise RuntimeError("Production env KALSHI_API_ID and KALSHI_API_KEY required on the private worker")
     k=Kalshi("production",api_key_id=keyid,private_key_pem=pem,private_key_file=keyfile)
     if args.start: start(db,k)
     else: run(db,k)
