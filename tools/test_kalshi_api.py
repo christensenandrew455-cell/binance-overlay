@@ -1,11 +1,13 @@
 """Offline tests: no Kalshi credentials, network, or orders required."""
+import os
 import sys
 import unittest
+from unittest.mock import patch
 from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from kalshi_api import FiftyToSixty, Kalshi, best_ask, make_order
+from kalshi_api import FiftyToSixty, Kalshi, best_ask, make_order, credentials_from_env
 
 
 class KalshiAdapterTests(unittest.TestCase):
@@ -42,6 +44,31 @@ class KalshiAdapterTests(unittest.TestCase):
         d = FiftyToSixty()
         self.assertEqual(d.observe(Decimal("0.49"), 0), "armed")
         self.assertIsNone(d.observe(Decimal("0.60"), 121))
+
+    def test_exact_production_env_names(self):
+        with patch.dict(os.environ, {
+            "KEY_API_ID": "synthetic-id",
+            "KALSHI_API_KEY": "synthetic-private-pem",
+            "KALSHI_DEMO_API_KEY_ID": "demo-id",
+            "KALSHI_DEMO_PRIVATE_KEY_FILE": "/tmp/demo.pem",
+        }, clear=True):
+            self.assertEqual(credentials_from_env("production"),
+                             ("synthetic-id", "synthetic-private-pem", ""))
+            self.assertEqual(credentials_from_env("demo"),
+                             ("demo-id", "", "/tmp/demo.pem"))
+
+    def test_production_inline_pem_support(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = private.private_bytes(serialization.Encoding.PEM,
+                                    serialization.PrivateFormat.PKCS8,
+                                    serialization.NoEncryption()).decode()
+        k = Kalshi("production", api_key_id="synthetic-id",
+                   private_key_pem=pem.replace("\n", "\\n"))
+        headers = k._auth_headers("GET", "/portfolio/balance")
+        self.assertEqual(headers["KALSHI-ACCESS-KEY"], "synthetic-id")
+        self.assertIn("KALSHI-ACCESS-SIGNATURE", headers)
 
     def test_production_trades_disabled(self):
         k = Kalshi("production")
