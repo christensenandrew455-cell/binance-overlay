@@ -130,6 +130,11 @@ def order_once(db,k,market,outcome,quote):
     r,equity,cash=risk_check(db,k)  # Second independent balance check before sending
     if r is None or db.execute("SELECT 1 FROM orders WHERE ticker=?",(ticker,)).fetchone():
         return
+    # Account lookup may take several seconds: verify fresh executable quote again.
+    quote_started=time.monotonic()
+    fresh_ask=best_ask(k.orderbook(ticker),outcome)
+    if time.monotonic()-quote_started>2 or fresh_ask!=Decimal("0.60") or not permitted_at(now_utc(),when(market["close_time"])):
+        return
     count=contract_count(min(r.fixed_wager,cash))  # 60c limit plus 10c/contract fee reserve
     if count<1: return
     cid=str(uuid4())
@@ -159,7 +164,17 @@ def reconcile(db,k):
             m=k.market(ticker)
             if m.get("result") not in ("yes","no") or m.get("status") not in ("finalized","settled","closed"):
                 continue
-            fills=k.fills(oid).get("fills",[])
+            fills=[]
+            cursor=None
+            for _page in range(20):
+                params={"order_id":oid,"limit":1000}
+                if cursor: params["cursor"]=cursor
+                page=k._request("GET","/portfolio/fills",authenticated=True,params=params)
+                fills.extend(page.get("fills",[]))
+                cursor=page.get("cursor")
+                if not cursor: break
+            else:
+                raise ValueError("Fill pagination limit; manual reconciliation required")
             if not fills:
                 db.execute("UPDATE orders SET status='NO_FILL' WHERE ticker=?",(ticker,))
                 log(db,"NO_FILL",ticker=ticker,order_id=oid)
