@@ -52,6 +52,26 @@ internal class KalshiPhoneLedger(context: Context) :
             arrayOf(funds.equityCents,funds.cashCents,System.currentTimeMillis()))
     }
 
+    /** A failed connection must never leave a recent balance looking valid. */
+    @Synchronized fun connectionFailed(reason: String) {
+        val safe = reason.take(100)
+        if (!status().locked) {
+            writableDatabase.execSQL(
+                "UPDATE state SET active=0,equity=NULL,cash=NULL,updated=NULL,reason=? WHERE id=1",
+                arrayOf(safe))
+        }
+        log("CONNECTION_FAILED", safe)
+    }
+
+    @Synchronized fun connectionVerified(funds: KalshiPhoneApi.Funds) {
+        updateFunds(funds)
+        if (!status().active && !status().locked) {
+            writableDatabase.execSQL(
+                "UPDATE state SET reason='CONNECTED' WHERE id=1")
+        }
+        log("CONNECTED", "Verified real Kalshi equity through Vercel")
+    }
+
     @Synchronized fun hasUncertainOrders(): Boolean {
         readableDatabase.rawQuery(
             "SELECT 1 FROM orders WHERE status='UNCERTAIN' LIMIT 1",null
