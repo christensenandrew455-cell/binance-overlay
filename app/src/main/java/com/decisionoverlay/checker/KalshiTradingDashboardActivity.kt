@@ -249,13 +249,25 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         if(!unlocked||!::balance.isInitialized)return
         val s=ledger.status()
         val recent=s.updated>0L && System.currentTimeMillis()-s.updated<60_000L
-        state.text=when{
-            !KalshiPhoneAccess.hasCode(this) -> "ENTER PERMANENT ACCESS KEY"
+        state.text=when {
+            !KalshiPhoneAccess.hasCode(this) -> "ACCESS KEY NEEDED · TAP CHANGE ACCESS KEY"
             s.locked -> "FORCE STOP · ${s.reason}"
-            s.active && !recent -> "SERVICE INTERRUPTED · ACCOUNT DATA STALE"
+            s.active && !recent -> "TRADING INTERRUPTED · DATA STALE"
             s.active -> "TRADING ACTIVE"
-            !recent -> "NOT CONNECTED · SERVER ACCESS REQUIRED"
-            else -> "STOPPED · CONNECTED TO VERCEL"
+            s.reason=="VERCEL_SERVER_UPDATE_PENDING" ->
+                "VERCEL UPDATE PENDING · SERVER STILL ON OLD VERSION"
+            s.reason=="VERCEL_ACCESS_CONFIG_PENDING" ->
+                "VERCEL NEEDS UPDATED ACCESS CODE DEPLOYMENT"
+            s.reason=="ACCESS_CODE_REJECTED" ->
+                "ACCESS KEY NOT ACCEPTED · CHECK SECURE CONNECTION"
+            s.reason=="VERCEL_API_NOT_PUBLISHED" ->
+                "VERCEL API NOT PUBLISHED"
+            s.reason=="NETWORK_TIMEOUT" ->
+                "NETWORK TIMEOUT · TRY CHECK CONNECTION"
+            s.reason.startsWith("VERCEL_") ->
+                "VERCEL CONNECTION FAILED · ${s.reason}"
+            !recent -> "NOT CONNECTED · TAP CHECK CONNECTION"
+            else -> "STOPPED · KALSHI BALANCE VERIFIED"
         }
         state.setTextColor(if(s.active&&recent)green else if(s.locked)red else muted)
         balance.text=if(recent) s.equity?.let{money(it)}?:"—" else "—"
