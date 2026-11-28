@@ -52,9 +52,19 @@ internal class KalshiPhoneLedger(context: Context) :
             arrayOf(funds.equityCents,funds.cashCents,System.currentTimeMillis()))
     }
 
+    @Synchronized fun hasUncertainOrders(): Boolean {
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM orders WHERE status='UNCERTAIN' LIMIT 1",null
+        ).use { return it.moveToFirst() }
+    }
+
     @Synchronized fun activate(funds: KalshiPhoneApi.Funds): String {
         val s=status()
         if (s.locked) return "LOCKED: review last force stop first"
+        if (hasUncertainOrders()) {
+            forceStop("UNKNOWN_ORDER: review Kalshi executions")
+            return "UNKNOWN_ORDER: review before restarting"
+        }
         if (funds.equityCents < 10000) return "Balance below $100"
         val anchor=if(s.anchor == 0L) funds.equityCents else s.anchor
         val wager=if(s.anchor == 0L) (anchor * 30L / 100).coerceAtMost(60000)
@@ -80,6 +90,8 @@ internal class KalshiPhoneLedger(context: Context) :
 
     @Synchronized fun resetAfterReview() {
         if(status().active) error("Stop trading before resetting")
+        writableDatabase.execSQL("""UPDATE orders SET status='REVIEWED_UNCERTAIN'
+            WHERE status='UNCERTAIN'""")
         writableDatabase.execSQL("""UPDATE state SET anchor=0,wager=0,locked=0,
             active=0,reason='REVIEWED_RESET' WHERE id=1""")
         log("MANUAL_RESET","Reviewed lockout; old trade logs retained")
