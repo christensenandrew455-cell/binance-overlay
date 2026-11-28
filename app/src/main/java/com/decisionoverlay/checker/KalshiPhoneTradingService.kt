@@ -110,13 +110,11 @@ class KalshiPhoneTradingService : Service() {
                 val command = intent?.action
                 Thread({
                     try {
-                        if(!KalshiPhoneCredentials.exists(this)) {
-                            ledger.log("NO_CREDENTIALS","Import the private Kalshi PEM securely on this phone")
-                            return@Thread
-                        }
+                        // Only the phone's device key signs this HTTPS request.
+                        // Kalshi credentials remain in the Vercel environment.
                         val funds = api.balance()
                         ledger.updateFunds(funds)
-                        ledger.log("CONNECTED","Verified Kalshi balance ${funds.equityCents} cents")
+                        ledger.log("CONNECTED","Verified Vercel/Kalshi balance ${funds.equityCents} cents")
                         if(command==ACTION_CONNECT) return@Thread
                         if(command==ACTION_START) {
                             val started = ledger.activate(funds)
