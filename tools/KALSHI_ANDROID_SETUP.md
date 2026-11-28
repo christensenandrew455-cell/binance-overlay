@@ -29,7 +29,7 @@ uninterrupted execution is not guaranteed.
    **Unrestricted**, if the option is available. Enable notifications too.
    Avoid force-stopping the app; Android may still stop services for other reasons.
 
-The **old Vercel environment variables** `KEY_API_ID` and
+The **old Vercel environment variables** `KALSHI_API_ID` and
 `KALSHI_API_KEY` remain unchanged but are **not read by the Android APK**.
 Vercel server environment variables cannot securely and directly be retrieved
 from the phone. If the downloaded private key file is gone, create a new key
