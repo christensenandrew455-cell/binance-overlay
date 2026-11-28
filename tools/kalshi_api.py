@@ -88,25 +88,38 @@ class FiftyToSixty:
         return None
 
 
+def credentials_from_env(environment: str) -> tuple[str, str, str]:
+    """Return (key ID, inline PEM, PEM file path) without exposing credential values."""
+    if environment == "production":
+        return os.getenv("KEY_API_ID", ""), os.getenv("KALSHI_API_KEY", ""), ""
+    if environment == "demo":
+        return os.getenv("KALSHI_DEMO_API_KEY_ID", ""), "", os.getenv("KALSHI_DEMO_PRIVATE_KEY_FILE", "")
+    raise ValueError("Unknown Kalshi environment")
+
+
 class Kalshi:
-    def __init__(self, environment: str, api_key_id: str = "", private_key_file: str = ""):
+    def __init__(self, environment: str, api_key_id: str = "",
+                 private_key_file: str = "", private_key_pem: str = ""):
         self.environment = environment
         self.base_url = BASE_URLS[environment]
         self.api_key_id = api_key_id
         self.private_key_file = private_key_file
+        self.private_key_pem = private_key_pem
         self.session = requests.Session()
         self._private_key: Any = None
 
     def _auth_headers(self, method: str, path: str) -> dict[str, str]:
-        if not self.api_key_id or not self.private_key_file:
-            raise ValueError("Set KALSHI_DEMO_API_KEY_ID and KALSHI_DEMO_PRIVATE_KEY_FILE locally")
+        if not self.api_key_id or not (self.private_key_file or self.private_key_pem):
+            needed = ("KEY_API_ID and KALSHI_API_KEY" if self.environment == "production"
+                      else "KALSHI_DEMO_API_KEY_ID and KALSHI_DEMO_PRIVATE_KEY_FILE")
+            raise ValueError("Missing Kalshi credentials: set " + needed)
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding, rsa, ed25519
 
         if self._private_key is None:
-            self._private_key = serialization.load_pem_private_key(
-                Path(self.private_key_file).read_bytes(), password=None
-            )
+            pem_bytes = (self.private_key_pem.replace("\\n", "\n").encode("utf-8")
+                         if self.private_key_pem else Path(self.private_key_file).read_bytes())
+            self._private_key = serialization.load_pem_private_key(pem_bytes, password=None)
         stamp = str(int(time.time() * 1000))
         payload = (stamp + method.upper() + "/trade-api/v2" + path.split("?")[0]).encode()
         if isinstance(self._private_key, ed25519.Ed25519PrivateKey):
@@ -240,8 +253,9 @@ def main() -> None:
         p.error("Production orders are disabled; use demo environment")
     if not (1 <= args.count <= 10) or args.poll_seconds < 1:
         p.error("count must be 1..10 and polling interval >=1 sec")
-    k = Kalshi(args.environment, os.getenv("KALSHI_DEMO_API_KEY_ID", ""),
-               os.getenv("KALSHI_DEMO_PRIVATE_KEY_FILE", ""))
+    key_id, key_pem, key_file = credentials_from_env(args.environment)
+    k = Kalshi(args.environment, api_key_id=key_id,
+               private_key_file=key_file, private_key_pem=key_pem)
     if args.balance:
         print(json.dumps(k.balance(), indent=2))
     elif args.quote:
