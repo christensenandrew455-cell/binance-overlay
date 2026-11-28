@@ -15,6 +15,8 @@ class FakeKalshi:
         self.sent=[]
     def balance(self):
         return {"balance":self.cash,"portfolio_value":0}
+    def orderbook(self,ticker):
+        return {"orderbook_fp":{"yes_dollars":[["0.4000","100.00"]],"no_dollars":[["0.4000","100.00"]]}}
     def _request(self,method,path,**kwargs):
         if method=="POST":
             self.sent.append(kwargs["json"])
