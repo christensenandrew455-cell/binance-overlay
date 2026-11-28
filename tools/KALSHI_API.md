@@ -24,6 +24,23 @@ change the installed Android APK or automatically trade real money.
 uses executable Kalshi prices. Do NOT infer the app's claimed historical chart
 win rates apply to $0.60 contract buys.
 
+## Production credential names used in Vercel
+
+The production credential mapping uses these **exact user-selected variable names**:
+
+- `KEY_API_ID`: the Kalshi production API Key ID.
+- `KALSHI_API_KEY`: the **private PEM key content** (not the Key ID), including its BEGIN and END lines. Both actual line breaks and literal `\\n` line breaks are supported.
+
+Store them as protected/sensitive environment variables, never in the repository,
+Android APK, logs, or chat. Production authentication is available only for
+read-only actions such as `--balance`; **production order submission remains
+disabled** in this starter. Setting Vercel variables does not automatically run
+this Python client or activate a 24/7 worker.
+
+To check credentials locally after securely injecting those variables into the
+process, use `python tools/kalshi_api.py --environment production --ticker KXBTC15M-REPLACE --balance`.
+This authenticates but does not place an order.
+
 ## One-time setup (do not paste your key into chat or GitHub)
 
 1. Create a **demo** account at https://demo.kalshi.co, then open
