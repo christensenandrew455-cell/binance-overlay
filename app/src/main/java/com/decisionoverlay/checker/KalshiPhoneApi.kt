@@ -123,7 +123,7 @@ internal class KalshiPhoneApi(private val context: Context) {
             .put("cancel_order_on_pause", true)
         val r = request("POST", "/portfolio/events/orders", body, true)
         val info = r.optJSONObject("order") ?: r
-        return Submitted(clientId, info.optString("order_id").ifBlank { null })
+        return Submitted(clientId, info.optString("order_id").takeIf { it.isNotBlank() && it != "null" })
     }
 
     fun fills(orderId: String): List<JSONObject> {
