@@ -2,9 +2,6 @@ package com.decisionoverlay.checker
 
 import android.Manifest
 import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -147,23 +144,6 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
             Toast.makeText(this,"Service error: ${e.message}",Toast.LENGTH_LONG).show()
         }
     }
-    private fun pairPhone() {
-        if(!unlocked)return
-        val publicKey=runCatching {KalshiPhoneDevice.publicKeyBase64()}.getOrElse {
-            Toast.makeText(this,"Cannot generate device key: ${it.message}",Toast.LENGTH_LONG).show()
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Pair this phone with Vercel")
-            .setMessage("Your Kalshi private key stays in Vercel. Copy this phone's PUBLIC key and paste it into our ChatGPT conversation. I can register it in your Vercel environment variable KALSHI_DEVICE_PUBLIC_KEY. No private key upload is needed.\n\nPublic key:\n"+publicKey)
-            .setNegativeButton("CLOSE",null)
-            .setPositiveButton("COPY PUBLIC KEY") {_,_->
-                val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Kalshi phone public key",publicKey))
-                Toast.makeText(this,"Public key copied. Paste it into chat.",Toast.LENGTH_LONG).show()
-            }.show()
-    }
-
     private fun dashboard(){
         if(!unlocked)return
         root.removeAllViews();root.gravity=Gravity.TOP
@@ -174,7 +154,7 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         }
         scroll.addView(content);root.addView(scroll)
         content.addView(label("KALSHI TRADER",24f))
-        state=label("PAIR PHONE TO CONNECT",13f,muted).also{content.addView(it)}
+        state=label("CHECKING SECURE CONNECTION",13f,muted).also{content.addView(it)}
         content.addView(label("ACCOUNT BALANCE",12f,muted))
         balance=label("—",39f).also{content.addView(it)}
         wager=label("FIXED WAGER —",14f,muted).also{content.addView(it)}
@@ -191,7 +171,6 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         row.addView(startButton,LinearLayout.LayoutParams(0,dp(54),1f))
         row.addView(stopButton,LinearLayout.LayoutParams(0,dp(54),1f))
         content.addView(row)
-        content.addView(button("PAIR PHONE WITH VERCEL") {pairPhone()})
         content.addView(button("CHECK VERCEL CONNECTION & BALANCE") {
             command(KalshiPhoneTradingService.ACTION_CONNECT)
         })
@@ -222,7 +201,7 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
         content.addView(label("TRADE LOGS",17f))
         content.addView(button("EXPORT ALL TRADES CSV") {exportPicker.launch("kalshi-trades.csv")})
         logs=label("—",11f,muted).apply {gravity=Gravity.START}.also{content.addView(it)}
-        content.addView(label("The Kalshi private key stays in Vercel. This phone only holds its own private device-signing key.",11f,muted))
+        content.addView(label("Your Kalshi private key remains in Vercel. Trading stays blocked until server access is verified.",11f,muted))
         if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(
             this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
             permission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -241,7 +220,7 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
             s.locked -> "FORCE STOP · ${s.reason}"
             s.active && !recent -> "SERVICE INTERRUPTED · ACCOUNT DATA STALE"
             s.active -> "TRADING ACTIVE"
-            !recent -> "NOT CONNECTED · PAIR PHONE & CHECK CONNECTION"
+            !recent -> "NOT CONNECTED · SERVER ACCESS REQUIRED"
             else -> "STOPPED · CONNECTED TO VERCEL"
         }
         state.setTextColor(if(s.active&&recent)green else if(s.locked)red else muted)
