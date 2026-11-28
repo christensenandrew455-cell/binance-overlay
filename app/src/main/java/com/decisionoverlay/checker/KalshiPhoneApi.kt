@@ -13,8 +13,8 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * No Kalshi private key is ever imported into this app. It only sends
- * Android-Keystore-signed requests to the user's protected Vercel function.
+ * No Kalshi private key is ever imported into this app. The owner access code
+ * is encrypted with Android Keystore; its per-request HMAC authenticates to Vercel.
  */
 internal class KalshiPhoneApi(private val context: Context) {
     companion object {
@@ -31,7 +31,7 @@ internal class KalshiPhoneApi(private val context: Context) {
     private fun call(payload: JSONObject): JSONObject {
         val raw=payload.toString()
         val stamp=System.currentTimeMillis().toString()
-        val signature=KalshiPhoneDevice.sign(stamp,"POST",API_ROUTE,raw)
+        val signature=KalshiPhoneAccess.sign(context,stamp,"POST",API_ROUTE,raw)
         val request=Request.Builder().url(API_URL)
             .header("Accept","application/json")
             .header("X-Trader-Timestamp",stamp)
