@@ -91,7 +91,7 @@ class FiftyToSixty:
 def credentials_from_env(environment: str) -> tuple[str, str, str]:
     """Return (key ID, inline PEM, PEM file path) without exposing credential values."""
     if environment == "production":
-        return os.getenv("KEY_API_ID", ""), os.getenv("KALSHI_API_KEY", ""), ""
+        return os.getenv("KALSHI_API_ID", ""), os.getenv("KALSHI_API_KEY", ""), ""
     if environment == "demo":
         return os.getenv("KALSHI_DEMO_API_KEY_ID", ""), "", os.getenv("KALSHI_DEMO_PRIVATE_KEY_FILE", "")
     raise ValueError("Unknown Kalshi environment")
@@ -110,7 +110,7 @@ class Kalshi:
 
     def _auth_headers(self, method: str, path: str) -> dict[str, str]:
         if not self.api_key_id or not (self.private_key_file or self.private_key_pem):
-            needed = ("KEY_API_ID and KALSHI_API_KEY" if self.environment == "production"
+            needed = ("KALSHI_API_ID and KALSHI_API_KEY" if self.environment == "production"
                       else "KALSHI_DEMO_API_KEY_ID and KALSHI_DEMO_PRIVATE_KEY_FILE")
             raise ValueError("Missing Kalshi credentials: set " + needed)
         from cryptography.hazmat.primitives import hashes, serialization
