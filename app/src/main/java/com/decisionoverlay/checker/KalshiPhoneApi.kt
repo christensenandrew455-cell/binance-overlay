@@ -43,12 +43,18 @@ internal class KalshiPhoneApi(private val context: Context) {
             val text=res.body?.string().orEmpty()
             if (!res.isSuccessful) {
                 val remoteError=runCatching {JSONObject(text).optString("error")}.getOrNull()
-                val reason=if(remoteError.isNullOrBlank()) "HTTP ${res.code} (check Vercel access)"
-                    else "HTTP ${res.code} $remoteError"
-                error("Vercel Kalshi connection: $reason")
+                // Never put remote HTML, request headers or secret values into local logs.
+                val code=remoteError?.takeIf { Regex("^[A-Z0-9_]{1,80}$").matches(it) }
+                    ?: "NON_JSON_RESPONSE"
+                error("HTTP_${res.code}_$code")
             }
-            JSONObject(text)
+            runCatching {JSONObject(text)}
+                .getOrElse {error("SERVER_JSON_INVALID_${res.code}")}
         }
+    }
+    fun checkAuth() {
+        val r=call(JSONObject().put("action","check_auth"))
+        check(r.optBoolean("authenticated",false)) { "SERVER_AUTH_CHECK_FAILED" }
     }
     data class Funds(val equityCents:Long,val cashCents:Long) {
         val dollars:String get()=BigDecimal(equityCents).movePointLeft(2).toPlainString()
