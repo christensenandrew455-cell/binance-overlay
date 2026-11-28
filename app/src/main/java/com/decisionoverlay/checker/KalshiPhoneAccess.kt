@@ -15,9 +15,10 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Stores only the owner's separate Vercel access code, never a Kalshi API key.
- * The code is entered once on the device, encrypted under Android Keystore,
- * and is never included in the APK, GitHub source, logs, or network requests.
+ * Stores the owner's PERMANENT Vercel access key, never a Kalshi API key.
+ * Enter it once and store encrypted under Android Keystore; it remains valid
+ * for every new request until the owner explicitly rotates it in Vercel.
+ * Never include the key itself in APK, GitHub source, logs, or network requests.
  */
 internal object KalshiPhoneAccess {
     private const val ALIAS = "kalshi-access-aes-v1"
