@@ -178,6 +178,40 @@ internal class KalshiPhoneLedger(context: Context) :
         return Today(w,l,pos,neg)
     }
 
+    private fun csv(value: String): String =
+        "\"" + value.replace("\"", "\"\"").replace("\n", " ") + "\""
+
+    /** Export every trade and audit event, including failed and uncertain orders. */
+    @Synchronized fun exportCsv(): String {
+        val out = StringBuilder("type,time_utc,ticker,outcome,client_id,order_id,count,status,paid_cents,fee_cents,returned_cents,pnl_cents,event,message\n")
+        readableDatabase.rawQuery("""SELECT ticker,outcome,client_id,order_id,count,status,
+            created,settled,paid_cents,fees_cents,returned_cents,pnl_cents
+            FROM orders ORDER BY created ASC""",null).use { rows ->
+            while(rows.moveToNext()) {
+                val fields=listOf("ORDER",
+                    Instant.ofEpochMilli(rows.getLong(6)).toString(),
+                    rows.getString(0),rows.getString(1),rows.getString(2),
+                    if(rows.isNull(3)) "" else rows.getString(3),
+                    rows.getInt(4).toString(),rows.getString(5),
+                    if(rows.isNull(8)) "" else rows.getLong(8).toString(),
+                    if(rows.isNull(9)) "" else rows.getLong(9).toString(),
+                    if(rows.isNull(10)) "" else rows.getLong(10).toString(),
+                    if(rows.isNull(11)) "" else rows.getLong(11).toString(),"","")
+                out.append(fields.joinToString(",") { csv(it) }).append('\n')
+            }
+        }
+        readableDatabase.rawQuery(
+            "SELECT at,name,message FROM audit ORDER BY id ASC",null
+        ).use { rows ->
+            while(rows.moveToNext()) {
+                val fields=listOf("EVENT",Instant.ofEpochMilli(rows.getLong(0)).toString())+
+                    List(10){""}+listOf(rows.getString(1),rows.getString(2))
+                out.append(fields.joinToString(",") { csv(it) }).append('\n')
+            }
+        }
+        return out.toString()
+    }
+
     @Synchronized fun recentEvents(): String {
         val result=mutableListOf<String>()
         readableDatabase.rawQuery(
