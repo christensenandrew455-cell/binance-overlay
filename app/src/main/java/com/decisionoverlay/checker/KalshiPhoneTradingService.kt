@@ -109,9 +109,13 @@ class KalshiPhoneTradingService : Service() {
                 foreground(preparingNotification())
                 val command = intent?.action
                 Thread({
+                    var connectionStage = "OWNER_ACCESS"
                     try {
-                        // The permanent owner access code signs this HTTPS request.
-                        // Kalshi credentials remain in the Vercel environment.
+                        // Authenticate the permanent owner access key with Vercel first,
+                        // separately from Kalshi's private account balance request.
+                        api.checkAuth()
+                        ledger.log("OWNER_ACCESS_VERIFIED","Vercel accepted the signed access key")
+                        connectionStage = "KALSHI_BALANCE"
                         val funds = api.balance()
                         ledger.connectionVerified(funds)
                         if(command==ACTION_CONNECT) return@Thread
@@ -133,17 +137,45 @@ class KalshiPhoneTradingService : Service() {
                         ledger.log("WORKER","Foreground trading loop started")
                         runLoop()
                     } catch(ex: Exception) {
-                        val message = ex.message.orEmpty()
-                        val reason = when {
-                            "Access code not set up" in message -> "ENTER_ACCESS_CODE"
-                            "PHONE_NOT_PAIRED" in message -> "VERCEL_SERVER_UPDATE_PENDING"
-                            "OWNER_ACCESS_NOT_CONFIGURED" in message -> "VERCEL_ACCESS_CONFIG_PENDING"
-                            "AUTH_FAILED" in message -> "ACCESS_CODE_REJECTED"
-                            "HTTP 404" in message -> "VERCEL_API_NOT_PUBLISHED"
-                            "HTTP 403" in message -> "VERCEL_ACCESS_DENIED"
-                            "HTTP 401" in message -> "VERCEL_AUTH_REJECTED"
-                            "timeout" in message.lowercase() -> "NETWORK_TIMEOUT"
-                            else -> "VERCEL_CONNECTION_FAILED"
+                        val message=ex.message.orEmpty().uppercase()
+                        val reason=when {
+                            ex is java.net.UnknownHostException -> "PHONE_DNS_ERROR"
+                            ex is javax.net.ssl.SSLException -> "PHONE_TLS_ERROR"
+                            ex is java.net.SocketTimeoutException ||
+                                ex is java.io.InterruptedIOException -> "PHONE_NETWORK_TIMEOUT"
+                            "ACCESS CODE NOT SET UP" in message -> "ENTER_ACCESS_CODE"
+                            "INVALID STORED ACCESS CODE" in message ||
+                                "AEADBADTAG" in message -> "LOCAL_ACCESS_KEY_DECRYPT_FAILED"
+                            "HTTP_400_UNSUPPORTED_ACTION" in message &&
+                                connectionStage=="OWNER_ACCESS" ->
+                                    "VERCEL_CHECK_ENDPOINT_NOT_DEPLOYED"
+                            "HTTP_401_AUTH_FAILED" in message -> "OWNER_ACCESS_KEY_REJECTED"
+                            "HTTP_503_OWNER_ACCESS_NOT_CONFIGURED" in message ->
+                                "VERCEL_ACCESS_KEY_NOT_LOADED"
+                            "HTTP_403_PHONE_NOT_PAIRED" in message ->
+                                "VERCEL_OLD_AUTH_DEPLOYMENT"
+                            "HTTP_503_KALSHI_PRIVATE_KEY_FORMAT_INVALID" in message ->
+                                "KALSHI_PRIVATE_KEY_FORMAT_ERROR"
+                            "HTTP_503_KALSHI_NOT_CONFIGURED" in message ->
+                                "KALSHI_API_CREDENTIALS_MISSING"
+                            "HTTP_502_KALSHI_UPSTREAM_HTTP_401" in message ->
+                                "KALSHI_API_KEY_REJECTED"
+                            "HTTP_502_KALSHI_UPSTREAM_HTTP_403" in message ->
+                                "KALSHI_ACCOUNT_ACCESS_DENIED"
+                            "HTTP_502_KALSHI_UPSTREAM_HTTP_429" in message ->
+                                "KALSHI_RATE_LIMITED"
+                            "HTTP_503_KALSHI_BALANCE_RESPONSE_INVALID" in message ->
+                                "KALSHI_BALANCE_RESPONSE_INVALID"
+                            "HTTP_502" in message -> "KALSHI_API_SERVER_ERROR"
+                            "HTTP_503" in message -> "VERCEL_SERVICE_UNAVAILABLE"
+                            "HTTP_404" in message -> "VERCEL_API_NOT_FOUND"
+                            "HTTP_401" in message -> "VERCEL_AUTH_REJECTED"
+                            "HTTP_403" in message -> "VERCEL_ACCESS_DENIED"
+                            "HTTP_500" in message -> "VERCEL_INTERNAL_ERROR"
+                            "NON_JSON_RESPONSE" in message -> "VERCEL_NON_JSON_RESPONSE"
+                            "SERVER_JSON_INVALID" in message -> "VERCEL_INVALID_RESPONSE"
+                            else -> connectionStage+"_ERROR_"+ex.javaClass.simpleName.uppercase()
+                                .take(40)
                         }
                         ledger.connectionFailed(reason)
                     } finally {
