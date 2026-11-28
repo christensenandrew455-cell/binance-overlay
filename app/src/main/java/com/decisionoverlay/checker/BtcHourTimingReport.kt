@@ -116,7 +116,7 @@ internal object BtcHourTimingReport {
                         val eligibleStarts = sample.filter { hour < 0 || Instant.ofEpochMilli(it.startMs).atZone(zone).hour == hour }.map { it.startMs }.toSet()
                         val combined = subset.filter { it.start in eligibleStarts }.groupBy { it.start }.values.mapNotNull { it.maxByOrNull { s -> s.left } }.filter { left < 0 || it.left == left }
                         val combinedWins = combined.count { it.won }
-                        appendLine(listOf(split, if(hour<0) "ALL" else hour, if(left<0) "ALL" else left, "COMBINED"', "ALL", eligibleStarts.size, combined.size, pct(combined.size,eligibleStarts.size), combinedWins, combined.size-combinedWins, pct(combinedWins,combined.size), lower(combinedWins,combined.size), first,last,if (hour < 0 && left < 0) "first_alert_per_market;average_minutes_left=" + (if (avg.isNaN()) "n/a" else String.format(Locale.US,"%.2f",avg)) else "first_alert_per_market").joinToString(","))
+                        appendLine(listOf(split, if(hour<0) "ALL" else hour, if(left<0) "ALL" else left, "COMBINED", "ALL", eligibleStarts.size, combined.size, pct(combined.size,eligibleStarts.size), combinedWins, combined.size-combinedWins, pct(combinedWins,combined.size), lower(combinedWins,combined.size), first,last,if (hour < 0 && left < 0) "first_alert_per_market;average_minutes_left=" + (if (avg.isNaN()) "n/a" else String.format(Locale.US,"%.2f",avg)) else "first_alert_per_market").joinToString(","))
                         for (rule in KalshiLiveSignalRules.rules) {
                             val eligible = sample.count {
                                 hour < 0 || Instant.ofEpochMilli(it.startMs)
