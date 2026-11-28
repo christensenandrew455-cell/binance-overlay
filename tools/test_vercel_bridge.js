@@ -72,3 +72,41 @@ test("permanent owner code is used for EVERY request and never exposed",async()=
     else process.env.KALSHI_API_KEY=oldPem;
   }
 });
+
+test("private key can be read from normal, escaped, JSON-quoted or base64 Vercel envs",async()=>{
+  const {privateKey}=crypto.generateKeyPairSync("rsa",{modulusLength:2048});
+  const pem=privateKey.export({format:"pem",type:"pkcs8"});
+  const der=privateKey.export({format:"der",type:"pkcs8"}).toString("base64");
+  const code="test-owner-security-code-unicode-÷×-2026";
+  const originals={
+    key:process.env.KALSHI_OWNER_ACCESS_CODE,
+    id:process.env.KALSHI_API_ID,
+    pem:process.env.KALSHI_API_KEY,
+    fetch:global.fetch
+  };
+  try{
+    process.env.KALSHI_OWNER_ACCESS_CODE=code;
+    process.env.KALSHI_API_ID="fake-test-key-id";
+    global.fetch=async () => ({ok:true,json:async()=>({balance:12000,portfolio_value:0})});
+    for(const variant of [pem,JSON.stringify(pem),pem.replace(/\n/g,"\\n"),der]){
+      process.env.KALSHI_API_KEY=variant;
+      const body={action:"balance"};
+      const response=await call(body,sign(code,body));
+      assert.equal(response.statusCode,200,variant.slice(0,12));
+      assert.equal(response.body.equityCents,12000);
+    }
+    process.env.KALSHI_API_KEY="this is not a private key";
+    const body={action:"balance"};
+    const failed=await call(body,sign(code,body));
+    assert.equal(failed.statusCode,503);
+    assert.equal(failed.body.error,"KALSHI_PRIVATE_KEY_FORMAT_INVALID");
+  }finally{
+    global.fetch=originals.fetch;
+    for(const [key,value] of [
+      ["KALSHI_OWNER_ACCESS_CODE",originals.key],
+      ["KALSHI_API_ID",originals.id],
+      ["KALSHI_API_KEY",originals.pem]]){
+        if(value===undefined)delete process.env[key];else process.env[key]=value;
+      }
+  }
+});
