@@ -13,46 +13,57 @@ async function call(body={},headers={}) {
   await handler({method:"POST",body:JSON.stringify(body),headers},res);
   return out;
 }
-test("unpaired requests fail before any Kalshi secrets are used",async()=>{
-  const saved=process.env.KALSHI_DEVICE_PUBLIC_KEY;
-  delete process.env.KALSHI_DEVICE_PUBLIC_KEY;
+const sign=(code,body,ts=Date.now().toString())=>{
+  const raw=JSON.stringify(body);
+  const digest=crypto.createHash("sha256").update(raw).digest("hex");
+  const message=[ts,"POST","/api/kalshi",digest].join("\n");
+  const signature=crypto.createHmac("sha256",Buffer.from(code,"utf8"))
+    .update(message).digest("base64");
+  return {"x-trader-timestamp":ts,"x-trader-signature":signature};
+};
+
+test("access is denied when permanent owner code is not configured",async()=>{
+  const old=process.env.KALSHI_OWNER_ACCESS_CODE;
+  delete process.env.KALSHI_OWNER_ACCESS_CODE;
   try {
-    const r=await call({action:"balance"});
-    assert.equal(r.statusCode,403);
-    assert.equal(r.body.error,"PHONE_NOT_PAIRED");
-  }finally {
-    if(saved!==undefined)process.env.KALSHI_DEVICE_PUBLIC_KEY=saved;
+    const response=await call({action:"balance"});
+    assert.equal(response.statusCode,503);
+    assert.equal(response.body.error,"OWNER_ACCESS_NOT_CONFIGURED");
+  } finally {
+    if(old===undefined)delete process.env.KALSHI_OWNER_ACCESS_CODE;
+    else process.env.KALSHI_OWNER_ACCESS_CODE=old;
   }
 });
-test("signed request is accepted only for registered device public key",async()=>{
-  const {publicKey,privateKey}=crypto.generateKeyPairSync("rsa",{modulusLength:2048});
-  const savedKey=process.env.KALSHI_DEVICE_PUBLIC_KEY;
-  const savedId=process.env.KALSHI_API_ID;
-  const savedPem=process.env.KALSHI_API_KEY;
+test("permanent owner code is used for EVERY request and never exposed",async()=>{
+  const oldCode=process.env.KALSHI_OWNER_ACCESS_CODE;
+  const oldId=process.env.KALSHI_API_ID;
+  const oldPem=process.env.KALSHI_API_KEY;
+  const code="test-PERSISTENT-Owner×Access÷Private-2026";
   try{
-    process.env.KALSHI_DEVICE_PUBLIC_KEY=publicKey.export({format:"der",type:"spki"}).toString("base64");
+    process.env.KALSHI_OWNER_ACCESS_CODE=code;
     delete process.env.KALSHI_API_ID;
     delete process.env.KALSHI_API_KEY;
-    const body=JSON.stringify({action:"balance"});
-    const stamp=Date.now().toString();
-    const signed=[stamp,"POST","/api/kalshi",crypto.createHash("sha256").update(body).digest("hex")].join("\n");
-    const sig=crypto.sign("sha256",Buffer.from(signed),privateKey).toString("base64");
-    const h={"x-trader-timestamp":stamp,"x-trader-signature":sig};
-    const result=await call({action:"balance"},h);
-    assert.equal(result.statusCode,503); // authorization passed; creds intentionally missing
-    assert.equal(result.body.error,"KALSHI_NOT_CONFIGURED");
-    const forged=await call({action:"order",count:1},h);
-    assert.equal(forged.statusCode,401);
-    const stale=await call({action:"balance"},{
-      ...h,"x-trader-timestamp":(Date.now()-120000).toString()
-    });
+    const body={action:"balance"};
+    for(let attempt=0;attempt<2;attempt++){
+      const ok=await call(body,sign(code,body));
+      assert.equal(ok.statusCode,503); // Authorized, but Kalshi credentials absent.
+      assert.equal(ok.body.error,"KALSHI_NOT_CONFIGURED");
+      assert.equal(JSON.stringify(ok.body).includes(code),false);
+    }
+    const wrong=await call(body,sign("different-test-owner-key-123456",body));
+    assert.equal(wrong.statusCode,401);
+    const changed=await call({action:"order",count:1},sign(code,body));
+    assert.equal(changed.statusCode,401);
+    const stale=await call(body,sign(code,body,(Date.now()-120000).toString()));
     assert.equal(stale.statusCode,401);
+    const empty=await call(body);
+    assert.equal(empty.statusCode,401);
   }finally{
-    if(savedKey===undefined)delete process.env.KALSHI_DEVICE_PUBLIC_KEY;
-    else process.env.KALSHI_DEVICE_PUBLIC_KEY=savedKey;
-    if(savedId===undefined)delete process.env.KALSHI_API_ID;
-    else process.env.KALSHI_API_ID=savedId;
-    if(savedPem===undefined)delete process.env.KALSHI_API_KEY;
-    else process.env.KALSHI_API_KEY=savedPem;
+    if(oldCode===undefined)delete process.env.KALSHI_OWNER_ACCESS_CODE;
+    else process.env.KALSHI_OWNER_ACCESS_CODE=oldCode;
+    if(oldId===undefined)delete process.env.KALSHI_API_ID;
+    else process.env.KALSHI_API_ID=oldId;
+    if(oldPem===undefined)delete process.env.KALSHI_API_KEY;
+    else process.env.KALSHI_API_KEY=oldPem;
   }
 });
