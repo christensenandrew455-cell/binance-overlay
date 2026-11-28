@@ -9,8 +9,8 @@ android {
         applicationId = "com.decisionoverlay.checker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.2.2"
+        versionCode = 16
+        versionName = "1.2.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
