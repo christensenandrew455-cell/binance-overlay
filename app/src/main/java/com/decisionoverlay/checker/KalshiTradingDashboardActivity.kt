@@ -288,6 +288,8 @@ class KalshiTradingDashboardActivity : AppCompatActivity() {
         state.text=when {
             !hasKey -> "IMPORT YOUR API KEY TO CONNECT"
             s.locked -> "FORCE STOP · ${s.reason}"
+            s.active && (s.updated==0L || System.currentTimeMillis()-s.updated > 60_000L) ->
+                "TRADING INTERRUPTED · BALANCE DATA STALE"
             s.active -> "TRADING ACTIVE · PHONE BACKGROUND WORKER"
             s.equity==null -> "KEY SAVED · TAP CHECK CONNECTION"
             else -> "STOPPED · READY TO START"
