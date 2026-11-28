@@ -117,16 +117,6 @@ module.exports=async function handler(req,res){
         Date.parse(m.close_time)-900000<=now && Date.parse(m.close_time)>now);
       return res.status(200).json({market:matches.length===1?parseMarket(matches[0]):null});
     }
-    if(!validateTicker(body.ticker))return reject(res,400,"INVALID_MARKET");
-    if(action==="market"){
-      const r=await kalshi("GET","/markets/"+body.ticker);
-      return res.status(200).json({market:parseMarket(r.market)});
-    }
-    if(action==="ask") {
-      if(!["YES","NO"].includes(body.outcome))return reject(res,400,"INVALID_OUTCOME");
-      const r=await kalshi("GET","/markets/"+body.ticker+"/orderbook");
-      return res.status(200).json({ask:quote(r,body.outcome)});
-    }
     if(action==="fills"){
       if(typeof body.orderId!=="string"||!/^[-A-Za-z0-9]{8,128}$/.test(body.orderId))
         return reject(res,400,"INVALID_ORDER_ID");
@@ -144,6 +134,16 @@ module.exports=async function handler(req,res){
         if(!cursor)return res.status(200).json({fills:all});
       }
       return reject(res,503,"INCOMPLETE_FILLED_ORDERS");
+    }
+    if(!validateTicker(body.ticker))return reject(res,400,"INVALID_MARKET");
+    if(action==="market"){
+      const r=await kalshi("GET","/markets/"+body.ticker);
+      return res.status(200).json({market:parseMarket(r.market)});
+    }
+    if(action==="ask") {
+      if(!["YES","NO"].includes(body.outcome))return reject(res,400,"INVALID_OUTCOME");
+      const r=await kalshi("GET","/markets/"+body.ticker+"/orderbook");
+      return res.status(200).json({ask:quote(r,body.outcome)});
     }
     if(action==="order"){
       if(!["YES","NO"].includes(body.outcome)||!Number.isInteger(body.count)||
