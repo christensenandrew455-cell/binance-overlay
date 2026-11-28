@@ -42,9 +42,9 @@ internal class KalshiPhoneApi(private val context: Context) {
         return http.newCall(request).execute().use { res ->
             val text=res.body?.string().orEmpty()
             if (!res.isSuccessful) {
-                val error=runCatching {JSONObject(text).optString("error")}.getOrNull()
-                val reason=if(error.isNullOrBlank()) "HTTP ${res.code} (check Vercel access)"
-                    else "HTTP ${res.code} $error"
+                val remoteError=runCatching {JSONObject(text).optString("error")}.getOrNull()
+                val reason=if(remoteError.isNullOrBlank()) "HTTP ${res.code} (check Vercel access)"
+                    else "HTTP ${res.code} $remoteError"
                 error("Vercel Kalshi connection: $reason")
             }
             JSONObject(text)
@@ -93,7 +93,7 @@ internal class KalshiPhoneApi(private val context: Context) {
             result.optString("orderId").takeIf { it.isNotBlank() && it!="null" })
     }
     fun fills(orderId:String):List<JSONObject> {
-        val result=call(JSONObject().put("action","fills").put("ticker","KXBTC15M-VALID")
+        val result=call(JSONObject().put("action","fills")
             .put("orderId",orderId))
         val rows=result.optJSONArray("fills")?:JSONArray()
         return (0 until rows.length()).map {rows.getJSONObject(it)}
