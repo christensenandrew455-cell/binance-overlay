@@ -61,10 +61,9 @@ class KalshiTradingDashboardActivity : AppCompatActivity() {
         if(uri==null || !unlocked) return@registerForActivityResult
         val pem=try {
             contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
-                val buffer=CharArray(20001)
-                val len=it.read(buffer)
-                if(len<=0 || len>=20001 || it.read()!=-1) error("Private key file is too large or empty")
-                String(buffer,0,len)
+                val result=it.readText()
+                if(result.isBlank() || result.length>20000) error("Private key file is too large or empty")
+                result
             } ?: error("Could not read selected key")
         } catch(e: Exception) {
             Toast.makeText(this,"Couldn't read PEM file: ${e.message}",Toast.LENGTH_LONG).show()
