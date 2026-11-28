@@ -28,7 +28,7 @@ win rates apply to $0.60 contract buys.
 
 The production credential mapping uses these **exact user-selected variable names**:
 
-- `KEY_API_ID`: the Kalshi production API Key ID.
+- `KALSHI_API_ID`: the Kalshi production API Key ID.
 - `KALSHI_API_KEY`: the **private PEM key content** (not the Key ID), including its BEGIN and END lines. Both actual line breaks and literal `\\n` line breaks are supported.
 
 Store them as protected/sensitive environment variables, never in the repository,
