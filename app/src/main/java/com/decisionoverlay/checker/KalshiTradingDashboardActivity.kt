@@ -264,8 +264,23 @@ class KalshiTradingDashboardActivity:AppCompatActivity() {
                 "VERCEL API NOT PUBLISHED"
             s.reason=="NETWORK_TIMEOUT" ->
                 "NETWORK TIMEOUT · TRY CHECK CONNECTION"
+            s.reason=="OWNER_ACCESS_KEY_REJECTED" ->
+                "VERCEL REJECTED OWNER ACCESS KEY"
+            s.reason=="VERCEL_CHECK_ENDPOINT_NOT_DEPLOYED" ->
+                "VERCEL SERVER UPDATE REQUIRED"
+            s.reason=="KALSHI_API_KEY_REJECTED" ->
+                "KALSHI API KEY ID OR SIGNATURE REJECTED"
+            s.reason=="KALSHI_PRIVATE_KEY_FORMAT_ERROR" ->
+                "KALSHI PRIVATE KEY FORMAT ERROR IN VERCEL"
+            s.reason.startsWith("KALSHI_") ->
+                "KALSHI ERROR · ${s.reason}"
+            s.reason.startsWith("PHONE_") ->
+                "PHONE NETWORK ERROR · ${s.reason}"
+            s.reason.startsWith("LOCAL_") ->
+                "PHONE KEYSTORE ERROR · ${s.reason}"
             s.reason.startsWith("VERCEL_") ->
                 "VERCEL CONNECTION FAILED · ${s.reason}"
+            !recent && s.reason.contains("_ERROR_") -> "CONNECTION ERROR · ${s.reason}"
             !recent -> "NOT CONNECTED · TAP CHECK CONNECTION"
             else -> "STOPPED · KALSHI BALANCE VERIFIED"
         }
