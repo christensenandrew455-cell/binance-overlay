@@ -125,6 +125,12 @@ class KalshiPhoneTradingService : Service() {
                                 return@Thread
                             }
                         }
+                        if(ledger.hasUncertainOrders()) {
+                            ledger.forceStop("UNKNOWN_ORDER: review Kalshi executions")
+                            TradingNotifications.showStopped(this,
+                                "Previous order status is uncertain. Review before restarting.")
+                            return@Thread
+                        }
                         if(!ledger.status().active) return@Thread
                         foreground(TradingNotifications.activeNotification(this))
                         ledger.log("WORKER","Foreground trading loop started")
