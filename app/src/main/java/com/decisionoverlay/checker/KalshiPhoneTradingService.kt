@@ -279,6 +279,8 @@ class KalshiPhoneTradingService : Service() {
                     val ffee=BigDecimal(f.getString("fee_cost"))
                     require(q>BigDecimal.ZERO && p>BigDecimal.ZERO && p<BigDecimal.ONE &&
                         ffee>=BigDecimal.ZERO)
+                    ledger.log("FILL","market=$ticker fill=${f.optString("fill_id")} " +
+                        "contracts=$q price=$p fee=$ffee")
                     count=count.add(q)
                     paid=paid.add(q.multiply(p))
                     fee=fee.add(ffee)
