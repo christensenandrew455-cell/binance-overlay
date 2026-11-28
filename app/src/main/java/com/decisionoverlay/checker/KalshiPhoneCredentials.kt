@@ -93,7 +93,7 @@ internal object KalshiPhoneCredentials {
     fun save(context: Context, keyId: String, pem: String) {
         val id = keyId.trim()
         require(id.length in 8..256 && !id.contains("\n")) { "Invalid Kalshi key ID" }
-        require(pem.length in 120..20000) { "Invalid PEM file size" }
+        require(pem.length in 90..20000) { "Invalid PEM file size" }
         privateKey(pem) // Verify key is readable before writing.
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         check(p.edit().putString(ID, encrypt(id)).putString(PRIVATE, encrypt(pem)).commit()) {
