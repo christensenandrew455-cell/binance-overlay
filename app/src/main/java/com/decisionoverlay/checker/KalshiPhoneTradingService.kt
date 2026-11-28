@@ -187,7 +187,7 @@ class KalshiPhoneTradingService : Service() {
                     val market=current(now)
                     if(market!=null && !ledger.hasMarket(market.ticker)) {
                         val keys=market.ticker
-                        if(trackers.keys.any { it != keys }) trackers.clear()
+                        if(trackers.keys.any { !it.startsWith("$keys:") }) trackers.clear()
                         // Observe both contract ask series, including a few minutes
                         // before the allowed trigger minute, to detect 50 -> 60.
                         for (outcome in listOf("YES","NO")) {
