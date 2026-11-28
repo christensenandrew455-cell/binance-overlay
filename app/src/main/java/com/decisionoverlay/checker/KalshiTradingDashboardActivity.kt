@@ -44,6 +44,8 @@ class KalshiTradingDashboardActivity : AppCompatActivity() {
     private lateinit var counts: TextView
     private lateinit var net: TextView
     private lateinit var logs: TextView
+    private lateinit var gainLabel: TextView
+    private lateinit var lossLabel: TextView
     private lateinit var gainBar: ProgressBar
     private lateinit var lossBar: ProgressBar
     private lateinit var startButton: Button
@@ -53,6 +55,23 @@ class KalshiTradingDashboardActivity : AppCompatActivity() {
 
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()) { }
+
+    private val exportPicker=registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if(uri!=null) Thread {
+            val result=runCatching {
+                val csv=ledger.exportCsv()
+                contentResolver.openOutputStream(uri,"wt")?.bufferedWriter()?.use {
+                    it.write(csv)
+                } ?: error("Cannot write selected file")
+            }
+            runOnUiThread {
+                Toast.makeText(this,if(result.isSuccess) "Full trade CSV exported"
+                    else "Export error: ${result.exceptionOrNull()?.message}",Toast.LENGTH_LONG).show()
+            }
+        }.start()
+    }
 
     private val keyPicker=registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -235,19 +254,20 @@ class KalshiTradingDashboardActivity : AppCompatActivity() {
         inner.addView(label("TODAY · EASTERN TIME",16f))
         counts=label("WINS —     LOSSES —",17f).also{inner.addView(it)}
         net=label("NET —",15f,muted).also{inner.addView(it)}
-        inner.addView(label("MONEY MADE",13f,green))
+        gainLabel=label("MONEY MADE  —",13f,green).also {inner.addView(it)}
         gainBar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
             max=100
             progressTintList=android.content.res.ColorStateList.valueOf(green)
         }
         inner.addView(gainBar,LinearLayout.LayoutParams(-1,dp(14)))
-        inner.addView(label("MONEY LOST",13f,red))
+        lossLabel=label("MONEY LOST  —",13f,red).also {inner.addView(it)}
         lossBar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
             max=100
             progressTintList=android.content.res.ColorStateList.valueOf(red)
         }
         inner.addView(lossBar,LinearLayout.LayoutParams(-1,dp(14)))
         inner.addView(label("RECENT TRADE LOGS",15f))
+        inner.addView(button("EXPORT ALL TRADES CSV") {exportPicker.launch("kalshi-all-trades.csv")})
         logs=label("—",11f,muted).apply{ gravity=Gravity.START }.also{inner.addView(it)}
         inner.addView(label("The background worker runs on this phone while Android allows the foreground service to run. API credentials never appear in logs.",11f,muted))
         if(Build.VERSION.SDK_INT>=33 && ContextCompat.checkSelfPermission(
@@ -281,6 +301,8 @@ class KalshiTradingDashboardActivity : AppCompatActivity() {
         val t=ledger.today()
         counts.text="WINS ${t.wins}        LOSSES ${t.losses}"
         net.text="NET "+(if(t.net>=0) "+" else "-")+money(kotlin.math.abs(t.net))
+        gainLabel.text="MONEY MADE  "+money(t.profit)
+        lossLabel.text="MONEY LOST  "+money(t.loss)
         val total=t.profit+t.loss
         gainBar.progress=if(total>0)(t.profit*100/total).toInt() else 0
         lossBar.progress=if(total>0)(t.loss*100/total).toInt() else 0
