@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tools/**"
+      - "api/**"
       - ".github/workflows/kalshi-demo-client-tests.yml"
   workflow_dispatch:
 
@@ -24,3 +25,8 @@ jobs:
         run: python -m py_compile tools/kalshi_api.py tools/kalshi_live_rules.py tools/kalshi_live_runner.py
       - name: Offline unit tests (no orders)
         run: python -m unittest discover -s tools -p 'test_kalshi*.py' -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Vercel bridge JavaScript tests
+        run: node --test tools/test_vercel_bridge.js
