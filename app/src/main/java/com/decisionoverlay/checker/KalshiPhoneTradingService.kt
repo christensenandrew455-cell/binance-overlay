@@ -110,11 +110,10 @@ class KalshiPhoneTradingService : Service() {
                 val command = intent?.action
                 Thread({
                     try {
-                        // Only the phone's device key signs this HTTPS request.
+                        // The permanent owner access code signs this HTTPS request.
                         // Kalshi credentials remain in the Vercel environment.
                         val funds = api.balance()
-                        ledger.updateFunds(funds)
-                        ledger.log("CONNECTED","Verified Vercel/Kalshi balance ${funds.equityCents} cents")
+                        ledger.connectionVerified(funds)
                         if(command==ACTION_CONNECT) return@Thread
                         if(command==ACTION_START) {
                             val started = ledger.activate(funds)
@@ -134,8 +133,23 @@ class KalshiPhoneTradingService : Service() {
                         ledger.log("WORKER","Foreground trading loop started")
                         runLoop()
                     } catch(ex: Exception) {
-                        ledger.log("CONNECTION_ERROR",ex.javaClass.simpleName+": "+ex.message.orEmpty().take(160))
+                        val message = ex.message.orEmpty()
+                        val reason = when {
+                            "Access code not set up" in message -> "ENTER_ACCESS_CODE"
+                            "PHONE_NOT_PAIRED" in message -> "VERCEL_SERVER_UPDATE_PENDING"
+                            "OWNER_ACCESS_NOT_CONFIGURED" in message -> "VERCEL_ACCESS_CONFIG_PENDING"
+                            "AUTH_FAILED" in message -> "ACCESS_CODE_REJECTED"
+                            "HTTP 404" in message -> "VERCEL_API_NOT_PUBLISHED"
+                            "HTTP 403" in message -> "VERCEL_ACCESS_DENIED"
+                            "HTTP 401" in message -> "VERCEL_AUTH_REJECTED"
+                            "timeout" in message.lowercase() -> "NETWORK_TIMEOUT"
+                            else -> "VERCEL_CONNECTION_FAILED"
+                        }
+                        ledger.connectionFailed(reason)
                     } finally {
+                        if (ledger.status().active) {
+                            ledger.connectionFailed("TRADING_WORKER_STOPPED")
+                        }
                         workerAlive.set(false)
                         // A fully active user session is sticky while worker runs;
                         // on normal termination remove the status notification.
