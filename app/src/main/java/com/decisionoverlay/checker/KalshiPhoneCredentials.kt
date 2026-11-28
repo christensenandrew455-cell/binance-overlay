@@ -60,15 +60,34 @@ internal object KalshiPhoneCredentials {
 
     fun privateKey(pem: String): PrivateKey {
         val normalized = pem.replace("\\n", "\n").trim()
-        require(normalized.startsWith("-----BEGIN PRIVATE KEY-----")) {
-            "Please import the original PKCS8 PEM private key, including BEGIN and END"
+        val pkcs1 = normalized.startsWith("-----BEGIN RSA PRIVATE KEY-----")
+        require(pkcs1 || normalized.startsWith("-----BEGIN PRIVATE KEY-----")) {
+            "Use a PEM file beginning BEGIN PRIVATE KEY or BEGIN RSA PRIVATE KEY"
         }
-        require(normalized.endsWith("-----END PRIVATE KEY-----")) { "Incomplete PEM key" }
+        require(normalized.endsWith(if(pkcs1) "-----END RSA PRIVATE KEY-----"
+            else "-----END PRIVATE KEY-----")) { "Incomplete PEM key" }
         val data = normalized.lines().filter { !it.startsWith("-----") }.joinToString("")
         val raw = Base64.decode(data, Base64.DEFAULT)
-        val spec = PKCS8EncodedKeySpec(raw)
+        val spec = PKCS8EncodedKeySpec(if(pkcs1) wrapPkcs1(raw) else raw)
         return runCatching { KeyFactory.getInstance("RSA").generatePrivate(spec) }
             .getOrElse { KeyFactory.getInstance("Ed25519").generatePrivate(spec) }
+
+    }
+
+    private fun asnLength(n: Int): ByteArray = when {
+        n < 128 -> byteArrayOf(n.toByte())
+        n < 256 -> byteArrayOf(0x81.toByte(),n.toByte())
+        n < 65536 -> byteArrayOf(0x82.toByte(),(n shr 8).toByte(),n.toByte())
+        else -> error("Unsupported key length")
+    }
+    private fun asn(tag: Int, bytes: ByteArray): ByteArray =
+        byteArrayOf(tag.toByte()) + asnLength(bytes.size) + bytes
+    private fun wrapPkcs1(pkcs1: ByteArray): ByteArray {
+        val algorithmId = byteArrayOf(
+            0x30,0x0d,0x06,0x09,0x2a,0x86.toByte(),0x48,0x86.toByte(),
+            0xf7.toByte(),0x0d,0x01,0x01,0x01,0x05,0x00
+        )
+        return asn(0x30,byteArrayOf(0x02,0x01,0x00)+algorithmId+asn(0x04,pkcs1))
     }
 
     fun save(context: Context, keyId: String, pem: String) {
