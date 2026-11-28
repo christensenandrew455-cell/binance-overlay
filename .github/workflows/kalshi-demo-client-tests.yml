@@ -1,0 +1,33 @@
+name: Kalshi API demo client tests
+
+on:
+  push:
+    branches: ["feature/kalshi-demo-api-client"]
+    paths:
+      - "tools/kalshi_api.py"
+      - "tools/test_kalshi_api.py"
+      - "tools/requirements-kalshi.txt"
+      - ".github/workflows/kalshi-demo-client-tests.yml"
+  pull_request:
+    paths:
+      - "tools/kalshi_api.py"
+      - "tools/test_kalshi_api.py"
+      - "tools/requirements-kalshi.txt"
+      - ".github/workflows/kalshi-demo-client-tests.yml"
+
+jobs:
+  offline-unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r tools/requirements-kalshi.txt
+      - name: Compile
+        run: python -m py_compile tools/kalshi_api.py tools/test_kalshi_api.py
+      - name: Unit tests (never place orders)
+        run: python -m unittest discover -s tools -p 'test_kalshi_api.py' -v
