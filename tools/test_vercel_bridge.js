@@ -43,6 +43,11 @@ test("permanent owner code is used for EVERY request and never exposed",async()=
     process.env.KALSHI_OWNER_ACCESS_CODE=code;
     delete process.env.KALSHI_API_ID;
     delete process.env.KALSHI_API_KEY;
+    const healthBody={action:"check_auth"};
+    const healthy=await call(healthBody,sign(code,healthBody));
+    assert.equal(healthy.statusCode,200);
+    assert.equal(healthy.body.authenticated,true);
+    assert.equal(JSON.stringify(healthy.body).includes(code),false);
     const body={action:"balance"};
     for(let attempt=0;attempt<2;attempt++){
       const ok=await call(body,sign(code,body));
