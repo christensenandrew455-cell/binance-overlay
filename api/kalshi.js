@@ -1,5 +1,4 @@
-// Vercel-only Kalshi bridge. ALL requests require a registered Android device
-// signature. Kalshi credentials remain server-side environment variables.
+// Vercel Kalshi bridge. Every request requires a fresh HMAC signed with the\n// permanent owner's access code. Kalshi private credentials stay server-side.
 const crypto = require("node:crypto");
 const ORIGIN = "https://external-api.kalshi.com/trade-api/v2";
 const SERIES = "KXBTC15M";
@@ -7,28 +6,29 @@ function reject(res, status, error) {
   res.status(status).json({error});
 }
 function authenticate(req) {
-  const key = process.env.KALSHI_DEVICE_PUBLIC_KEY;
-  if (!key) throw Object.assign(new Error("PHONE_NOT_PAIRED"),{status:403});
-  const ts = req.headers["x-trader-timestamp"];
-  const signature = req.headers["x-trader-signature"];
-  if (typeof ts !== "string" || !/^\d{13}$/.test(ts) ||
-      Math.abs(Date.now()-Number(ts)) > 30_000 ||
-      typeof signature !== "string" || signature.length > 2048)
+  // Permanent owner access key in Vercel. Never returned or embedded in the APK.
+  // Each request must prove knowledge through a fresh HMAC-SHA256 signature.
+  const key = process.env.KALSHI_OWNER_ACCESS_CODE;
+  if (typeof key !== "string" || Buffer.byteLength(key, "utf8") < 20)
+    throw Object.assign(new Error("OWNER_ACCESS_NOT_CONFIGURED"), {status:503});
+
+  const ts=req.headers["x-trader-timestamp"];
+  const signature=req.headers["x-trader-signature"];
+  if (typeof ts!=="string" || !/^\d{13}$/.test(ts) ||
+      Math.abs(Date.now()-Number(ts))>30_000 ||
+      typeof signature!=="string" || !/^[A-Za-z0-9+/]{43}=$/.test(signature))
     throw Object.assign(new Error("AUTH_FAILED"),{status:401});
-  const raw = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
-  const digest = crypto.createHash("sha256").update(raw).digest("hex");
-  const signed = [ts,req.method.toUpperCase(),"/api/kalshi",digest].join("\n");
-  try {
-    const pub = crypto.createPublicKey({
-      key:Buffer.from(key.replace(/\s/g,""),"base64"),
-      format:"der",type:"spki"
-    });
-    const ok = crypto.verify("sha256",Buffer.from(signed),pub,Buffer.from(signature,"base64"));
-    if (!ok) throw new Error("Invalid signature");
-  } catch {
+
+  const raw = typeof req.body==="string" ? req.body : JSON.stringify(req.body||{});
+  const digest=crypto.createHash("sha256").update(raw, "utf8").digest("hex");
+  const message=[ts,req.method.toUpperCase(),"/api/kalshi",digest].join("\n");
+  const expected=crypto.createHmac("sha256",Buffer.from(key,"utf8"))
+    .update(message,"utf8").digest();
+  const supplied=Buffer.from(signature,"base64");
+  if (supplied.length!==expected.length || !crypto.timingSafeEqual(expected,supplied))
     throw Object.assign(new Error("AUTH_FAILED"),{status:401});
-  }
 }
+
 function kalshiCredentials() {
   const id = process.env.KALSHI_API_ID;
   const pem = process.env.KALSHI_API_KEY;
