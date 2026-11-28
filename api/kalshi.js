@@ -33,7 +33,12 @@ function kalshiCredentials() {
   const id = process.env.KALSHI_API_ID;
   const pem = process.env.KALSHI_API_KEY;
   if (!id || !pem) throw Object.assign(new Error("KALSHI_NOT_CONFIGURED"),{status:503});
-  const privateKey=crypto.createPrivateKey(pem.replace(/\\n/g,"\n"));
+  let privateKey;
+  try {
+    privateKey=crypto.createPrivateKey(pem.replace(/\\n/g,"\n"));
+  } catch {
+    throw Object.assign(new Error("KALSHI_PRIVATE_KEY_FORMAT_INVALID"),{status:503});
+  }
   return {id,privateKey};
 }
 async function kalshi(method,path,body) {
@@ -58,8 +63,8 @@ async function kalshi(method,path,body) {
     signal:AbortSignal.timeout(6500)
   });
   if (!response.ok) {
-    // Never send Kalshi error details or credentials to the phone.
-    throw Object.assign(new Error("KALSHI_REQUEST_FAILED"),{status:502});
+    // Status number only. Never send Kalshi's response body or secrets to the phone.
+    throw Object.assign(new Error("KALSHI_UPSTREAM_HTTP_"+response.status),{status:502});
   }
   return response.json();
 }
@@ -95,7 +100,7 @@ async function funds(){
   const cash=Number(r.balance);
   const holdings=Number(r.portfolio_value??0);
   if (!Number.isSafeInteger(cash)||!Number.isSafeInteger(holdings)||
-      cash<0||holdings<0) throw Object.assign(new Error("INVALID_BALANCE"),{status:503});
+      cash<0||holdings<0) throw Object.assign(new Error("KALSHI_BALANCE_RESPONSE_INVALID"),{status:503});
   return {equityCents:cash+holdings,cashCents:cash};
 }
 module.exports=async function handler(req,res){
@@ -108,6 +113,7 @@ module.exports=async function handler(req,res){
     const body = typeof req.body==="string" ? JSON.parse(req.body) : req.body;
     if(!body||typeof body!=="object")return reject(res,400,"INVALID_REQUEST");
     const action=body.action;
+    if(action==="check_auth") return res.status(200).json({authenticated:true});
     if(action==="balance") return res.status(200).json(await funds());
     if(action==="current_market") {
       const r=await kalshi("GET","/markets?series_ticker=KXBTC15M&status=open&limit=100");
