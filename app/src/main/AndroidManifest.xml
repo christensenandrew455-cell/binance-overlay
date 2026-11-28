@@ -22,6 +22,14 @@
         <activity android:name=".BtcRangeBacktestActivity" android:exported="false" />
         <activity android:name=".KalshiPatternResultsActivity"
             android:exported="false" />
+        <service android:name=".KalshiPhoneTradingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated continuously running Kalshi market monitoring and order execution" />
+        </service>
         <service android:name=".KalshiPatternBacktestService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
